@@ -126,15 +126,10 @@ public final class PlayerPreLoginListener implements Listener {
                 assertion.resolvedName(),
                 assertion.accountType(),
                 assertion.ipAddress());
-        PlayerProfile profile = event.getPlayerProfile();
-        if (profile == null) {
-            profile = Bukkit.createProfileExact(assertion.uuid(), assertion.resolvedName());
-            event.setPlayerProfile(profile);
-        } else if (!assertion.uuid().equals(profile.getId()) || !assertion.resolvedName().equals(profile.getName())) {
-            profile.setId(assertion.uuid());
-            profile.setName(assertion.resolvedName());
-            event.setPlayerProfile(profile);
-        }
+        debug("PreLogin bridge assertion accepted without backend profile mutation player=%s currentUuid=%s assertedUuid=%s",
+                event.getName(),
+                event.getUniqueId(),
+                assertion.uuid());
         return new ResolvedLogin(assertion.uuid(), assertion.resolvedName(), assertion.accountType(), assertion.ipAddress());
     }
 
