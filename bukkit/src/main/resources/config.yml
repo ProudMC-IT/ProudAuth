@@ -1,11 +1,10 @@
-# =============================================
-# ProudAuth - Backend Paper
-# Questo file contiene solo chiavi realmente usate
-# dal plugin backend.
-#
-# Con `proxy.mode: NONE` ProudAuth lavora in modo
-# completamente autonomo su un singolo server Paper.
-# =============================================
+database:
+  host: "localhost"
+  port: 3306
+  name: "proudauth"
+  user: "root"
+  password: "password"
+  pool-size: 10
 
 debugger:
   enabled: false
@@ -20,14 +19,6 @@ debugger:
   movement-audit: false
   teleport-audit: false
   command-flow: true
-
-database:
-  host: "localhost"
-  port: 3306
-  name: "proudauth"
-  user: "root"
-  password: "password"
-  pool-size: 10
 
 premium:
   enabled: true
@@ -66,19 +57,14 @@ password:
   complexity-regex: ""
 
 bridge:
-  # Attiva il collegamento trusted proxy -> backend.
   enabled: false
-  # FALLBACK = se manca assertion valida, il backend usa il controllo classico.
-  # STRICT   = se manca assertion valida, il backend rifiuta il login.
   mode: FALLBACK
-  # Trasporto supportato attualmente: MYSQL
   transport: MYSQL
-  # Deve essere identico sul backend e sul proxy quando il bridge e attivo.
   shared-secret: "change-me"
   assertion-ttl-seconds: 10
 
 proxy:
-  # NONE     = server standalone, nessun proxy
-  # BUNGEE   = backend dietro Bungee/Waterfall
-  # VELOCITY = backend dietro Velocity
+  # NONE
+  # BUNGEE
+  # VELOCITY
   mode: NONE

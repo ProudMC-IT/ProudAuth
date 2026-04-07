@@ -1,13 +1,10 @@
-# =============================================
-# ProudAuth - Proxy Velocity
-# Questo file contiene solo chiavi realmente usate
-# dal companion proxy.
-#
-# Il proxy usa solo:
-# - database: per leggere i ban IP condivisi
-# - premium: per risolvere il profilo premium
-# - bridge: per firmare e salvare assertion trusted
-# =============================================
+database:
+  host: "localhost"
+  port: 3306
+  name: "proudauth"
+  user: "root"
+  password: "password"
+  pool-size: 10
 
 debugger:
   enabled: false
@@ -23,20 +20,12 @@ debugger:
   teleport-audit: false
   command-flow: true
 
-database:
-  host: "localhost"
-  port: 3306
-  name: "proudauth"
-  user: "root"
-  password: "password"
-  pool-size: 10
-
 premium:
   enabled: true
   api-timeout-ms: 3000
-  # Se true, ProudAuth riscrive il GameProfile sul proxy con l'UUID premium.
-  # Su alcune reti offline-mode questo può creare comportamenti anomali lato backend.
-  # Default sicuro: false. Il backend riceve comunque l'esito premium via bridge.
+  # If true, ProudAuth rewrites the GameProfile on the proxy with the premium UUID.
+  # On some offline-mode networks, this can cause unusual backend behavior.
+  # Safe default: false. The backend still receives the premium result via bridge.
   rewrite-game-profile: false
 
 bridge:
