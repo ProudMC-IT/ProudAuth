@@ -1,0 +1,31 @@
+# =============================================
+# ProudAuth - Proxy Velocity
+# Questo file contiene solo chiavi realmente usate
+# dal companion proxy.
+#
+# Il proxy usa solo:
+# - database: per leggere i ban IP condivisi
+# - premium: per risolvere il profilo premium
+# - bridge: per firmare e salvare assertion trusted
+# =============================================
+
+debug: false
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "proudauth"
+  user: "root"
+  password: "password"
+  pool-size: 10
+
+premium:
+  enabled: true
+  api-timeout-ms: 3000
+
+bridge:
+  enabled: false
+  mode: FALLBACK
+  transport: MYSQL
+  shared-secret: "change-me"
+  assertion-ttl-seconds: 10

@@ -1,9 +1,0 @@
-name: ProudAuth
-description: $description
-version: '$version'
-
-main: com.monkey.proudAuth.ProudAuth
-api-version: '1.21.11'
-load: STARTUP
-
-authors: [MonkeyMoon104]

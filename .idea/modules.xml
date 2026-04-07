@@ -2,7 +2,9 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/ProudAuth.main.iml" filepath="$PROJECT_DIR$/.idea/modules/ProudAuth.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/bukkit/ProudAuth.bukkit.main.iml" filepath="$PROJECT_DIR$/.idea/modules/bukkit/ProudAuth.bukkit.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/universal/ProudAuth.universal.main.iml" filepath="$PROJECT_DIR$/.idea/modules/universal/ProudAuth.universal.main.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/velocity/ProudAuth.velocity.main.iml" filepath="$PROJECT_DIR$/.idea/modules/velocity/ProudAuth.velocity.main.iml" />
     </modules>
   </component>
 </project>

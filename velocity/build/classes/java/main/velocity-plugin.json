@@ -1,0 +1,1 @@
+{"id":"proudauth","name":"ProudAuth","version":"1.0.0","description":"Proxy companion per ProudAuth","authors":["Monkey"],"dependencies":[],"main":"com.monkey.proudAuth.velocity.ProudAuthVelocityPlugin"}

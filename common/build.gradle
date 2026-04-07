@@ -1,0 +1,12 @@
+dependencies {
+    api 'org.jetbrains:annotations:26.0.2'
+
+    compileOnly 'com.zaxxer:HikariCP:7.0.2'
+    compileOnly 'org.mindrot:jbcrypt:0.4'
+    compileOnly 'dev.samstevens.totp:totp:1.7.1'
+    compileOnly 'com.mysql:mysql-connector-j:9.6.0'
+}
+
+tasks.jar {
+    enabled = false
+}

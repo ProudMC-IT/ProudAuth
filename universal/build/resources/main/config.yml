@@ -1,0 +1,72 @@
+# =============================================
+# ProudAuth - Backend Paper
+# Questo file contiene solo chiavi realmente usate
+# dal plugin backend.
+#
+# Con `proxy.mode: NONE` ProudAuth lavora in modo
+# completamente autonomo su un singolo server Paper.
+# =============================================
+
+debug: false
+
+database:
+  host: "localhost"
+  port: 3306
+  name: "proudauth"
+  user: "root"
+  password: "password"
+  pool-size: 10
+
+premium:
+  enabled: true
+  auto-login: true
+  api-timeout-ms: 3000
+
+sessions:
+  enabled: true
+  ttl-minutes: 1440
+  bind-to-ip: true
+
+security:
+  max-attempts: 5
+  lockout-seconds: 300
+  totp-enabled: false
+
+protection:
+  block-movement: true
+  block-chat: true
+  block-interactions: true
+  invisible-until-auth: true
+  no-drop-on-death: true
+  auth-timeout-seconds: 60
+  auth-spawn:
+    enabled: false
+    world: "world"
+    x: 0.5
+    y: 64.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+password:
+  min-length: 6
+  max-length: 32
+  complexity-regex: ""
+
+bridge:
+  # Attiva il collegamento trusted proxy -> backend.
+  enabled: false
+  # FALLBACK = se manca assertion valida, il backend usa il controllo classico.
+  # STRICT   = se manca assertion valida, il backend rifiuta il login.
+  mode: FALLBACK
+  # Trasporto supportato attualmente: MYSQL
+  transport: MYSQL
+  # Deve essere identico sul backend e sul proxy quando il bridge e attivo.
+  shared-secret: "change-me"
+  assertion-ttl-seconds: 10
+
+proxy:
+  # NONE     = server standalone, nessun proxy
+  # BUNGEE   = backend dietro Bungee/Waterfall
+  # VELOCITY = backend dietro Velocity
+  mode: NONE
