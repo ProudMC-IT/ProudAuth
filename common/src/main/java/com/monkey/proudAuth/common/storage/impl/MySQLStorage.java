@@ -4,6 +4,9 @@ import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.Session;
+import com.monkey.proudAuth.common.storage.AccountRecord;
+import com.monkey.proudAuth.common.storage.IpBanRecord;
+import com.monkey.proudAuth.common.storage.StatsSnapshot;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
@@ -134,18 +137,6 @@ public final class MySQLStorage implements StorageProvider {
                  PreparedStatement statement = connection.prepareStatement("UPDATE pa_accounts SET password_hash = ? WHERE uuid = ?")) {
                 statement.setString(1, passwordHash);
                 statement.setString(2, uuid.toString());
-                statement.executeUpdate();
-            }
-        });
-    }
-
-    @Override
-    public CompletableFuture<Void> updatePasswordByUsername(String username, String passwordHash) {
-        return runAsync(() -> {
-            try (Connection connection = connection();
-                 PreparedStatement statement = connection.prepareStatement("UPDATE pa_accounts SET password_hash = ? WHERE username = ?")) {
-                statement.setString(1, passwordHash);
-                statement.setString(2, username);
                 statement.executeUpdate();
             }
         });

@@ -3,7 +3,7 @@ package com.monkey.proudAuth.common.session.impl;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.Session;
 import com.monkey.proudAuth.common.session.SessionManager;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.SessionStorage;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -13,10 +13,10 @@ import java.util.concurrent.CompletableFuture;
 
 public final class SessionManagerImpl implements SessionManager {
 
-    private final StorageProvider storage;
+    private final SessionStorage storage;
     private volatile ProudAuthSettings settings;
 
-    public SessionManagerImpl(StorageProvider storage, ProudAuthSettings settings) {
+    public SessionManagerImpl(SessionStorage storage, ProudAuthSettings settings) {
         this.storage = storage;
         this.settings = settings;
     }

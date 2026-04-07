@@ -4,7 +4,7 @@ import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.security.BruteForceGuard;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.StatsStorage;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -31,7 +31,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
     private final AuthService authService;
     private final PlayerProtection playerProtection;
     private final BruteForceGuard bruteForceGuard;
-    private final StorageProvider storage;
+    private final StatsStorage storage;
     private final Runnable reloadAction;
 
     public ProudAuthAdminCommand(
@@ -41,7 +41,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             AuthService authService,
             PlayerProtection playerProtection,
             BruteForceGuard bruteForceGuard,
-            StorageProvider storage,
+            StatsStorage storage,
             Runnable reloadAction
     ) {
         this.plugin = plugin;

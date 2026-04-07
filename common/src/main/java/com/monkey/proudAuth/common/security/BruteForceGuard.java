@@ -1,7 +1,7 @@
 package com.monkey.proudAuth.common.security;
 
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.IpBanStorage;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -11,11 +11,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public final class BruteForceGuard {
 
-    private final StorageProvider storage;
+    private final IpBanStorage storage;
     private final Map<String, AttemptRecord> attempts;
     private volatile ProudAuthSettings settings;
 
-    public BruteForceGuard(StorageProvider storage, ProudAuthSettings settings) {
+    public BruteForceGuard(IpBanStorage storage, ProudAuthSettings settings) {
         this.storage = storage;
         this.settings = settings;
         this.attempts = new ConcurrentHashMap<>();

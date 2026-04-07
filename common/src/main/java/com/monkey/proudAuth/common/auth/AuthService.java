@@ -4,7 +4,7 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthPlayer;
 import com.monkey.proudAuth.common.model.AuthState;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.AccountRecord;
 
 import java.util.Optional;
 import java.util.UUID;
@@ -42,7 +42,7 @@ public interface AuthService {
 
     CompletableFuture<TotpDisableResult> disableTotp(UUID uuid, String code);
 
-    CompletableFuture<Optional<StorageProvider.AccountRecord>> findAccountByUsername(String username);
+    CompletableFuture<Optional<AccountRecord>> findAccountByUsername(String username);
 
     CompletableFuture<Boolean> resetPassword(String username, String newPassword);
 

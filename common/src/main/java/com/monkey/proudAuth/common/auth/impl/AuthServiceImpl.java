@@ -8,7 +8,8 @@ import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.security.BruteForceGuard;
 import com.monkey.proudAuth.common.security.TotpService;
 import com.monkey.proudAuth.common.session.SessionManager;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.AccountRecord;
+import com.monkey.proudAuth.common.storage.AccountStorage;
 import com.monkey.proudAuth.common.util.HashUtil;
 
 import java.time.Instant;
@@ -21,7 +22,7 @@ import java.util.regex.Pattern;
 
 public final class AuthServiceImpl implements AuthService {
 
-    private final StorageProvider storage;
+    private final AccountStorage storage;
     private final SessionManager sessionManager;
     private final BruteForceGuard bruteForceGuard;
     private final TotpService totpService;
@@ -30,7 +31,7 @@ public final class AuthServiceImpl implements AuthService {
     private volatile ProudAuthSettings settings;
 
     public AuthServiceImpl(
-            StorageProvider storage,
+            AccountStorage storage,
             SessionManager sessionManager,
             BruteForceGuard bruteForceGuard,
             TotpService totpService,
@@ -122,15 +123,15 @@ public final class AuthServiceImpl implements AuthService {
                 return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
             }
 
-            StorageProvider.AccountRecord accountRecord = new StorageProvider.AccountRecord(
+            AccountRecord accountRecord = new AccountRecord(
                     uuid,
                     username,
                     HashUtil.hash(password),
                     accountType,
-                    optionalAccount.map(StorageProvider.AccountRecord::email).orElse(null),
-                    optionalAccount.map(StorageProvider.AccountRecord::totpSecret).orElse(null),
-                    optionalAccount.map(StorageProvider.AccountRecord::registeredAt).orElse(Instant.now()),
-                    optionalAccount.map(StorageProvider.AccountRecord::lastLoginAt).orElse(null),
+                    optionalAccount.map(AccountRecord::email).orElse(null),
+                    optionalAccount.map(AccountRecord::totpSecret).orElse(null),
+                    optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
+                    optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
                     ipAddress
             );
             return storage.saveAccount(accountRecord).thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
@@ -158,7 +159,7 @@ public final class AuthServiceImpl implements AuthService {
                 return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.NOT_REGISTERED));
             }
 
-            StorageProvider.AccountRecord account = optionalAccount.get();
+            AccountRecord account = optionalAccount.get();
             if (!HashUtil.matches(oldPassword, account.passwordHash())) {
                 return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.WRONG_OLD_PASSWORD));
             }
@@ -251,7 +252,7 @@ public final class AuthServiceImpl implements AuthService {
     }
 
     @Override
-    public CompletableFuture<Optional<StorageProvider.AccountRecord>> findAccountByUsername(String username) {
+    public CompletableFuture<Optional<AccountRecord>> findAccountByUsername(String username) {
         return storage.findAccountByUsername(username);
     }
 
@@ -277,7 +278,7 @@ public final class AuthServiceImpl implements AuthService {
             String username,
             String password,
             String ipAddress,
-            Optional<StorageProvider.AccountRecord> optionalAccount
+            Optional<AccountRecord> optionalAccount
     ) {
         if (optionalAccount.isEmpty() || optionalAccount.get().passwordHash() == null) {
             return CompletableFuture.completedFuture(new LoginResult(
@@ -289,7 +290,7 @@ public final class AuthServiceImpl implements AuthService {
             ));
         }
 
-        StorageProvider.AccountRecord account = optionalAccount.get();
+        AccountRecord account = optionalAccount.get();
         if (!HashUtil.matches(password, account.passwordHash())) {
             return bruteForceGuard.recordFailure(ipAddress)
                     .thenApply(failure -> new LoginResult(
@@ -326,7 +327,7 @@ public final class AuthServiceImpl implements AuthService {
                 });
     }
 
-    private CompletableFuture<Optional<StorageProvider.AccountRecord>> findAccount(UUID uuid, String username) {
+    private CompletableFuture<Optional<AccountRecord>> findAccount(UUID uuid, String username) {
         return storage.findAccountByUuid(uuid)
                 .thenCompose(optionalAccount -> optionalAccount.isPresent()
                         ? CompletableFuture.completedFuture(optionalAccount)

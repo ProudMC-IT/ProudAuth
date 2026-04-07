@@ -1,0 +1,20 @@
+package com.monkey.proudAuth.common.storage;
+
+import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
+
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
+
+/**
+ * Storage contract for proxy to backend bridge assertions.
+ */
+public interface BridgeAssertionStorage {
+
+    CompletableFuture<Void> saveProxyAssertion(ProxyBridgeAssertion assertion);
+
+    CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip);
+
+    CompletableFuture<Void> deleteProxyAssertion(String nonce);
+
+    CompletableFuture<Integer> deleteExpiredProxyAssertions();
+}

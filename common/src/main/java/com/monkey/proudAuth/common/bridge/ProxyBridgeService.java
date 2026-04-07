@@ -3,7 +3,7 @@ package com.monkey.proudAuth.common.bridge;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.BridgeAssertionStorage;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -17,12 +17,15 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
+/**
+ * Publishes and validates short-lived trusted assertions between proxy and backend.
+ */
 public final class ProxyBridgeService {
 
-    private final StorageProvider storage;
+    private final BridgeAssertionStorage storage;
     private volatile ProudAuthSettings settings;
 
-    public ProxyBridgeService(StorageProvider storage, ProudAuthSettings settings) {
+    public ProxyBridgeService(BridgeAssertionStorage storage, ProudAuthSettings settings) {
         this.storage = storage;
         this.settings = settings;
     }
