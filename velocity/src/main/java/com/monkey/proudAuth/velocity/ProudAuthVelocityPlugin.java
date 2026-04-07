@@ -10,8 +10,8 @@ import com.velocitypowered.api.proxy.ProxyServer;
 import org.slf4j.Logger;
 
 import java.lang.reflect.Method;
-import java.nio.file.Path;
 import java.net.URLClassLoader;
+import java.nio.file.Path;
 
 @Plugin(
         id = "proudauth",

@@ -7,7 +7,19 @@
 # completamente autonomo su un singolo server Paper.
 # =============================================
 
-debug: false
+debugger:
+  enabled: false
+  player-resolution: true
+  session-flow: true
+  premium-flow: true
+  bridge-flow: true
+  security-flow: false
+  protection-flow: true
+  ip-ban-flow: true
+  profile-flow: true
+  movement-audit: false
+  teleport-audit: false
+  command-flow: true
 
 database:
   host: "localhost"

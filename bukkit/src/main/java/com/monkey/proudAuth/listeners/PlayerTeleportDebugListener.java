@@ -1,8 +1,8 @@
 package com.monkey.proudAuth.listeners;
 
-import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.Location;
 import org.bukkit.event.EventHandler;

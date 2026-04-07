@@ -1,37 +1,25 @@
 package com.monkey.proudAuth;
 
+import com.monkey.proudAuth.auth.BukkitJoinFlowService;
+import com.monkey.proudAuth.auth.BukkitPreLoginService;
 import com.monkey.proudAuth.bootstrap.PlatformType;
 import com.monkey.proudAuth.bootstrap.ProudAuthBootstrap;
 import com.monkey.proudAuth.bootstrap.ProudAuthRuntime;
-import com.monkey.proudAuth.auth.BukkitJoinFlowService;
-import com.monkey.proudAuth.auth.BukkitPreLoginService;
+import com.monkey.proudAuth.commands.*;
+import com.monkey.proudAuth.commands.admin.ProudAuthAdminCommand;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
-import com.monkey.proudAuth.commands.ChangePasswordCommand;
-import com.monkey.proudAuth.commands.LoginCommand;
-import com.monkey.proudAuth.commands.LogoutCommand;
-import com.monkey.proudAuth.commands.RegisterCommand;
-import com.monkey.proudAuth.commands.TwoFactorCommand;
-import com.monkey.proudAuth.commands.admin.ProudAuthAdminCommand;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
-import com.monkey.proudAuth.listeners.PlayerChatListener;
-import com.monkey.proudAuth.listeners.PlayerCommandPreprocessListener;
-import com.monkey.proudAuth.listeners.PlayerDeathListener;
-import com.monkey.proudAuth.listeners.PlayerInteractListener;
-import com.monkey.proudAuth.listeners.PlayerJoinListener;
-import com.monkey.proudAuth.listeners.PlayerMoveListener;
-import com.monkey.proudAuth.listeners.PlayerPreLoginListener;
-import com.monkey.proudAuth.listeners.PlayerQuitListener;
-import com.monkey.proudAuth.listeners.PlayerTeleportDebugListener;
+import com.monkey.proudAuth.listeners.*;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
-import java.util.logging.Level;
 import java.util.Objects;
+import java.util.logging.Level;
 
 public final class ProudAuth extends JavaPlugin {
 

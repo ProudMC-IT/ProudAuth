@@ -1,9 +1,9 @@
 package com.monkey.proudAuth.protection;
 
-import com.monkey.proudAuth.config.LangConfig;
-import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.config.PluginConfig;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;

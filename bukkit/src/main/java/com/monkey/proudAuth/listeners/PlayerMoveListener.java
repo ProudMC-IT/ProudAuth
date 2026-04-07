@@ -1,12 +1,12 @@
 package com.monkey.proudAuth.listeners;
 
-import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.entity.Player;
-import org.bukkit.event.EventPriority;
 import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.plugin.RegisteredListener;
