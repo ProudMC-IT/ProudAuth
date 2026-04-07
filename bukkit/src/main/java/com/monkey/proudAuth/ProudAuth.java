@@ -3,6 +3,10 @@ package com.monkey.proudAuth;
 import com.monkey.proudAuth.bootstrap.PlatformType;
 import com.monkey.proudAuth.bootstrap.ProudAuthBootstrap;
 import com.monkey.proudAuth.bootstrap.ProudAuthRuntime;
+import com.monkey.proudAuth.auth.BukkitJoinFlowService;
+import com.monkey.proudAuth.auth.BukkitPreLoginService;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.commands.ChangePasswordCommand;
 import com.monkey.proudAuth.commands.LoginCommand;
 import com.monkey.proudAuth.commands.LogoutCommand;
@@ -19,12 +23,14 @@ import com.monkey.proudAuth.listeners.PlayerJoinListener;
 import com.monkey.proudAuth.listeners.PlayerMoveListener;
 import com.monkey.proudAuth.listeners.PlayerPreLoginListener;
 import com.monkey.proudAuth.listeners.PlayerQuitListener;
+import com.monkey.proudAuth.listeners.PlayerTeleportDebugListener;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.logging.Level;
 import java.util.Objects;
 
 public final class ProudAuth extends JavaPlugin {
@@ -37,21 +43,48 @@ public final class ProudAuth extends JavaPlugin {
     private PlayerProtection playerProtection;
     private PlayerPreLoginListener playerPreLoginListener;
     private BukkitTask cleanupTask;
+    private ProudAuthConsoleLogger logger;
 
     @Override
     public void onEnable() {
         try {
+            logger = new ProudAuthConsoleLogger(
+                    "ProudAuth/Bukkit",
+                    getLogger()::info,
+                    getLogger()::warning,
+                    (message, throwable) -> {
+                        if (throwable == null) {
+                            getLogger().severe(message);
+                        } else {
+                            getLogger().log(Level.SEVERE, message, throwable);
+                        }
+                    }
+            );
             pluginConfig = new PluginConfig(this);
             langConfig = new LangConfig(this);
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
-            playerProtection = new PlayerProtection(this, pluginConfig, langConfig);
+            playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
+
+            logger.banner(
+                    "ProudAuth v" + getPluginMeta().getVersion(),
+                    "Platform: Bukkit backend",
+                    "Proxy mode: " + pluginConfig.settings().proxy().mode(),
+                    "Bridge: " + (pluginConfig.settings().bridge().enabled()
+                            ? "enabled (" + pluginConfig.settings().bridge().mode() + ")"
+                            : "disabled"),
+                    "Debugger: " + pluginConfig.settings().debugger().summary()
+            );
 
             registerListeners();
             registerCommands();
             startCleanupTask();
+            logger.success("Bukkit backend enabled.");
         } catch (Exception exception) {
-            getLogger().severe("Impossibile avviare ProudAuth: " + exception.getMessage());
-            exception.printStackTrace();
+            if (logger != null) {
+                logger.error("Impossibile avviare ProudAuth.", exception);
+            } else {
+                getLogger().log(Level.SEVERE, "Impossibile avviare ProudAuth.", exception);
+            }
             getServer().getPluginManager().disablePlugin(this);
         }
     }
@@ -64,6 +97,9 @@ public final class ProudAuth extends JavaPlugin {
         if (runtime != null) {
             bootstrap.close(runtime);
         }
+        if (logger != null) {
+            logger.info("Bukkit backend disabled.");
+        }
     }
 
     public void reloadPluginState() {
@@ -75,6 +111,11 @@ public final class ProudAuth extends JavaPlugin {
         registerListeners();
         registerCommands();
         startCleanupTask();
+        logger.info("Reload completed. Debugger: " + pluginConfig.settings().debugger().summary());
+        logger.debug(pluginConfig.settings().debugger(), DebugChannel.COMMAND_FLOW,
+                "Backend reload applied with proxyMode=%s bridge=%s",
+                pluginConfig.settings().proxy().mode(),
+                pluginConfig.settings().bridge().enabled());
     }
 
     private void startCleanupTask() {
@@ -92,27 +133,38 @@ public final class ProudAuth extends JavaPlugin {
     }
 
     private void registerListeners() {
-        playerPreLoginListener = new PlayerPreLoginListener(
-                this,
+        BukkitPreLoginService preLoginService = new BukkitPreLoginService(
                 pluginConfig,
                 langConfig,
                 runtime.premiumVerifier(),
                 runtime.bridgeService(),
-                runtime.bruteForceGuard()
+                runtime.bruteForceGuard(),
+                logger
         );
+        playerPreLoginListener = new PlayerPreLoginListener(preLoginService);
 
-        getServer().getPluginManager().registerEvents(playerPreLoginListener, this);
-        getServer().getPluginManager().registerEvents(new PlayerJoinListener(
+        BukkitJoinFlowService joinFlowService = new BukkitJoinFlowService(
                 this,
                 pluginConfig,
                 langConfig,
                 runtime.authService(),
                 runtime.sessionManager(),
                 playerProtection,
-                playerPreLoginListener
+                logger
+        );
+
+        getServer().getPluginManager().registerEvents(playerPreLoginListener, this);
+        getServer().getPluginManager().registerEvents(new PlayerJoinListener(
+                pluginConfig,
+                playerPreLoginListener,
+                joinFlowService,
+                logger
         ), this);
         getServer().getPluginManager().registerEvents(new PlayerQuitListener(runtime.authService(), playerProtection), this);
-        getServer().getPluginManager().registerEvents(new PlayerMoveListener(this, pluginConfig, playerProtection, langConfig), this);
+        getServer().getPluginManager().registerEvents(new PlayerMoveListener(pluginConfig, playerProtection, langConfig, logger), this);
+        if (pluginConfig.settings().debugger().isEnabled(DebugChannel.TELEPORT_AUDIT)) {
+            getServer().getPluginManager().registerEvents(new PlayerTeleportDebugListener(pluginConfig, playerProtection, logger), this);
+        }
         getServer().getPluginManager().registerEvents(new PlayerChatListener(this, playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandPreprocessListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerInteractListener(playerProtection, langConfig), this);

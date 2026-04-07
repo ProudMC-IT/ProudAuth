@@ -9,7 +9,7 @@ Il principio operativo e questo:
 - il backend Paper deve poter funzionare bene anche da solo
 - il proxy companion deve esporre solo configurazione realmente usata
 - nessun file di config deve contenere chiavi decorative o inutilizzate
-- il debug va attivato solo quando devi diagnosticare una rete reale
+- il debugger va attivato solo quando devi diagnosticare una rete reale
 
 ## Architettura del progetto
 
@@ -492,18 +492,30 @@ La sezione `proxy` del backend serve davvero:
 La sezione `bridge` viene usata davvero solo quando vuoi un collegamento trusted tra proxy e backend.
 Se lasci `enabled: false`, il backend continua a lavorare in autonomia come prima.
 
-### `debug`
+### `debugger`
 
-- `debug: true | false`
+- `enabled`
+- `player-resolution`
+- `session-flow`
+- `premium-flow`
+- `bridge-flow`
+- `security-flow`
+- `protection-flow`
+- `ip-ban-flow`
+- `profile-flow`
+- `movement-audit`
+- `teleport-audit`
+- `command-flow`
 
-Quando `debug: true`, ProudAuth scrive log dettagliati su:
+Quando `debugger.enabled: true`, ProudAuth mostra solo i topic abilitati.
 
-- pre-login
-- decisione premium/cracked
-- esito bridge
-- join outcome
-- apply/remove protection
-- publish bridge sul proxy
+Esempi pratici:
+
+- `player-resolution`: se un player entra come premium o cracked
+- `session-flow`: se e stata trovata una sessione valida
+- `bridge-flow`: publish/verify del bridge proxy -> backend
+- `profile-flow`: rewrite o skip del profilo sul proxy
+- `movement-audit` e `teleport-audit`: diagnostica avanzata solo quando serve
 
 ## Configurazione proxy: `velocity-config.yml`
 

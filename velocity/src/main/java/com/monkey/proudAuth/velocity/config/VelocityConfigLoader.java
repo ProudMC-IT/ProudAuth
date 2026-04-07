@@ -33,7 +33,6 @@ public final class VelocityConfigLoader {
         Map<String, Object> root = loadMap(configPath);
 
         this.settings = new VelocityPluginSettings(
-                bool(root, "debug", false),
                 new VelocityPluginSettings.Database(
                         string(root, "database.host", "localhost"),
                         integer(root, "database.port", 3306),
@@ -44,7 +43,8 @@ public final class VelocityConfigLoader {
                 ),
                 new VelocityPluginSettings.Premium(
                         bool(root, "premium.enabled", true),
-                        Math.max(500, integer(root, "premium.api-timeout-ms", 3000))
+                        Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
+                        bool(root, "premium.rewrite-game-profile", false)
                 ),
                 new VelocityPluginSettings.Bridge(
                         bool(root, "bridge.enabled", false),
@@ -52,6 +52,20 @@ public final class VelocityConfigLoader {
                         ProudAuthSettings.BridgeTransport.from(string(root, "bridge.transport", "MYSQL")),
                         string(root, "bridge.shared-secret", "change-me"),
                         Math.max(1, integer(root, "bridge.assertion-ttl-seconds", 10))
+                ),
+                new ProudAuthSettings.Debugger(
+                        bool(root, "debugger.enabled", false),
+                        bool(root, "debugger.player-resolution", true),
+                        bool(root, "debugger.session-flow", true),
+                        bool(root, "debugger.premium-flow", true),
+                        bool(root, "debugger.bridge-flow", true),
+                        bool(root, "debugger.security-flow", false),
+                        bool(root, "debugger.protection-flow", true),
+                        bool(root, "debugger.ip-ban-flow", true),
+                        bool(root, "debugger.profile-flow", true),
+                        bool(root, "debugger.movement-audit", false),
+                        bool(root, "debugger.teleport-audit", false),
+                        bool(root, "debugger.command-flow", true)
                 )
         );
     }

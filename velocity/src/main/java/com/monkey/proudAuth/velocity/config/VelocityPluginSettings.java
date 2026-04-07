@@ -3,10 +3,10 @@ package com.monkey.proudAuth.velocity.config;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 
 public record VelocityPluginSettings(
-        boolean debugEnabled,
         Database database,
         Premium premium,
-        Bridge bridge
+        Bridge bridge,
+        ProudAuthSettings.Debugger debugger
 ) {
 
     public ProudAuthSettings toCommonSettings() {
@@ -43,7 +43,8 @@ public record VelocityPluginSettings(
                         bridge.transport(),
                         bridge.sharedSecret(),
                         bridge.assertionTtlSeconds()
-                )
+                ),
+                debugger
         );
     }
 
@@ -59,7 +60,8 @@ public record VelocityPluginSettings(
 
     public record Premium(
             boolean enabled,
-            int apiTimeoutMs
+            int apiTimeoutMs,
+            boolean rewriteGameProfile
     ) {
     }
 

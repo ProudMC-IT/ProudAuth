@@ -2,6 +2,8 @@ package com.monkey.proudAuth.protection;
 
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -19,11 +21,13 @@ public final class PlayerProtection {
     private final Map<UUID, BukkitTask> timeoutTasks;
     private volatile PluginConfig pluginConfig;
     private volatile LangConfig langConfig;
+    private final ProudAuthConsoleLogger logger;
 
-    public PlayerProtection(JavaPlugin plugin, PluginConfig pluginConfig, LangConfig langConfig) {
+    public PlayerProtection(JavaPlugin plugin, PluginConfig pluginConfig, LangConfig langConfig, ProudAuthConsoleLogger logger) {
         this.plugin = plugin;
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
+        this.logger = logger;
         this.protectedPlayers = ConcurrentHashMap.newKeySet();
         this.timeoutTasks = new ConcurrentHashMap<>();
     }
@@ -45,13 +49,19 @@ public final class PlayerProtection {
     }
 
     public void removeProtection(Player player) {
-        protectedPlayers.remove(player.getUniqueId());
-        debug("Protection remove player=%s uuid=%s", player.getName(), player.getUniqueId());
+        boolean wasProtected = protectedPlayers.remove(player.getUniqueId());
         BukkitTask timeoutTask = timeoutTasks.remove(player.getUniqueId());
         if (timeoutTask != null) {
             timeoutTask.cancel();
         }
-        removeInvisibility(player);
+        debug("Protection remove player=%s uuid=%s wasProtected=%s timeoutTask=%s",
+                player.getName(),
+                player.getUniqueId(),
+                wasProtected,
+                timeoutTask != null);
+        if (wasProtected) {
+            removeInvisibility(player);
+        }
     }
 
     public boolean isProtected(UUID uuid) {
@@ -79,10 +89,7 @@ public final class PlayerProtection {
     }
 
     private void debug(String template, Object... args) {
-        if (!pluginConfig.debugEnabled()) {
-            return;
-        }
-        plugin.getLogger().info("[DEBUG] " + template.formatted(args));
+        logger.debug(pluginConfig.settings().debugger(), DebugChannel.PROTECTION_FLOW, template, args);
     }
 
     private void scheduleAuthTimeout(Player player) {

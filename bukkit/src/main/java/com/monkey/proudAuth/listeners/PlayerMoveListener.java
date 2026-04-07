@@ -1,6 +1,8 @@
 package com.monkey.proudAuth.listeners;
 
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventPriority;
@@ -21,21 +23,21 @@ public final class PlayerMoveListener implements Listener {
     private final PlayerProtection playerProtection;
     private final LangConfig langConfig;
     private final com.monkey.proudAuth.config.PluginConfig pluginConfig;
-    private final org.bukkit.plugin.java.JavaPlugin plugin;
+    private final ProudAuthConsoleLogger logger;
     private final Map<UUID, Long> lastNotice;
     private final Map<PlayerMoveEvent, MoveAudit> moveAudits;
     private final AtomicBoolean dumpedExternalMoveListeners;
 
     public PlayerMoveListener(
-            org.bukkit.plugin.java.JavaPlugin plugin,
             com.monkey.proudAuth.config.PluginConfig pluginConfig,
             PlayerProtection playerProtection,
-            LangConfig langConfig
+            LangConfig langConfig,
+            ProudAuthConsoleLogger logger
     ) {
-        this.plugin = plugin;
         this.pluginConfig = pluginConfig;
         this.playerProtection = playerProtection;
         this.langConfig = langConfig;
+        this.logger = logger;
         this.lastNotice = new ConcurrentHashMap<>();
         this.moveAudits = Collections.synchronizedMap(new IdentityHashMap<>());
         this.dumpedExternalMoveListeners = new AtomicBoolean(false);
@@ -43,7 +45,7 @@ public final class PlayerMoveListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onMove(PlayerMoveEvent event) {
-        if (event.getTo() != null && pluginConfig.debugEnabled()) {
+        if (event.getTo() != null && pluginConfig.settings().debugger().isEnabled(DebugChannel.MOVEMENT_AUDIT)) {
             boolean attemptedHorizontal = event.getFrom().getX() != event.getTo().getX()
                     || event.getFrom().getZ() != event.getTo().getZ();
             boolean attemptedVertical = event.getFrom().getY() != event.getTo().getY();
@@ -74,7 +76,7 @@ public final class PlayerMoveListener implements Listener {
             return;
         }
 
-        debug("Move blocked player=%s uuid=%s from=%s,%s,%s to=%s,%s,%s",
+        debug(DebugChannel.PROTECTION_FLOW, "Move blocked player=%s uuid=%s from=%s,%s,%s to=%s,%s,%s",
                 event.getPlayer().getName(),
                 event.getPlayer().getUniqueId(),
                 event.getFrom().getX(),
@@ -90,7 +92,7 @@ public final class PlayerMoveListener implements Listener {
     @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = false)
     public void onMoveMonitor(PlayerMoveEvent event) {
         MoveAudit audit = moveAudits.remove(event);
-        if (audit == null || !pluginConfig.debugEnabled() || event.getTo() == null) {
+        if (audit == null || !pluginConfig.settings().debugger().isEnabled(DebugChannel.MOVEMENT_AUDIT) || event.getTo() == null) {
             return;
         }
         if (playerProtection.isProtected(audit.uuid())) {
@@ -103,7 +105,7 @@ public final class PlayerMoveListener implements Listener {
             return;
         }
 
-        debug("External move suppression suspected player=%s uuid=%s cancelled=%s originalTo=%s,%s,%s finalTo=%s,%s,%s",
+        debug(DebugChannel.MOVEMENT_AUDIT, "External move suppression suspected player=%s uuid=%s cancelled=%s originalTo=%s,%s,%s finalTo=%s,%s,%s",
                 audit.playerName(),
                 audit.uuid(),
                 event.isCancelled(),
@@ -126,11 +128,8 @@ public final class PlayerMoveListener implements Listener {
         langConfig.send(player, "move-blocked");
     }
 
-    private void debug(String template, Object... args) {
-        if (!pluginConfig.debugEnabled()) {
-            return;
-        }
-        plugin.getLogger().info("[DEBUG] " + template.formatted(args));
+    private void debug(DebugChannel channel, String template, Object... args) {
+        logger.debug(pluginConfig.settings().debugger(), channel, template, args);
     }
 
     private void dumpExternalMoveListenersOnce() {
@@ -138,7 +137,7 @@ public final class PlayerMoveListener implements Listener {
             return;
         }
         for (RegisteredListener listener : PlayerMoveEvent.getHandlerList().getRegisteredListeners()) {
-            debug("PlayerMove listener plugin=%s priority=%s listener=%s ignoreCancelled=%s",
+            debug(DebugChannel.MOVEMENT_AUDIT, "PlayerMove listener plugin=%s priority=%s listener=%s ignoreCancelled=%s",
                     listener.getPlugin().getName(),
                     listener.getPriority(),
                     listener.getListener().getClass().getName(),

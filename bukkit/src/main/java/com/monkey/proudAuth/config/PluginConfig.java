@@ -13,7 +13,6 @@ public final class PluginConfig {
 
     private final JavaPlugin plugin;
     private volatile ProudAuthSettings settings;
-    private volatile boolean debugEnabled;
 
     public PluginConfig(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -24,7 +23,6 @@ public final class PluginConfig {
     public void reload() {
         plugin.reloadConfig();
         FileConfiguration config = plugin.getConfig();
-        this.debugEnabled = config.getBoolean("debug", false);
 
         this.settings = new ProudAuthSettings(
                 new ProudAuthSettings.Database(
@@ -81,16 +79,26 @@ public final class PluginConfig {
                         ProudAuthSettings.BridgeTransport.from(config.getString("bridge.transport", "MYSQL")),
                         config.getString("bridge.shared-secret", "change-me"),
                         Math.max(1L, config.getLong("bridge.assertion-ttl-seconds", 10L))
+                ),
+                new ProudAuthSettings.Debugger(
+                        config.getBoolean("debugger.enabled", false),
+                        config.getBoolean("debugger.player-resolution", true),
+                        config.getBoolean("debugger.session-flow", true),
+                        config.getBoolean("debugger.premium-flow", true),
+                        config.getBoolean("debugger.bridge-flow", true),
+                        config.getBoolean("debugger.security-flow", false),
+                        config.getBoolean("debugger.protection-flow", true),
+                        config.getBoolean("debugger.ip-ban-flow", true),
+                        config.getBoolean("debugger.profile-flow", true),
+                        config.getBoolean("debugger.movement-audit", false),
+                        config.getBoolean("debugger.teleport-audit", false),
+                        config.getBoolean("debugger.command-flow", true)
                 )
         );
     }
 
     public ProudAuthSettings settings() {
         return settings;
-    }
-
-    public boolean debugEnabled() {
-        return debugEnabled;
     }
 
     public Optional<Location> authSpawn(Server server) {

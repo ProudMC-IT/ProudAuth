@@ -1,6 +1,8 @@
 package com.monkey.proudAuth.velocity;
 
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
@@ -20,7 +22,7 @@ public final class ProudAuthVelocityPlatform {
 
     private final Object pluginOwner;
     private final ProxyServer proxyServer;
-    private final org.slf4j.Logger logger;
+    private final ProudAuthConsoleLogger platformLogger;
     private final Path dataDirectory;
 
     private VelocityConfigLoader configLoader;
@@ -33,7 +35,18 @@ public final class ProudAuthVelocityPlatform {
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
-        this.logger = logger;
+        this.platformLogger = new ProudAuthConsoleLogger(
+                "ProudAuth/Velocity",
+                logger::info,
+                logger::warn,
+                (message, throwable) -> {
+                    if (throwable == null) {
+                        logger.error(message);
+                    } else {
+                        logger.error(message, throwable);
+                    }
+                }
+        );
         this.dataDirectory = dataDirectory;
     }
 
@@ -46,17 +59,25 @@ public final class ProudAuthVelocityPlatform {
             storage.init();
             premiumVerifier = new MojangPremiumVerifier(settings.toCommonSettings());
             bridgeService = new ProxyBridgeService(storage, settings.toCommonSettings());
-            debug("Velocity init debug=%s bridgeEnabled=%s bridgeMode=%s",
-                    settings.debugEnabled(),
+            platformLogger.banner(
+                    "ProudAuth v1.0.0",
+                    "Platform: Velocity proxy",
+                    "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
+                    "Rewrite game profile: " + settings.premium().rewriteGameProfile(),
+                    "Debugger: " + settings.debugger().summary()
+            );
+            debug(DebugChannel.COMMAND_FLOW, "Velocity init bridgeEnabled=%s bridgeMode=%s rewriteGameProfile=%s",
                     settings.bridge().enabled(),
-                    settings.bridge().mode());
+                    settings.bridge().mode(),
+                    settings.premium().rewriteGameProfile());
 
-            proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(() -> storage, () -> lang, () -> settings.debugEnabled(), logger));
+            proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(() -> storage, () -> lang, () -> settings.debugger(), platformLogger));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
                     () -> bridgeService,
-                    () -> settings.debugEnabled(),
-                    logger
+                    () -> settings.premium().rewriteGameProfile(),
+                    () -> settings.debugger(),
+                    platformLogger
             ));
 
             CommandMeta commandMeta = proxyServer.getCommandManager()
@@ -64,6 +85,7 @@ public final class ProudAuthVelocityPlatform {
                     .aliases("proudauthproxy")
                     .build();
             proxyServer.getCommandManager().register(commandMeta, new ProudAuthVelocityCommand(() -> lang, this::reloadPluginState));
+            platformLogger.success("Velocity proxy enabled.");
         });
     }
 
@@ -72,6 +94,7 @@ public final class ProudAuthVelocityPlatform {
             if (storage != null) {
                 storage.close();
             }
+            platformLogger.info("Velocity proxy disabled.");
         });
     }
 
@@ -83,10 +106,11 @@ public final class ProudAuthVelocityPlatform {
             storage.reload(settings.toCommonSettings());
             premiumVerifier.reload(settings.toCommonSettings());
             bridgeService.reload(settings.toCommonSettings());
-            debug("Velocity reload debug=%s bridgeEnabled=%s bridgeMode=%s",
-                    settings.debugEnabled(),
+            platformLogger.info("Reload completed. Debugger: " + settings.debugger().summary());
+            debug(DebugChannel.COMMAND_FLOW, "Velocity reload bridgeEnabled=%s bridgeMode=%s rewriteGameProfile=%s",
                     settings.bridge().enabled(),
-                    settings.bridge().mode());
+                    settings.bridge().mode(),
+                    settings.premium().rewriteGameProfile());
         });
     }
 
@@ -100,10 +124,10 @@ public final class ProudAuthVelocityPlatform {
         }
     }
 
-    private void debug(String template, Object... args) {
-        if (settings == null || !settings.debugEnabled()) {
+    private void debug(DebugChannel channel, String template, Object... args) {
+        if (settings == null) {
             return;
         }
-        logger.info("[DEBUG] " + template.formatted(args));
+        platformLogger.debug(settings.debugger(), channel, template, args);
     }
 }

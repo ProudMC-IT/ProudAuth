@@ -1,30 +1,32 @@
 package com.monkey.proudAuth.velocity.listeners;
 
-import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.storage.IpBanStorage;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
-import org.slf4j.Logger;
 
 import java.net.InetSocketAddress;
 import java.util.function.Supplier;
 
 public final class VelocityPreLoginListener {
 
-    private final Supplier<StorageProvider> storageSupplier;
+    private final Supplier<IpBanStorage> storageSupplier;
     private final Supplier<VelocityLang> langSupplier;
-    private final Supplier<Boolean> debugEnabledSupplier;
-    private final Logger logger;
+    private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
+    private final ProudAuthConsoleLogger logger;
 
     public VelocityPreLoginListener(
-            Supplier<StorageProvider> storageSupplier,
+            Supplier<IpBanStorage> storageSupplier,
             Supplier<VelocityLang> langSupplier,
-            Supplier<Boolean> debugEnabledSupplier,
-            Logger logger
+            Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
+            ProudAuthConsoleLogger logger
     ) {
         this.storageSupplier = storageSupplier;
         this.langSupplier = langSupplier;
-        this.debugEnabledSupplier = debugEnabledSupplier;
+        this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
     }
 
@@ -45,9 +47,6 @@ public final class VelocityPreLoginListener {
     }
 
     private void debug(String template, Object... args) {
-        if (!debugEnabledSupplier.get()) {
-            return;
-        }
-        logger.info("[DEBUG] " + template.formatted(args));
+        logger.debug(debuggerSupplier.get(), DebugChannel.IP_BAN_FLOW, template, args);
     }
 }

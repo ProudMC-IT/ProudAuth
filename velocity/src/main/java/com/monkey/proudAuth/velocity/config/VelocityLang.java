@@ -14,6 +14,7 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
@@ -48,12 +49,7 @@ public final class VelocityLang {
 
             try (Reader reader = Files.newBufferedReader(langPath)) {
                 Object loaded = yaml.load(reader);
-                if (loaded instanceof Map<?, ?> map) {
-                    //noinspection unchecked
-                    this.configuration = (Map<String, Object>) map;
-                } else {
-                    this.configuration = Collections.emptyMap();
-                }
+                this.configuration = normalizeConfiguration(loaded);
             }
         } catch (IOException exception) {
             throw new IllegalStateException("Impossibile caricare il language file Velocity.", exception);
@@ -74,5 +70,19 @@ public final class VelocityLang {
     private String string(String key, String fallback) {
         Object value = configuration.get(key);
         return value == null ? fallback : String.valueOf(value);
+    }
+
+    private Map<String, Object> normalizeConfiguration(Object loaded) {
+        if (!(loaded instanceof Map<?, ?> rawMap)) {
+            return Collections.emptyMap();
+        }
+
+        Map<String, Object> normalized = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : rawMap.entrySet()) {
+            if (entry.getKey() instanceof String key) {
+                normalized.put(key, entry.getValue());
+            }
+        }
+        return Collections.unmodifiableMap(normalized);
     }
 }
