@@ -7,9 +7,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Account persistence contract used by the authentication layer.
- */
 public interface AccountStorage {
 
     CompletableFuture<Optional<AccountRecord>> findAccountByUuid(UUID uuid);

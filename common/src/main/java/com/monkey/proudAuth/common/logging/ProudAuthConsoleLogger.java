@@ -6,9 +6,6 @@ import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
-/**
- * Small platform-agnostic logger that keeps ProudAuth console output consistent.
- */
 public final class ProudAuthConsoleLogger {
 
     private static final String SEPARATOR = "==================================================";

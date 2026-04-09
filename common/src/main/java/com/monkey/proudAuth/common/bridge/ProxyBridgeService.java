@@ -17,9 +17,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Publishes and validates short-lived trusted assertions between proxy and backend.
- */
 public final class ProxyBridgeService {
 
     private final BridgeAssertionStorage storage;

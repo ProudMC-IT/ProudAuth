@@ -48,4 +48,23 @@
     </annotationProcessing>
     <bytecodeTargetLevel target="21" />
   </component>
+  <component name="JavacSettings">
+    <option name="ADDITIONAL_OPTIONS_OVERRIDE">
+      <module name="ProudAuth.bootstrap" options="-Xlint:deprecation" />
+      <module name="ProudAuth.bootstrap.main" options="-Xlint:deprecation" />
+      <module name="ProudAuth.bootstrap.test" options="-Xlint:deprecation" />
+      <module name="ProudAuth.bukkit" options="-Xlint:deprecation" />
+      <module name="ProudAuth.bukkit.main" options="-Xlint:deprecation" />
+      <module name="ProudAuth.bukkit.test" options="-Xlint:deprecation" />
+      <module name="ProudAuth.common" options="-Xlint:deprecation" />
+      <module name="ProudAuth.common.main" options="-Xlint:deprecation" />
+      <module name="ProudAuth.common.test" options="-Xlint:deprecation" />
+      <module name="ProudAuth.universal" options="-Xlint:deprecation" />
+      <module name="ProudAuth.universal.main" options="-Xlint:deprecation" />
+      <module name="ProudAuth.universal.test" options="-Xlint:deprecation" />
+      <module name="ProudAuth.velocity" options="-Xlint:deprecation" />
+      <module name="ProudAuth.velocity.main" options="-Xlint:deprecation" />
+      <module name="ProudAuth.velocity.test" options="-Xlint:deprecation" />
+    </option>
+  </component>
 </project>

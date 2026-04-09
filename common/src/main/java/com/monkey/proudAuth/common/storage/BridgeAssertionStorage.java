@@ -5,9 +5,6 @@ import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Storage contract for proxy to backend bridge assertions.
- */
 public interface BridgeAssertionStorage {
 
     CompletableFuture<Void> saveProxyAssertion(ProxyBridgeAssertion assertion);

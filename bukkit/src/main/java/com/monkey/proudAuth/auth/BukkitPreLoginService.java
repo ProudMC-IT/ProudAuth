@@ -16,9 +16,6 @@ import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Resolves the backend login identity before the player fully joins.
- */
 public final class BukkitPreLoginService {
 
     private final PluginConfig pluginConfig;

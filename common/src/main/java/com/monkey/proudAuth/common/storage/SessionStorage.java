@@ -7,9 +7,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 
-/**
- * Session persistence contract used by session management.
- */
 public interface SessionStorage {
 
     CompletableFuture<Optional<Session>> findValidSession(UUID uuid, @Nullable String ip);

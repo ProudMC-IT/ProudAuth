@@ -14,9 +14,6 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-/**
- * Executes the backend join/authentication flow once pre-login resolution is complete.
- */
 public final class BukkitJoinFlowService {
 
     private final JavaPlugin plugin;
