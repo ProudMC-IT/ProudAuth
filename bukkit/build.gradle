@@ -1,5 +1,13 @@
 def resourceProperties = [version: project.version.toString()]
 
+sourceSets {
+    main {
+        resources {
+            srcDir '../common/src/main/resources'
+        }
+    }
+}
+
 dependencies {
     implementation project(':common')
     implementation project(':bootstrap')

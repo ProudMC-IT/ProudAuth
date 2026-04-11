@@ -6,6 +6,7 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
+import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.util.GameProfile;
@@ -20,6 +21,7 @@ public final class VelocityGameProfileListener {
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
     private final Supplier<Boolean> rewriteGameProfileSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
+    private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityGameProfileListener(
@@ -27,12 +29,14 @@ public final class VelocityGameProfileListener {
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
             Supplier<Boolean> rewriteGameProfileSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
+            VelocityResolvedPlayerStore resolvedPlayerStore,
             ProudAuthConsoleLogger logger
     ) {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
         this.rewriteGameProfileSupplier = rewriteGameProfileSupplier;
         this.debuggerSupplier = debuggerSupplier;
+        this.resolvedPlayerStore = resolvedPlayerStore;
         this.logger = logger;
     }
 
@@ -92,6 +96,12 @@ public final class VelocityGameProfileListener {
                 accountType,
                 ipAddress,
                 bridgeServiceSupplier.get().isOperational());
+
+        resolvedPlayerStore.remember(event.getUsername(), resolvedProfile.getId(), resolvedProfile.getName(), accountType);
+        debug(DebugChannel.BRIDGE_FLOW, "Velocity resolved profile cached player=%s resolvedUuid=%s accountType=%s",
+                event.getUsername(),
+                resolvedProfile.getId(),
+                accountType);
 
         bridgeServiceSupplier.get()
                 .publish(event.getUsername(), resolvedProfile.getName(), resolvedProfile.getId(), accountType, ipAddress)

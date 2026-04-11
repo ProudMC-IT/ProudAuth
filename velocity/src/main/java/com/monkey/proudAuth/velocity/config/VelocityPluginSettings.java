@@ -6,6 +6,7 @@ public record VelocityPluginSettings(
         Database database,
         Premium premium,
         Bridge bridge,
+        String language,
         ProudAuthSettings.Debugger debugger
 ) {
 

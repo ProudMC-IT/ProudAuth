@@ -49,7 +49,7 @@ public final class ProudAuth extends JavaPlugin {
                     }
             );
             pluginConfig = new PluginConfig(this);
-            langConfig = new LangConfig(this);
+            langConfig = new LangConfig(this, pluginConfig);
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
             playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
 
@@ -57,6 +57,7 @@ public final class ProudAuth extends JavaPlugin {
                     "ProudAuth v" + getPluginMeta().getVersion(),
                     "Platform: Bukkit backend",
                     "Proxy mode: " + pluginConfig.settings().proxy().mode(),
+                    "Language: " + langConfig.activeLanguageDescription(),
                     "Bridge: " + (pluginConfig.settings().bridge().enabled()
                             ? "enabled (" + pluginConfig.settings().bridge().mode() + ")"
                             : "disabled"),
@@ -99,7 +100,10 @@ public final class ProudAuth extends JavaPlugin {
         registerListeners();
         registerCommands();
         startCleanupTask();
-        logger.info("Reload completed. Debugger: " + pluginConfig.settings().debugger().summary());
+        logger.info("Reload completed. Language: "
+                + langConfig.activeLanguageDescription()
+                + ". Debugger: "
+                + pluginConfig.settings().debugger().summary());
         logger.debug(pluginConfig.settings().debugger(), DebugChannel.COMMAND_FLOW,
                 "Backend reload applied with proxyMode=%s bridge=%s",
                 pluginConfig.settings().proxy().mode(),

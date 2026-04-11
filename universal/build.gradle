@@ -30,6 +30,7 @@ sourceSets {
         }
         resources {
             srcDirs = [
+                    '../common/src/main/resources',
                     '../bukkit/src/main/resources',
                     '../velocity/src/main/resources'
             ]

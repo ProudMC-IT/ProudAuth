@@ -13,6 +13,8 @@ import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 import com.monkey.proudAuth.velocity.listeners.VelocityGameProfileListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityPreLoginListener;
+import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
+import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
 
@@ -31,6 +33,7 @@ public final class ProudAuthVelocityPlatform {
     private StorageProvider storage;
     private PremiumVerifier premiumVerifier;
     private ProxyBridgeService bridgeService;
+    private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
         this.pluginOwner = pluginOwner;
@@ -53,8 +56,9 @@ public final class ProudAuthVelocityPlatform {
     public void initialize() {
         withRuntimeContext(() -> {
             configLoader = new VelocityConfigLoader(pluginOwner, dataDirectory);
-            lang = new VelocityLang(pluginOwner, dataDirectory);
             settings = configLoader.settings();
+            lang = new VelocityLang(pluginOwner, dataDirectory, platformLogger);
+            lang.reload(settings.language());
             storage = new MySQLStorage(settings.toCommonSettings());
             storage.init();
             premiumVerifier = new MojangPremiumVerifier(settings.toCommonSettings());
@@ -62,6 +66,7 @@ public final class ProudAuthVelocityPlatform {
             platformLogger.banner(
                     "ProudAuth v1.0.0",
                     "Platform: Velocity proxy",
+                    "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
                     "Rewrite game profile: " + settings.premium().rewriteGameProfile(),
                     "Debugger: " + settings.debugger().summary()
@@ -76,6 +81,13 @@ public final class ProudAuthVelocityPlatform {
                     () -> premiumVerifier,
                     () -> bridgeService,
                     () -> settings.premium().rewriteGameProfile(),
+                    () -> settings.debugger(),
+                    resolvedPlayerStore,
+                    platformLogger
+            ));
+            proxyServer.getEventManager().register(pluginOwner, new VelocityServerTransitionListener(
+                    resolvedPlayerStore,
+                    () -> bridgeService,
                     () -> settings.debugger(),
                     platformLogger
             ));
@@ -101,12 +113,15 @@ public final class ProudAuthVelocityPlatform {
     public void reloadPluginState() {
         withRuntimeContext(() -> {
             configLoader.reload();
-            lang.reload();
             settings = configLoader.settings();
+            lang.reload(settings.language());
             storage.reload(settings.toCommonSettings());
             premiumVerifier.reload(settings.toCommonSettings());
             bridgeService.reload(settings.toCommonSettings());
-            platformLogger.info("Reload completed. Debugger: " + settings.debugger().summary());
+            platformLogger.info("Reload completed. Language: "
+                    + lang.activeLanguageDescription()
+                    + ". Debugger: "
+                    + settings.debugger().summary());
             debug(DebugChannel.COMMAND_FLOW, "Velocity reload bridgeEnabled=%s bridgeMode=%s rewriteGameProfile=%s",
                     settings.bridge().enabled(),
                     settings.bridge().mode(),

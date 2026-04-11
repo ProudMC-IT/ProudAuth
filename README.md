@@ -148,6 +148,9 @@ Al primo avvio il plugin backend crea:
 - `plugins/ProudAuth/config.yml`
 - `plugins/ProudAuth/lang/it.yml`
 
+Se cambi `language` in `config.yml`, al reload il plugin prova a servire `plugins/ProudAuth/lang/<language>.yml`.
+Se il file non esiste ma la lingua e inclusa nel jar, la copia automaticamente dentro `lang/`.
+
 ### Passaggi
 
 1. Imposta il backend Paper in `online-mode=false` dentro `server.properties`.
@@ -182,6 +185,8 @@ Il companion Velocity crea:
 - `plugins/proudauth/velocity-config.yml`
 - `plugins/proudauth/lang/it.yml`
 - `plugins/proudauth/runtime-libs/`
+
+Se cambi `language` in `velocity-config.yml`, al reload il proxy prova a servire `plugins/proudauth/lang/<language>.yml`.
 
 ### Cosa usa davvero il proxy
 
@@ -409,7 +414,7 @@ Per questo il backend espone anche:
 `/proudauth reload` lato backend ricarica:
 
 - `config.yml`
-- `lang/it.yml`
+- `lang/<language>.yml`
 - pool MySQL
 - servizi auth
 - premium verifier
@@ -422,12 +427,18 @@ Per questo il backend espone anche:
 `/proudauth reload` lato proxy ricarica:
 
 - `velocity-config.yml`
-- `lang/it.yml`
+- `lang/<language>.yml`
 - storage MySQL lato proxy
 - premium verifier lato proxy
 - bridge service lato proxy
 
 ## Configurazione backend: `config.yml`
+
+### `language`
+
+- valore server-wide, per esempio `it`, `en` o `es.yml`
+- risoluzione case-insensitive sul filesystem
+- se la lingua non esiste o manca qualche key obbligatoria, fallback automatico a `it.yml`
 
 ### `database`
 
@@ -521,6 +532,7 @@ Esempi pratici:
 
 Il file proxy e stato ridotto alle sole sezioni effettivamente usate:
 
+- `language`
 - `database`
 - `premium`
 - `bridge`

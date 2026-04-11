@@ -53,6 +53,7 @@ public final class VelocityConfigLoader {
                         string(root, "bridge.shared-secret", "change-me"),
                         Math.max(1, integer(root, "bridge.assertion-ttl-seconds", 10))
                 ),
+                string(root, "language", "it"),
                 new ProudAuthSettings.Debugger(
                         bool(root, "debugger.enabled", false),
                         bool(root, "debugger.player-resolution", true),
@@ -77,9 +78,7 @@ public final class VelocityConfigLoader {
     private void ensureDefaults() {
         try {
             Files.createDirectories(dataDirectory);
-            Files.createDirectories(dataDirectory.resolve("lang"));
             copyIfMissing("velocity-config.yml", dataDirectory.resolve("velocity-config.yml"));
-            copyIfMissing("lang/it.yml", dataDirectory.resolve("lang").resolve("it.yml"));
         } catch (IOException exception) {
             throw new IllegalStateException("Impossibile preparare i file di configurazione Velocity.", exception);
         }

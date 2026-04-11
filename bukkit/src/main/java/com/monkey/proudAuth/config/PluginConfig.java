@@ -101,6 +101,10 @@ public final class PluginConfig {
         return settings;
     }
 
+    public String language() {
+        return plugin.getConfig().getString("language", "it");
+    }
+
     public Optional<Location> authSpawn(Server server) {
         if (!settings.protection().authSpawn().enabled()) {
             return Optional.empty();
