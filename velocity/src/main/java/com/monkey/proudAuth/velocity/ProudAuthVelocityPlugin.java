@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.velocity;
 
 import com.google.inject.Inject;
+import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.proxy.ProxyInitializeEvent;
 import com.velocitypowered.api.event.proxy.ProxyShutdownEvent;
@@ -37,7 +38,8 @@ public final class ProudAuthVelocityPlugin {
         this.dataDirectory = dataDirectory;
     }
 
-    @Subscribe
+    @SuppressWarnings("deprecation")
+    @Subscribe(order = PostOrder.FIRST)
     public void onInitialize(ProxyInitializeEvent event) {
         try {
             VelocityRuntimeLibraryLoader libraryLoader = new VelocityRuntimeLibraryLoader(logger, dataDirectory);

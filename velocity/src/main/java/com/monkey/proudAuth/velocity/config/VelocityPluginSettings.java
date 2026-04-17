@@ -71,7 +71,10 @@ public record VelocityPluginSettings(
             ProudAuthSettings.BridgeMode mode,
             ProudAuthSettings.BridgeTransport transport,
             String sharedSecret,
-            long assertionTtlSeconds
+            long assertionTtlSeconds,
+            boolean backendCheckEnabled,
+            int backendCheckTimeoutMs,
+            int backendCheckPollIntervalMs
     ) {
     }
 }

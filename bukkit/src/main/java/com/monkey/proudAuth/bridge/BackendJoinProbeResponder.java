@@ -1,0 +1,59 @@
+package com.monkey.proudAuth.bridge;
+
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.storage.BackendJoinProbeStorage;
+
+import java.util.function.Supplier;
+
+public final class BackendJoinProbeResponder {
+
+    private static final int DEFAULT_BATCH_SIZE = 250;
+    private static final int CLEANUP_FREQUENCY = 120;
+
+    private final Supplier<BackendJoinProbeStorage> storageSupplier;
+    private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
+    private final ProudAuthConsoleLogger logger;
+    private final String responderId;
+    private int runCounter;
+
+    public BackendJoinProbeResponder(
+            Supplier<BackendJoinProbeStorage> storageSupplier,
+            Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
+            ProudAuthConsoleLogger logger,
+            String responderId
+    ) {
+        this.storageSupplier = storageSupplier;
+        this.debuggerSupplier = debuggerSupplier;
+        this.logger = logger;
+        this.responderId = responderId;
+        this.runCounter = 0;
+    }
+
+    public void poll() {
+        try {
+            int acknowledged = storageSupplier.get()
+                    .acknowledgePendingBackendJoinProbes(responderId, DEFAULT_BATCH_SIZE)
+                    .join();
+            if (acknowledged > 0) {
+                debug("Backend join probe ack responder=%s acknowledged=%s", responderId, acknowledged);
+            }
+
+            runCounter++;
+            if (runCounter >= CLEANUP_FREQUENCY) {
+                runCounter = 0;
+                int deleted = storageSupplier.get().deleteExpiredBackendJoinProbes().join();
+                if (deleted > 0) {
+                    debug("Backend join probe cleanup responder=%s deleted=%s", responderId, deleted);
+                }
+            }
+        } catch (Exception exception) {
+            logger.error("Errore durante la risposta ai backend join probe.", exception);
+        }
+    }
+
+    private void debug(String template, Object... args) {
+        logger.debug(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, template, args);
+    }
+}

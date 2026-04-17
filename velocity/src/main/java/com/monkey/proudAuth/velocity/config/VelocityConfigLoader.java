@@ -51,7 +51,10 @@ public final class VelocityConfigLoader {
                         ProudAuthSettings.BridgeMode.from(string(root, "bridge.mode", "FALLBACK")),
                         ProudAuthSettings.BridgeTransport.from(string(root, "bridge.transport", "MYSQL")),
                         string(root, "bridge.shared-secret", "change-me"),
-                        Math.max(1, integer(root, "bridge.assertion-ttl-seconds", 10))
+                        Math.max(1, integer(root, "bridge.assertion-ttl-seconds", 10)),
+                        bool(root, "bridge.backend-check.enabled", true),
+                        Math.max(250, integer(root, "bridge.backend-check.timeout-ms", 2500)),
+                        Math.max(25, integer(root, "bridge.backend-check.poll-interval-ms", 100))
                 ),
                 string(root, "language", "it"),
                 new ProudAuthSettings.Debugger(

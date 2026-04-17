@@ -266,6 +266,104 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Void> createBackendJoinProbe(
+            String probeId,
+            String username,
+            String ipAddress,
+            Instant issuedAt,
+            Instant expiresAt
+    ) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_backend_join_probes
+                    (probe_id, username, ip, issued_at, expires_at, acknowledged_at, responder_id)
+                    VALUES (?, ?, ?, ?, ?, NULL, NULL)
+                    ON DUPLICATE KEY UPDATE
+                        username = VALUES(username),
+                        ip = VALUES(ip),
+                        issued_at = VALUES(issued_at),
+                        expires_at = VALUES(expires_at),
+                        acknowledged_at = NULL,
+                        responder_id = NULL
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, probeId);
+                statement.setString(2, username);
+                statement.setString(3, ipAddress);
+                statement.setTimestamp(4, Timestamp.from(issuedAt));
+                statement.setTimestamp(5, Timestamp.from(expiresAt));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> isBackendJoinProbeAcknowledged(String probeId) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT acknowledged_at IS NOT NULL AS acknowledged
+                    FROM pa_backend_join_probes
+                    WHERE probe_id = ? AND expires_at > CURRENT_TIMESTAMP
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, probeId);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return false;
+                    }
+                    return resultSet.getBoolean("acknowledged");
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, int maxBatchSize) {
+        return supplyAsync(() -> {
+            int boundedBatchSize = Math.max(1, maxBatchSize);
+            String sql = """
+                    UPDATE pa_backend_join_probes
+                    SET acknowledged_at = CURRENT_TIMESTAMP,
+                        responder_id = ?
+                    WHERE acknowledged_at IS NULL
+                      AND expires_at > CURRENT_TIMESTAMP
+                    ORDER BY issued_at ASC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, responderId);
+                statement.setInt(2, boundedBatchSize);
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> deleteBackendJoinProbe(String probeId) {
+        return runAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_backend_join_probes WHERE probe_id = ?")) {
+                statement.setString(1, probeId);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> deleteExpiredBackendJoinProbes() {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP")) {
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> saveProxyAssertion(ProxyBridgeAssertion assertion) {
         return runAsync(() -> {
             String sql = """
@@ -494,9 +592,23 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_proxy_assertion_expires (expires_at)
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_backend_join_probes (
+                        probe_id VARCHAR(64) NOT NULL PRIMARY KEY,
+                        username VARCHAR(16) NOT NULL,
+                        ip VARCHAR(45) NOT NULL,
+                        issued_at DATETIME NOT NULL,
+                        expires_at DATETIME NOT NULL,
+                        acknowledged_at DATETIME,
+                        responder_id VARCHAR(64),
+                        INDEX idx_backend_probe_expires (expires_at),
+                        INDEX idx_backend_probe_pending (acknowledged_at, expires_at)
+                    )
+                    """);
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
+            statement.executeUpdate("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP");
         } catch (SQLException exception) {
             throw new IllegalStateException("Impossibile inizializzare lo schema MySQL.", exception);
         }

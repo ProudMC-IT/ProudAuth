@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
@@ -12,9 +13,6 @@ import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 import java.net.InetSocketAddress;
 import java.util.function.Supplier;
 
-/**
- * Re-publishes bridge assertions whenever a player is moved between backend servers.
- */
 public final class VelocityServerTransitionListener {
 
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
@@ -34,7 +32,8 @@ public final class VelocityServerTransitionListener {
         this.logger = logger;
     }
 
-    @Subscribe
+    @SuppressWarnings("deprecation")
+    @Subscribe(order = PostOrder.FIRST)
     public void onServerPreConnect(ServerPreConnectEvent event) {
         if (event.getPreviousServer() == null) {
             return;

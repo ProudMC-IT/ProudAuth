@@ -20,6 +20,7 @@ premium-auto-login: "<green>Premium account verified. Automatic login completed.
 kick-auth-timeout: "<red>Authentication timeout expired. Authenticate faster on your next login."
 kick-ip-banned: "<red>Your IP has been temporarily blocked because of too many failed attempts."
 kick-bridge-required: "<red>Access denied: the trusted proxy assertion is invalid or expired."
+kick-backend-unavailable: "<red>Connection temporarily blocked: backend is not ready yet. Please retry in a few seconds."
 move-blocked: "<red>You must authenticate before moving!"
 chat-blocked: "<red>You must authenticate before using the chat!"
 interact-blocked: "<red>You must authenticate before interacting!"

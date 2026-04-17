@@ -7,6 +7,7 @@ import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
+import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
 import com.monkey.proudAuth.velocity.commands.ProudAuthVelocityCommand;
 import com.monkey.proudAuth.velocity.config.VelocityConfigLoader;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
@@ -76,7 +77,20 @@ public final class ProudAuthVelocityPlatform {
                     settings.bridge().mode(),
                     settings.premium().rewriteGameProfile());
 
-            proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(() -> storage, () -> lang, () -> settings.debugger(), platformLogger));
+            VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
+                    () -> storage,
+                    () -> settings.bridge(),
+                    () -> settings.debugger(),
+                    platformLogger
+            );
+
+            proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
+                    () -> storage,
+                    () -> lang,
+                    () -> settings.debugger(),
+                    backendJoinProbeService,
+                    platformLogger
+            ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
                     () -> bridgeService,

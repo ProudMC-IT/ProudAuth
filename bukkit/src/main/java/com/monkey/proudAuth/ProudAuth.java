@@ -5,8 +5,10 @@ import com.monkey.proudAuth.auth.BukkitPreLoginService;
 import com.monkey.proudAuth.bootstrap.PlatformType;
 import com.monkey.proudAuth.bootstrap.ProudAuthBootstrap;
 import com.monkey.proudAuth.bootstrap.ProudAuthRuntime;
+import com.monkey.proudAuth.bridge.BackendJoinProbeResponder;
 import com.monkey.proudAuth.commands.*;
 import com.monkey.proudAuth.commands.admin.ProudAuthAdminCommand;
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.config.LangConfig;
@@ -31,6 +33,7 @@ public final class ProudAuth extends JavaPlugin {
     private PlayerProtection playerProtection;
     private PlayerPreLoginListener playerPreLoginListener;
     private BukkitTask cleanupTask;
+    private BukkitTask backendJoinProbeTask;
     private ProudAuthConsoleLogger logger;
 
     @Override
@@ -67,6 +70,7 @@ public final class ProudAuth extends JavaPlugin {
             registerListeners();
             registerCommands();
             startCleanupTask();
+            startBackendJoinProbeTask();
             logger.success("Bukkit backend enabled.");
         } catch (Exception exception) {
             if (logger != null) {
@@ -82,6 +86,9 @@ public final class ProudAuth extends JavaPlugin {
     public void onDisable() {
         if (cleanupTask != null) {
             cleanupTask.cancel();
+        }
+        if (backendJoinProbeTask != null) {
+            backendJoinProbeTask.cancel();
         }
         if (runtime != null) {
             bootstrap.close(runtime);
@@ -100,6 +107,7 @@ public final class ProudAuth extends JavaPlugin {
         registerListeners();
         registerCommands();
         startCleanupTask();
+        startBackendJoinProbeTask();
         logger.info("Reload completed. Language: "
                 + langConfig.activeLanguageDescription()
                 + ". Debugger: "
@@ -118,9 +126,38 @@ public final class ProudAuth extends JavaPlugin {
         long intervalTicks = 20L * 60L * 30L;
         cleanupTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
                 this,
-                () -> runtime.sessionManager().cleanupExpired().exceptionally(exception -> 0),
+                () -> {
+                    runtime.sessionManager().cleanupExpired().exceptionally(exception -> 0).join();
+                    runtime.storage().deleteExpiredProxyAssertions().exceptionally(exception -> 0).join();
+                    runtime.storage().deleteExpiredBackendJoinProbes().exceptionally(exception -> 0).join();
+                },
                 intervalTicks,
                 intervalTicks
+        );
+    }
+
+    private void startBackendJoinProbeTask() {
+        if (backendJoinProbeTask != null) {
+            backendJoinProbeTask.cancel();
+        }
+
+        if (pluginConfig.settings().proxy().mode() != ProudAuthSettings.ProxyMode.VELOCITY
+                || !pluginConfig.settings().bridge().enabled()) {
+            return;
+        }
+
+        BackendJoinProbeResponder responder = new BackendJoinProbeResponder(
+                () -> runtime.storage(),
+                () -> pluginConfig.settings().debugger(),
+                logger,
+                getServer().getName()
+        );
+
+        backendJoinProbeTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
+                this,
+                responder::poll,
+                1L,
+                2L
         );
     }
 

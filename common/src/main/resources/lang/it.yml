@@ -20,6 +20,7 @@ premium-auto-login: "<green>Account premium verificato. Accesso automatico compl
 kick-auth-timeout: "<red>Tempo scaduto. Autenticati piu velocemente al prossimo accesso."
 kick-ip-banned: "<red>Il tuo IP e stato temporaneamente bloccato per troppi tentativi falliti."
 kick-bridge-required: "<red>Accesso rifiutato: il controllo trusted dal proxy non e valido o e scaduto."
+kick-backend-unavailable: "<red>Connessione temporaneamente bloccata: backend non ancora pronto. Riprova tra pochi secondi."
 move-blocked: "<red>Devi autenticarti prima di muoverti!"
 chat-blocked: "<red>Devi autenticarti prima di usare la chat!"
 interact-blocked: "<red>Devi autenticarti prima di interagire!"

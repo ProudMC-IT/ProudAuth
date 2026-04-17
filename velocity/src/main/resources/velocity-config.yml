@@ -36,3 +36,8 @@ bridge:
   transport: MYSQL
   shared-secret: "change-me"
   assertion-ttl-seconds: 10
+  backend-check:
+    # When true, proxy waits for a backend ACK before allowing player login.
+    enabled: true
+    timeout-ms: 2500
+    poll-interval-ms: 100

@@ -7,6 +7,7 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.util.GameProfile;
@@ -40,7 +41,8 @@ public final class VelocityGameProfileListener {
         this.logger = logger;
     }
 
-    @Subscribe
+    @SuppressWarnings("deprecation")
+    @Subscribe(order = PostOrder.FIRST)
     public void onGameProfileRequest(GameProfileRequestEvent event) {
         GameProfile currentProfile = event.getGameProfile();
         GameProfile resolvedProfile = currentProfile;

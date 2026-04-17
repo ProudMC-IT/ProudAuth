@@ -8,10 +8,6 @@ import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * Keeps the last resolved identity for players connected to the proxy so the bridge can be
- * re-published on backend server switches without forcing another profile rewrite.
- */
 public final class VelocityResolvedPlayerStore {
 
     private final Map<String, ResolvedPlayer> resolvedPlayers = new ConcurrentHashMap<>();
