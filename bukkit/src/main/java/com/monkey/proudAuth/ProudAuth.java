@@ -112,10 +112,10 @@ public final class ProudAuth extends JavaPlugin {
                 + langConfig.activeLanguageDescription()
                 + ". Debugger: "
                 + pluginConfig.settings().debugger().summary());
-        logger.debug(pluginConfig.settings().debugger(), DebugChannel.COMMAND_FLOW,
-                "Backend reload applied with proxyMode=%s bridge=%s",
-                pluginConfig.settings().proxy().mode(),
-                pluginConfig.settings().bridge().enabled());
+        logger.debugEvent(pluginConfig.settings().debugger(), DebugChannel.COMMAND_FLOW,
+                "backend_reload_applied",
+                "proxy_mode", pluginConfig.settings().proxy().mode(),
+                "bridge_enabled", pluginConfig.settings().bridge().enabled());
     }
 
     private void startCleanupTask() {
@@ -194,18 +194,29 @@ public final class ProudAuth extends JavaPlugin {
         if (pluginConfig.settings().debugger().isEnabled(DebugChannel.TELEPORT_AUDIT)) {
             getServer().getPluginManager().registerEvents(new PlayerTeleportDebugListener(pluginConfig, playerProtection, logger), this);
         }
-        getServer().getPluginManager().registerEvents(new PlayerChatListener(this, playerProtection, langConfig), this);
+        getServer().getPluginManager().registerEvents(new PlayerChatListener(this, playerProtection, runtime.authService(), langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandPreprocessListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerInteractListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerDeathListener(playerProtection), this);
     }
 
     private void registerCommands() {
-        Objects.requireNonNull(getCommand("login")).setExecutor(new LoginCommand(this, langConfig, runtime.authService(), playerProtection));
-        Objects.requireNonNull(getCommand("register")).setExecutor(new RegisterCommand(this, langConfig, runtime.authService()));
-        Objects.requireNonNull(getCommand("changepassword")).setExecutor(new ChangePasswordCommand(this, langConfig, runtime.authService()));
-        Objects.requireNonNull(getCommand("logout")).setExecutor(new LogoutCommand(this, langConfig, runtime.authService(), playerProtection));
-        Objects.requireNonNull(getCommand("2fa")).setExecutor(new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection));
+        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection);
+        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService());
+        ChangePasswordCommand changePasswordCommand = new ChangePasswordCommand(this, langConfig, runtime.authService());
+        LogoutCommand logoutCommand = new LogoutCommand(this, langConfig, runtime.authService(), playerProtection);
+        TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection);
+
+        Objects.requireNonNull(getCommand("login")).setExecutor(loginCommand);
+        Objects.requireNonNull(getCommand("login")).setTabCompleter(loginCommand);
+        Objects.requireNonNull(getCommand("register")).setExecutor(registerCommand);
+        Objects.requireNonNull(getCommand("register")).setTabCompleter(registerCommand);
+        Objects.requireNonNull(getCommand("changepassword")).setExecutor(changePasswordCommand);
+        Objects.requireNonNull(getCommand("changepassword")).setTabCompleter(changePasswordCommand);
+        Objects.requireNonNull(getCommand("logout")).setExecutor(logoutCommand);
+        Objects.requireNonNull(getCommand("logout")).setTabCompleter(logoutCommand);
+        Objects.requireNonNull(getCommand("2fa")).setExecutor(twoFactorCommand);
+        Objects.requireNonNull(getCommand("2fa")).setTabCompleter(twoFactorCommand);
 
         ProudAuthAdminCommand adminCommand = new ProudAuthAdminCommand(
                 this,

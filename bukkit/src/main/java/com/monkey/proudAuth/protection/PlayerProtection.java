@@ -39,10 +39,10 @@ public final class PlayerProtection {
 
     public void applyProtection(Player player) {
         protectedPlayers.add(player.getUniqueId());
-        debug("Protection apply player=%s uuid=%s authSpawnEnabled=%s",
-                player.getName(),
-                player.getUniqueId(),
-                pluginConfig.settings().protection().authSpawn().enabled());
+        debugEvent("protection_apply",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "auth_spawn_enabled", pluginConfig.settings().protection().authSpawn().enabled());
         pluginConfig.authSpawn(plugin.getServer()).ifPresent(player::teleportAsync);
         applyInvisibility(player);
         scheduleAuthTimeout(player);
@@ -54,11 +54,11 @@ public final class PlayerProtection {
         if (timeoutTask != null) {
             timeoutTask.cancel();
         }
-        debug("Protection remove player=%s uuid=%s wasProtected=%s timeoutTask=%s",
-                player.getName(),
-                player.getUniqueId(),
-                wasProtected,
-                timeoutTask != null);
+        debugEvent("protection_remove",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "was_protected", wasProtected,
+                "timeout_task", timeoutTask != null);
         if (wasProtected) {
             removeInvisibility(player);
         }
@@ -88,8 +88,8 @@ public final class PlayerProtection {
         removeProtection(player);
     }
 
-    private void debug(String template, Object... args) {
-        logger.debug(pluginConfig.settings().debugger(), DebugChannel.PROTECTION_FLOW, template, args);
+    private void debugEvent(String eventName, Object... keyValues) {
+        logger.debugEvent(pluginConfig.settings().debugger(), DebugChannel.PROTECTION_FLOW, eventName, keyValues);
     }
 
     private void scheduleAuthTimeout(Player player) {

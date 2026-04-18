@@ -43,21 +43,21 @@ public final class PlayerJoinListener implements Listener {
                             player.getUniqueId().equals(PremiumVerifier.offlineUuid(player.getName())) ? AccountType.CRACKED : AccountType.PREMIUM,
                             ipAddress(player)
                     ));
-            debug(DebugChannel.PLAYER_RESOLUTION, "Join player=%s uuid=%s preloginCacheHit=%s resolvedName=%s accountType=%s ip=%s",
-                    player.getName(),
-                    player.getUniqueId(),
-                    consumed.isPresent(),
-                    resolvedLogin.username(),
-                    resolvedLogin.accountType(),
-                    resolvedLogin.ipAddress());
+            debugEvent(DebugChannel.PLAYER_RESOLUTION, "join_listener_resolved",
+                    "player", player.getName(),
+                    "uuid", player.getUniqueId(),
+                    "prelogin_cache_hit", consumed.isPresent(),
+                    "resolved_name", resolvedLogin.username(),
+                    "account_type", resolvedLogin.accountType(),
+                    "ip", resolvedLogin.ipAddress());
             joinFlowService.handleJoin(player, resolvedLogin);
         } catch (Exception exception) {
             logger.error("Join hard failure.", exception);
         }
     }
 
-    private void debug(DebugChannel channel, String template, Object... args) {
-        logger.debug(pluginConfig.settings().debugger(), channel, template, args);
+    private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
+        logger.debugEvent(pluginConfig.settings().debugger(), channel, eventName, keyValues);
     }
 
     private String ipAddress(Player player) {

@@ -47,12 +47,12 @@ public final class BukkitJoinFlowService {
 
         boolean rawBypassPermission = player.hasPermission("proudauth.bypass.auth");
         boolean bypassAuth = rawBypassPermission && resolvedLogin.accountType() != AccountType.PREMIUM;
-        debug(DebugChannel.PLAYER_RESOLUTION, "Join bypass check player=%s uuid=%s rawBypass=%s effectiveBypass=%s accountType=%s",
-                player.getName(),
-                player.getUniqueId(),
-                rawBypassPermission,
-                bypassAuth,
-                resolvedLogin.accountType());
+        debugEvent(DebugChannel.PLAYER_RESOLUTION, "join_bypass_check",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "raw_bypass", rawBypassPermission,
+                "effective_bypass", bypassAuth,
+                "account_type", resolvedLogin.accountType());
 
         if (bypassAuth) {
             handleBypassJoin(player, resolvedLogin);
@@ -68,66 +68,101 @@ public final class BukkitJoinFlowService {
     }
 
     private void handleBypassJoin(Player player, ResolvedLogin resolvedLogin) {
-        debug(DebugChannel.SECURITY_FLOW, "Join bypass branch player=%s uuid=%s", player.getName(), player.getUniqueId());
+        debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_start",
+                "player", player.getName(),
+                "uuid", player.getUniqueId());
         authService.autoAuthenticate(player.getUniqueId(), player.getName(), resolvedLogin.accountType(), AuthState.AUTHENTICATED, ipAddress(player))
                 .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
                     if (exception != null) {
-                        debug(DebugChannel.SECURITY_FLOW, "Join bypass exception player=%s uuid=%s error=%s",
-                                player.getName(),
-                                player.getUniqueId(),
-                                exception.getMessage());
+                        debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_error",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId(),
+                                "error", exception.getMessage());
                         langConfig.send(player, "error-generic");
                         return;
                     }
                     playerProtection.removeProtection(player);
-                    debug(DebugChannel.SECURITY_FLOW, "Join bypass completed player=%s uuid=%s", player.getName(), player.getUniqueId());
+                    debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_complete",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId());
                 }));
     }
 
     private void handlePremiumAutoLogin(Player player, ResolvedLogin resolvedLogin) {
-        debug(DebugChannel.PREMIUM_FLOW, "Join premium fast-path player=%s uuid=%s", player.getName(), player.getUniqueId());
-        authService.autoAuthenticate(player.getUniqueId(), player.getName(), resolvedLogin.accountType(), AuthState.PREMIUM_AUTO, resolvedLogin.ipAddress())
+        debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_start",
+                "player", player.getName(),
+                "uuid", player.getUniqueId());
+        authService.authenticateWithTotpGate(
+                        player.getUniqueId(),
+                        player.getName(),
+                        resolvedLogin.accountType(),
+                        AuthState.PREMIUM_AUTO,
+                        resolvedLogin.ipAddress()
+                )
                 .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
                     if (exception != null) {
-                        debug(DebugChannel.PREMIUM_FLOW, "Join premium fast-path exception player=%s uuid=%s error=%s",
-                                player.getName(),
-                                player.getUniqueId(),
-                                exception.getMessage());
+                        debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_error",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId(),
+                                "error", exception.getMessage());
                         langConfig.send(player, "error-generic");
                         return;
                     }
+
+                    if (ignored.status() == com.monkey.proudAuth.common.auth.AuthService.TotpChallengeStatus.TOTP_REQUIRED) {
+                        playerProtection.applyProtection(player);
+                        debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_totp_required",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId(),
+                                "suspicious", ignored.suspiciousAccess());
+                        langConfig.send(player, ignored.suspiciousAccess() ? "totp-required-suspicious" : "totp-required");
+                        return;
+                    }
+
                     playerProtection.removeProtection(player);
-                    debug(DebugChannel.PREMIUM_FLOW, "Join premium fast-path completed player=%s uuid=%s", player.getName(), player.getUniqueId());
+                    debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId());
                     langConfig.send(player, "premium-auto-login");
                 }));
     }
 
     private void handleProtectedJoin(Player player, ResolvedLogin resolvedLogin) {
         playerProtection.applyProtection(player);
-        debug(DebugChannel.PROTECTION_FLOW, "Join protection applied player=%s uuid=%s", player.getName(), player.getUniqueId());
+        debugEvent(DebugChannel.PROTECTION_FLOW, "join_protection_applied",
+                "player", player.getName(),
+                "uuid", player.getUniqueId());
 
         sessionManager.findValid(player.getUniqueId(), resolvedLogin.ipAddress())
                 .thenCompose(optionalSession -> {
-                    debug(DebugChannel.SESSION_FLOW, "Join session lookup player=%s uuid=%s sessionPresent=%s",
-                            player.getName(),
-                            player.getUniqueId(),
-                            optionalSession.isPresent());
+                    debugEvent(DebugChannel.SESSION_FLOW, "join_session_lookup",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId(),
+                            "session_present", optionalSession.isPresent());
                     if (optionalSession.isPresent()) {
-                        return authService.autoAuthenticate(player.getUniqueId(), player.getName(), resolvedLogin.accountType(), AuthState.AUTHENTICATED, resolvedLogin.ipAddress())
-                                .thenApply(ignored -> JoinOutcome.SESSION_RESTORED);
+                        return authService.authenticateWithTotpGate(
+                                        player.getUniqueId(),
+                                        player.getName(),
+                                        resolvedLogin.accountType(),
+                                        AuthState.AUTHENTICATED,
+                                        resolvedLogin.ipAddress()
+                                )
+                                .thenApply(result -> result.status() == com.monkey.proudAuth.common.auth.AuthService.TotpChallengeStatus.TOTP_REQUIRED
+                                        ? JoinOutcome.TOTP_REQUIRED
+                                        : JoinOutcome.SESSION_RESTORED);
                     }
 
-                    debug(DebugChannel.SESSION_FLOW, "Join requires manual auth player=%s uuid=%s accountType=%s premiumAutoLogin=%s",
-                            player.getName(),
-                            player.getUniqueId(),
-                            resolvedLogin.accountType(),
-                            pluginConfig.settings().premium().autoLogin());
+                    debugEvent(DebugChannel.SESSION_FLOW, "join_manual_auth_required",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId(),
+                            "account_type", resolvedLogin.accountType(),
+                            "premium_auto_login", pluginConfig.settings().premium().autoLogin());
                     return java.util.concurrent.CompletableFuture.completedFuture(JoinOutcome.REQUIRES_AUTH);
                 })
                 .whenComplete((outcome, exception) -> Bukkit.getScheduler().runTask(plugin, () -> completeProtectedJoin(player, outcome, exception)));
@@ -139,21 +174,27 @@ public final class BukkitJoinFlowService {
         }
 
         if (exception != null) {
-            debug(DebugChannel.SESSION_FLOW, "Join completion exception player=%s uuid=%s error=%s",
-                    player.getName(),
-                    player.getUniqueId(),
-                    exception.getMessage());
+            debugEvent(DebugChannel.SESSION_FLOW, "join_completion_error",
+                    "player", player.getName(),
+                    "uuid", player.getUniqueId(),
+                    "error", exception.getMessage());
             langConfig.send(player, "error-generic");
             return;
         }
 
-        debug(DebugChannel.SESSION_FLOW, "Join outcome player=%s uuid=%s outcome=%s", player.getName(), player.getUniqueId(), outcome);
+        debugEvent(DebugChannel.SESSION_FLOW, "join_outcome",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "outcome", outcome);
         switch (outcome) {
             case SESSION_RESTORED -> {
                 playerProtection.removeProtection(player);
-                debug(DebugChannel.PROTECTION_FLOW, "Join protection removed by session restore player=%s uuid=%s", player.getName(), player.getUniqueId());
+                debugEvent(DebugChannel.PROTECTION_FLOW, "join_protection_removed",
+                        "player", player.getName(),
+                        "uuid", player.getUniqueId());
                 langConfig.send(player, "session-restored", Placeholder.unparsed("player", player.getName()));
             }
+            case TOTP_REQUIRED -> langConfig.send(player, "totp-required");
             case REQUIRES_AUTH -> langConfig.send(player, "not-authenticated");
         }
     }
@@ -162,12 +203,13 @@ public final class BukkitJoinFlowService {
         return player.getAddress() == null ? "unknown" : player.getAddress().getAddress().getHostAddress();
     }
 
-    private void debug(DebugChannel channel, String template, Object... args) {
-        logger.debug(pluginConfig.settings().debugger(), channel, template, args);
+    private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
+        logger.debugEvent(pluginConfig.settings().debugger(), channel, eventName, keyValues);
     }
 
     private enum JoinOutcome {
         SESSION_RESTORED,
+        TOTP_REQUIRED,
         REQUIRES_AUTH
     }
 }

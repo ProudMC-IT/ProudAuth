@@ -37,7 +37,9 @@ public final class BackendJoinProbeResponder {
                     .acknowledgePendingBackendJoinProbes(responderId, DEFAULT_BATCH_SIZE)
                     .join();
             if (acknowledged > 0) {
-                debug("Backend join probe ack responder=%s acknowledged=%s", responderId, acknowledged);
+                debugEvent("backend_probe_ack",
+                        "responder", responderId,
+                        "acknowledged", acknowledged);
             }
 
             runCounter++;
@@ -45,7 +47,9 @@ public final class BackendJoinProbeResponder {
                 runCounter = 0;
                 int deleted = storageSupplier.get().deleteExpiredBackendJoinProbes().join();
                 if (deleted > 0) {
-                    debug("Backend join probe cleanup responder=%s deleted=%s", responderId, deleted);
+                    debugEvent("backend_probe_cleanup",
+                            "responder", responderId,
+                            "deleted", deleted);
                 }
             }
         } catch (Exception exception) {
@@ -53,7 +57,7 @@ public final class BackendJoinProbeResponder {
         }
     }
 
-    private void debug(String template, Object... args) {
-        logger.debug(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, template, args);
+    private void debugEvent(String eventName, Object... keyValues) {
+        logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
     }
 }

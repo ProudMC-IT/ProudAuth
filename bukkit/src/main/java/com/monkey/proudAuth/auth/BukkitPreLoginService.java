@@ -43,18 +43,18 @@ public final class BukkitPreLoginService {
 
     public Optional<ResolvedLogin> resolve(AsyncPlayerPreLoginEvent event) {
         String ip = event.getAddress() == null ? "unknown" : event.getAddress().getHostAddress();
-        debug(DebugChannel.PLAYER_RESOLUTION, "PreLogin start player=%s ip=%s uuid=%s proxyMode=%s",
-                event.getName(),
-                ip,
-                event.getUniqueId(),
-                pluginConfig.settings().proxy().mode());
+        debugEvent(DebugChannel.PLAYER_RESOLUTION, "prelogin_start",
+                "player", event.getName(),
+                "ip", ip,
+                "uuid", event.getUniqueId(),
+                "proxy_mode", pluginConfig.settings().proxy().mode());
 
         BruteForceGuard.LockStatus lockStatus = bruteForceGuard.check(ip).join();
-        debug(DebugChannel.SECURITY_FLOW, "PreLogin lock check player=%s ip=%s locked=%s remaining=%s",
-                event.getName(),
-                ip,
-                lockStatus.locked(),
-                lockStatus.remainingSeconds());
+        debugEvent(DebugChannel.SECURITY_FLOW, "ip_lock_check",
+                "player", event.getName(),
+                "ip", ip,
+                "locked", lockStatus.locked(),
+                "remaining_seconds", lockStatus.remainingSeconds());
         if (lockStatus.locked()) {
             event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED, langConfig.message("kick-ip-banned"));
             return Optional.empty();
@@ -67,21 +67,21 @@ public final class BukkitPreLoginService {
             return Optional.empty();
         }
 
-        debug(DebugChannel.PLAYER_RESOLUTION, "PreLogin resolved player=%s resolvedName=%s accountType=%s storedKey=%s ip=%s",
-                event.getName(),
-                resolvedLogin.username(),
-                resolvedLogin.accountType(),
-                resolvedLogin.uuid(),
-                resolvedLogin.ipAddress());
+        debugEvent(DebugChannel.PLAYER_RESOLUTION, "prelogin_resolved",
+                "player", event.getName(),
+                "resolved_name", resolvedLogin.username(),
+                "account_type", resolvedLogin.accountType(),
+                "stored_key", resolvedLogin.uuid(),
+                "ip", resolvedLogin.ipAddress());
         return Optional.of(resolvedLogin);
     }
 
     private Optional<ResolvedLogin> resolveForVelocity(AsyncPlayerPreLoginEvent event, String ip) {
         ProxyBridgeService.VerificationResult bridgeResult = bridgeService.consumeAndVerify(event.getName(), event.getUniqueId(), ip).join();
-        debug(DebugChannel.BRIDGE_FLOW, "PreLogin bridge result player=%s status=%s accepted=%s",
-                event.getName(),
-                bridgeResult.status(),
-                bridgeResult.accepted());
+        debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_verification",
+                "player", event.getName(),
+                "status", bridgeResult.status(),
+                "accepted", bridgeResult.accepted());
 
         if (bridgeResult.accepted()) {
             return Optional.of(applyBridgeAssertion(event, bridgeResult.assertion().orElseThrow()));
@@ -89,7 +89,9 @@ public final class BukkitPreLoginService {
 
         if (pluginConfig.settings().bridge().enabled()
                 && pluginConfig.settings().bridge().mode() == ProudAuthSettings.BridgeMode.STRICT) {
-            debug(DebugChannel.BRIDGE_FLOW, "PreLogin denied by STRICT bridge player=%s uuid=%s", event.getName(), event.getUniqueId());
+            debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_strict_denied",
+                    "player", event.getName(),
+                    "uuid", event.getUniqueId());
             event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-bridge-required"));
             return Optional.empty();
         }
@@ -99,11 +101,11 @@ public final class BukkitPreLoginService {
 
     private ResolvedLogin resolveStandalone(AsyncPlayerPreLoginEvent event, String ip) {
         PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(event.getName()).join();
-        debug(DebugChannel.PREMIUM_FLOW, "PreLogin standalone premium check player=%s premium=%s resolvedUuid=%s resolvedName=%s",
-                event.getName(),
-                premiumCheck.premium(),
-                premiumCheck.resolvedUuid(),
-                premiumCheck.resolvedName());
+        debugEvent(DebugChannel.PREMIUM_FLOW, "premium_check_standalone",
+                "player", event.getName(),
+                "premium", premiumCheck.premium(),
+                "resolved_uuid", premiumCheck.resolvedUuid(),
+                "resolved_name", premiumCheck.resolvedName());
 
         UUID resolvedUuid = premiumCheck.premium()
                 ? premiumCheck.resolvedUuid()
@@ -116,39 +118,48 @@ public final class BukkitPreLoginService {
     }
 
     private ResolvedLogin applyBridgeAssertion(AsyncPlayerPreLoginEvent event, ProxyBridgeAssertion assertion) {
-        debug(DebugChannel.BRIDGE_FLOW, "PreLogin applying bridge assertion player=%s assertionUuid=%s assertionName=%s accountType=%s ip=%s",
-                event.getName(),
-                assertion.uuid(),
-                assertion.resolvedName(),
-                assertion.accountType(),
-                assertion.ipAddress());
-        debug(DebugChannel.PROFILE_FLOW, "PreLogin bridge assertion accepted without backend profile mutation player=%s currentUuid=%s assertedUuid=%s",
-                event.getName(),
-                event.getUniqueId(),
-                assertion.uuid());
+        debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_assertion_apply",
+                "player", event.getName(),
+                "assertion_uuid", assertion.uuid(),
+                "assertion_name", assertion.resolvedName(),
+                "account_type", assertion.accountType(),
+                "ip", assertion.ipAddress());
+        debugEvent(DebugChannel.PROFILE_FLOW, "bridge_assertion_profile_accept",
+                "player", event.getName(),
+                "current_uuid", event.getUniqueId(),
+                "asserted_uuid", assertion.uuid());
         return new ResolvedLogin(assertion.uuid(), assertion.resolvedName(), assertion.accountType(), assertion.ipAddress());
     }
 
     private ResolvedLogin resolveVelocityFallback(AsyncPlayerPreLoginEvent event, String ipAddress) {
         UUID currentUuid = event.getUniqueId();
         UUID offlineUuid = PremiumVerifier.offlineUuid(event.getName());
-        debug(DebugChannel.PROFILE_FLOW, "PreLogin velocity fallback player=%s currentUuid=%s offlineUuid=%s",
-                event.getName(),
-                currentUuid,
-                offlineUuid);
+        debugEvent(DebugChannel.PROFILE_FLOW, "velocity_fallback_start",
+                "player", event.getName(),
+                "current_uuid", currentUuid,
+                "offline_uuid", offlineUuid);
 
         if (!currentUuid.equals(offlineUuid)) {
-            debug(DebugChannel.PROFILE_FLOW, "PreLogin velocity fallback trusted forwarded premium player=%s uuid=%s", event.getName(), currentUuid);
+            debugEvent(DebugChannel.PROFILE_FLOW, "velocity_fallback_forwarded_premium",
+                    "player", event.getName(),
+                    "uuid", currentUuid);
             return new ResolvedLogin(currentUuid, event.getName(), AccountType.PREMIUM, ipAddress);
         }
 
         PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(event.getName()).join();
-        debug(DebugChannel.PREMIUM_FLOW, "PreLogin velocity premium check player=%s premium=%s resolvedUuid=%s resolvedName=%s",
-                event.getName(),
-                premiumCheck.premium(),
-                premiumCheck.resolvedUuid(),
-                premiumCheck.resolvedName());
+        debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_check",
+                "player", event.getName(),
+                "premium", premiumCheck.premium(),
+                "resolved_uuid", premiumCheck.resolvedUuid(),
+                "resolved_name", premiumCheck.resolvedName());
         if (premiumCheck.premium()) {
+            if (pluginConfig.settings().premium().requireUuidProof()) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_downgraded",
+                        "player", event.getName(),
+                        "reason", "UUID_PROOF_REQUIRED",
+                        "current_uuid", currentUuid);
+                return new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress);
+            }
             applyProfile(event, premiumCheck.resolvedUuid(), premiumCheck.resolvedName());
             return new ResolvedLogin(
                     premiumCheck.resolvedUuid(),
@@ -165,7 +176,7 @@ public final class BukkitPreLoginService {
         event.setPlayerProfile(Bukkit.createProfileExact(uuid, name));
     }
 
-    private void debug(DebugChannel channel, String template, Object... args) {
-        logger.debug(pluginConfig.settings().debugger(), channel, template, args);
+    private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
+        logger.debugEvent(pluginConfig.settings().debugger(), channel, eventName, keyValues);
     }
 }
