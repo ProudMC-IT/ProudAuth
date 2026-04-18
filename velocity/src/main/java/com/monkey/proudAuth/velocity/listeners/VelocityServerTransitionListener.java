@@ -47,13 +47,13 @@ public final class VelocityServerTransitionListener {
                 .getName();
 
         var resolvedPlayer = resolvedPlayerStore.find(event.getPlayer().getUsername());
-        debug("Velocity server switch bridge player=%s previous=%s target=%s ip=%s cacheHit=%s bridgeOperational=%s",
-                event.getPlayer().getUsername(),
-                previousServer,
-                targetServer,
-                ipAddress,
-                resolvedPlayer.isPresent(),
-                bridgeServiceSupplier.get().isOperational());
+        debugEvent("server_switch_detected",
+                "player", event.getPlayer().getUsername(),
+                "previous", previousServer,
+                "target", targetServer,
+                "ip", ipAddress,
+                "cache_hit", resolvedPlayer.isPresent(),
+                "bridge_operational", bridgeServiceSupplier.get().isOperational());
 
         if (resolvedPlayer.isEmpty()) {
             return;
@@ -69,25 +69,26 @@ public final class VelocityServerTransitionListener {
                         ipAddress
                 )
                 .exceptionally(exception -> {
-                    debug("Velocity server switch bridge error player=%s target=%s error=%s",
-                            event.getPlayer().getUsername(),
-                            targetServer,
-                            exception.getMessage());
+                    debugEvent("server_switch_publish_error",
+                            "player", event.getPlayer().getUsername(),
+                            "target", targetServer,
+                            "error", exception.getMessage());
                     return null;
                 })
                 .join();
 
-        debug("Velocity server switch bridge published player=%s target=%s resolvedUuid=%s accountType=%s",
-                event.getPlayer().getUsername(),
-                targetServer,
-                profile.resolvedUuid(),
-                profile.accountType());
+        debugEvent("server_switch_publish_done",
+                "player", event.getPlayer().getUsername(),
+                "target", targetServer,
+                "resolved_uuid", profile.resolvedUuid(),
+                "account_type", profile.accountType());
     }
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
         resolvedPlayerStore.forget(event.getPlayer().getUsername());
-        debug("Velocity server switch cache cleared player=%s", event.getPlayer().getUsername());
+        debugEvent("server_switch_cache_cleared",
+                "player", event.getPlayer().getUsername());
     }
 
     private String ipAddress(com.velocitypowered.api.proxy.Player player) {
@@ -97,7 +98,7 @@ public final class VelocityServerTransitionListener {
         return "unknown";
     }
 
-    private void debug(String template, Object... args) {
-        logger.debug(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, template, args);
+    private void debugEvent(String eventName, Object... keyValues) {
+        logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
     }
 }

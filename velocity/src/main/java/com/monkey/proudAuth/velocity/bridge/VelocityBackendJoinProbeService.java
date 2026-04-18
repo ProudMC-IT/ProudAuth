@@ -51,24 +51,28 @@ public final class VelocityBackendJoinProbeService {
             storageSupplier.get()
                     .createBackendJoinProbe(probeId, canonicalUsername, ipAddress, issuedAt, expiresAt)
                     .join();
-            debug("Velocity backend probe created player=%s ip=%s probeId=%s timeoutMs=%s pollMs=%s",
-                    username,
-                    ipAddress,
-                    probeId,
-                    timeoutMs,
-                    pollIntervalMs);
+            debugEvent("backend_probe_created",
+                    "player", username,
+                    "ip", ipAddress,
+                    "probe_id", probeId,
+                    "timeout_ms", timeoutMs,
+                    "poll_ms", pollIntervalMs);
 
             long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs);
             while (true) {
                 boolean acknowledged = storageSupplier.get().isBackendJoinProbeAcknowledged(probeId).join();
                 if (acknowledged) {
-                    debug("Velocity backend probe acknowledged player=%s probeId=%s", username, probeId);
+                    debugEvent("backend_probe_acknowledged",
+                            "player", username,
+                            "probe_id", probeId);
                     return ProbeStatus.ACKNOWLEDGED;
                 }
 
                 long remainingNanos = deadlineNanos - System.nanoTime();
                 if (remainingNanos <= 0L) {
-                    debug("Velocity backend probe timeout player=%s probeId=%s", username, probeId);
+                    debugEvent("backend_probe_timeout",
+                            "player", username,
+                            "probe_id", probeId);
                     return ProbeStatus.TIMEOUT;
                 }
 
@@ -78,29 +82,33 @@ public final class VelocityBackendJoinProbeService {
             }
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            debug("Velocity backend probe interrupted player=%s probeId=%s", username, probeId);
+            debugEvent("backend_probe_interrupted",
+                    "player", username,
+                    "probe_id", probeId);
             return ProbeStatus.ERROR;
         } catch (Exception exception) {
-            debug("Velocity backend probe error player=%s probeId=%s error=%s",
-                    username,
-                    probeId,
-                    exception.getMessage());
+            debugEvent("backend_probe_error",
+                    "player", username,
+                    "probe_id", probeId,
+                    "error", exception.getMessage());
             return ProbeStatus.ERROR;
         } finally {
             try {
                 storageSupplier.get().deleteBackendJoinProbe(probeId).join();
-                debug("Velocity backend probe cleaned player=%s probeId=%s", username, probeId);
+                debugEvent("backend_probe_cleaned",
+                        "player", username,
+                        "probe_id", probeId);
             } catch (Exception exception) {
-                debug("Velocity backend probe cleanup error player=%s probeId=%s error=%s",
-                        username,
-                        probeId,
-                        exception.getMessage());
+                debugEvent("backend_probe_cleanup_error",
+                        "player", username,
+                        "probe_id", probeId,
+                        "error", exception.getMessage());
             }
         }
     }
 
-    private void debug(String template, Object... args) {
-        logger.debug(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, template, args);
+    private void debugEvent(String eventName, Object... keyValues) {
+        logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
     }
 
     public enum ProbeStatus {

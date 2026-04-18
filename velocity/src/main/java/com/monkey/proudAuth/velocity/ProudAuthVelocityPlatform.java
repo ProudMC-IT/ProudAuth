@@ -15,11 +15,18 @@ import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 import com.monkey.proudAuth.velocity.listeners.VelocityGameProfileListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityPreLoginListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
+import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
+import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
+import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.scheduler.ScheduledTask;
 
 import java.nio.file.Path;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.TimeUnit;
 
 public final class ProudAuthVelocityPlatform {
 
@@ -34,6 +41,11 @@ public final class ProudAuthVelocityPlatform {
     private StorageProvider storage;
     private PremiumVerifier premiumVerifier;
     private ProxyBridgeService bridgeService;
+    private VelocityNetworkGuardService networkGuardService;
+    private VelocitySecurityInspectorService securityInspectorService;
+    private VelocityRiskCsvExporter riskCsvExporter;
+    private Instant lastAutoExportAt;
+    private ScheduledTask maintenanceTask;
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
@@ -64,18 +76,29 @@ public final class ProudAuthVelocityPlatform {
             storage.init();
             premiumVerifier = new MojangPremiumVerifier(settings.toCommonSettings());
             bridgeService = new ProxyBridgeService(storage, settings.toCommonSettings());
+            networkGuardService = new VelocityNetworkGuardService(
+                    () -> storage,
+                    () -> settings.guards(),
+                    () -> settings.debugger(),
+                    platformLogger
+            );
+            securityInspectorService = new VelocitySecurityInspectorService(() -> storage);
+            riskCsvExporter = new VelocityRiskCsvExporter(securityInspectorService, dataDirectory.resolve("reports"));
+            lastAutoExportAt = Instant.EPOCH;
             platformLogger.banner(
                     "ProudAuth v1.0.0",
                     "Platform: Velocity proxy",
                     "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
                     "Rewrite game profile: " + settings.premium().rewriteGameProfile(),
+                    "Premium auto-promote low-risk: " + settings.premium().autoPromoteVerifiedLowRisk(),
                     "Debugger: " + settings.debugger().summary()
             );
-            debug(DebugChannel.COMMAND_FLOW, "Velocity init bridgeEnabled=%s bridgeMode=%s rewriteGameProfile=%s",
-                    settings.bridge().enabled(),
-                    settings.bridge().mode(),
-                    settings.premium().rewriteGameProfile());
+            debugEvent(DebugChannel.COMMAND_FLOW, "velocity_init_config",
+                    "bridge_enabled", settings.bridge().enabled(),
+                    "bridge_mode", settings.bridge().mode(),
+                    "rewrite_game_profile", settings.premium().rewriteGameProfile(),
+                    "premium_auto_promote_low_risk", settings.premium().autoPromoteVerifiedLowRisk());
 
             VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
                     () -> storage,
@@ -89,13 +112,17 @@ public final class ProudAuthVelocityPlatform {
                     () -> lang,
                     () -> settings.debugger(),
                     backendJoinProbeService,
+                    networkGuardService,
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
                     () -> bridgeService,
                     () -> settings.premium().rewriteGameProfile(),
+                    () -> settings.premium().requireUuidProof(),
+                    () -> settings.premium(),
                     () -> settings.debugger(),
+                    networkGuardService,
                     resolvedPlayerStore,
                     platformLogger
             ));
@@ -107,16 +134,26 @@ public final class ProudAuthVelocityPlatform {
             ));
 
             CommandMeta commandMeta = proxyServer.getCommandManager()
-                    .metaBuilder("proudauth")
-                    .aliases("proudauthproxy")
+                    .metaBuilder("paproxy")
                     .build();
-            proxyServer.getCommandManager().register(commandMeta, new ProudAuthVelocityCommand(() -> lang, this::reloadPluginState));
+            proxyServer.getCommandManager().register(commandMeta, new ProudAuthVelocityCommand(
+                    () -> lang,
+                    () -> securityInspectorService,
+                    () -> riskCsvExporter,
+                    () -> storage,
+                    this::reloadPluginState
+            ));
+            scheduleMaintenance();
             platformLogger.success("Velocity proxy enabled.");
         });
     }
 
     public void shutdown() {
         withRuntimeContext(() -> {
+            if (maintenanceTask != null) {
+                maintenanceTask.cancel();
+                maintenanceTask = null;
+            }
             if (storage != null) {
                 storage.close();
             }
@@ -132,14 +169,21 @@ public final class ProudAuthVelocityPlatform {
             storage.reload(settings.toCommonSettings());
             premiumVerifier.reload(settings.toCommonSettings());
             bridgeService.reload(settings.toCommonSettings());
+            lastAutoExportAt = Instant.EPOCH;
+            if (maintenanceTask != null) {
+                maintenanceTask.cancel();
+                maintenanceTask = null;
+            }
+            scheduleMaintenance();
             platformLogger.info("Reload completed. Language: "
                     + lang.activeLanguageDescription()
                     + ". Debugger: "
                     + settings.debugger().summary());
-            debug(DebugChannel.COMMAND_FLOW, "Velocity reload bridgeEnabled=%s bridgeMode=%s rewriteGameProfile=%s",
-                    settings.bridge().enabled(),
-                    settings.bridge().mode(),
-                    settings.premium().rewriteGameProfile());
+            debugEvent(DebugChannel.COMMAND_FLOW, "velocity_reload_config",
+                    "bridge_enabled", settings.bridge().enabled(),
+                    "bridge_mode", settings.bridge().mode(),
+                    "rewrite_game_profile", settings.premium().rewriteGameProfile(),
+                    "premium_auto_promote_low_risk", settings.premium().autoPromoteVerifiedLowRisk());
         });
     }
 
@@ -153,10 +197,54 @@ public final class ProudAuthVelocityPlatform {
         }
     }
 
-    private void debug(DebugChannel channel, String template, Object... args) {
+    private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
         if (settings == null) {
             return;
         }
-        platformLogger.debug(settings.debugger(), channel, template, args);
+        platformLogger.debugEvent(settings.debugger(), channel, eventName, keyValues);
+    }
+
+    private void scheduleMaintenance() {
+        maintenanceTask = proxyServer.getScheduler()
+                .buildTask(pluginOwner, this::runMaintenance)
+                .repeat(5, TimeUnit.MINUTES)
+                .schedule();
+    }
+
+    private void runMaintenance() {
+        withRuntimeContext(() -> {
+            try {
+                storage.deleteExpiredProxyAssertions().join();
+                storage.deleteExpiredBackendJoinProbes().join();
+                if (networkGuardService != null) {
+                    networkGuardService.cleanupHistory();
+                }
+                runAutoRiskExportIfNeeded();
+            } catch (Exception exception) {
+                platformLogger.error("Errore durante la manutenzione Velocity.", exception);
+            }
+        });
+    }
+
+    private void runAutoRiskExportIfNeeded() {
+        if (riskCsvExporter == null || settings == null || !settings.reports().autoExportEnabled()) {
+            return;
+        }
+
+        Instant now = Instant.now();
+        Duration interval = Duration.ofMinutes(settings.reports().autoExportIntervalMinutes());
+        if (lastAutoExportAt != null && now.isBefore(lastAutoExportAt.plus(interval))) {
+            return;
+        }
+
+        try {
+            riskCsvExporter.export(
+                    Duration.ofHours(settings.reports().autoExportWindowHours()),
+                    settings.reports().autoExportLimit()
+            );
+            lastAutoExportAt = now;
+        } catch (Exception exception) {
+            platformLogger.error("Errore durante export CSV automatico rischio.", exception);
+        }
     }
 }
