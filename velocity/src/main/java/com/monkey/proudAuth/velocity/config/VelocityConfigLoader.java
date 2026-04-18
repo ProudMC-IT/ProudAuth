@@ -44,7 +44,12 @@ public final class VelocityConfigLoader {
                 new VelocityPluginSettings.Premium(
                         bool(root, "premium.enabled", true),
                         Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
-                        bool(root, "premium.rewrite-game-profile", false)
+                        bool(root, "premium.rewrite-game-profile", false),
+                        bool(root, "premium.require-uuid-proof", true),
+                        bool(root, "premium.auto-promote-verified-low-risk", true),
+                        Math.max(1, integer(root, "premium.auto-promote-max-usernames-per-ip-1h", 2)),
+                        Math.max(1, integer(root, "premium.auto-promote-max-ips-per-username-24h", 3)),
+                        bool(root, "premium.auto-promote-deny-when-ip-banned", true)
                 ),
                 new VelocityPluginSettings.Bridge(
                         bool(root, "bridge.enabled", false),
@@ -55,6 +60,23 @@ public final class VelocityConfigLoader {
                         bool(root, "bridge.backend-check.enabled", true),
                         Math.max(250, integer(root, "bridge.backend-check.timeout-ms", 2500)),
                         Math.max(25, integer(root, "bridge.backend-check.poll-interval-ms", 100))
+                ),
+                new VelocityPluginSettings.Guards(
+                        bool(root, "guards.enabled", true),
+                        Math.max(1, integer(root, "guards.antibot.window-seconds", 12)),
+                        Math.max(1, integer(root, "guards.antibot.max-connections-per-ip", 8)),
+                        Math.max(1, integer(root, "guards.antibot.ban-seconds", 900)),
+                        Math.max(5, integer(root, "guards.identity.window-seconds", 3600)),
+                        Math.max(1, integer(root, "guards.identity.max-usernames-per-ip", 4)),
+                        Math.max(1, integer(root, "guards.identity.max-ips-per-username", 5)),
+                        Math.max(1, integer(root, "guards.identity.ban-seconds", 7200)),
+                        Math.max(1, integer(root, "guards.history-retention-days", 30))
+                ),
+                new VelocityPluginSettings.Reports(
+                        bool(root, "reports.auto-export.enabled", true),
+                        Math.max(1, integer(root, "reports.auto-export.interval-minutes", 60)),
+                        Math.max(1, integer(root, "reports.auto-export.window-hours", 24)),
+                        Math.max(1, integer(root, "reports.auto-export.limit", 50))
                 ),
                 string(root, "language", "it"),
                 new ProudAuthSettings.Debugger(

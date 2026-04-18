@@ -25,10 +25,12 @@ debugger:
 premium:
   enabled: true
   api-timeout-ms: 3000
-  # If true, ProudAuth rewrites the GameProfile on the proxy with the premium UUID.
-  # On some offline-mode networks, this can cause unusual backend behavior.
-  # Safe default: false. The backend still receives the premium result via bridge.
   rewrite-game-profile: false
+  require-uuid-proof: true
+  auto-promote-verified-low-risk: true
+  auto-promote-max-usernames-per-ip-1h: 2
+  auto-promote-max-ips-per-username-24h: 3
+  auto-promote-deny-when-ip-banned: true
 
 bridge:
   enabled: false
@@ -37,7 +39,26 @@ bridge:
   shared-secret: "change-me"
   assertion-ttl-seconds: 10
   backend-check:
-    # When true, proxy waits for a backend ACK before allowing player login.
     enabled: true
     timeout-ms: 2500
     poll-interval-ms: 100
+
+guards:
+  enabled: true
+  antibot:
+    window-seconds: 12
+    max-connections-per-ip: 8
+    ban-seconds: 900
+  identity:
+    window-seconds: 3600
+    max-usernames-per-ip: 4
+    max-ips-per-username: 5
+    ban-seconds: 7200
+  history-retention-days: 30
+
+reports:
+  auto-export:
+    enabled: true
+    interval-minutes: 60
+    window-hours: 24
+    limit: 50
