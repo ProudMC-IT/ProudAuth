@@ -62,7 +62,7 @@ ProudAuth e pensato per:
 
 ### Backend
 
-- Paper `1.21.1`
+- Paper `1.21.11`
 - Java `21`
 - MySQL
 
@@ -190,22 +190,23 @@ Se cambi `language` in `velocity-config.yml`, al reload il proxy prova a servire
 
 ### Cosa usa davvero il proxy
 
-Il proxy oggi usa solo:
+Il proxy oggi usa:
 
 - `database`
 - `premium`
 - `bridge`
+- `security`
 
 Nel dettaglio:
 
-- `database` serve per leggere i ban IP attivi condivisi col backend
+- `database` serve per lock IP, assertion e dati condivisi col backend
 - `premium` serve per la verifica Mojang e la risoluzione del profilo premium
 - `bridge` serve per firmare e pubblicare assertion trusted verso il backend
+- `security` governa il rilevamento accessi sospetti e la valutazione rischio lato proxy
 
-Il proxy non usa piu:
+Il proxy non usa:
 
 - `sessions`
-- `security`
 - `protection`
 - `password`
 - `auth-spawn`
@@ -220,6 +221,7 @@ Questa e una scelta intenzionale:
 - controlla subito lock IP al pre-login
 - prova a risolvere il profilo premium sul proxy
 - se `bridge.enabled: true`, firma e salva assertion trusted su MySQL
+- valuta segnali di rischio e puo forzare challenge addizionali nel flusso auth
 - mantiene un fallback pulito quando il backend riceverebbe ancora un offline UUID
 - espone `/proudauth reload` lato proxy
 - scarica e carica automaticamente le librerie runtime necessarie al primo avvio
@@ -342,8 +344,11 @@ Non devi importare manualmente uno schema SQL separato.
 | `/register` | `/register <password> <conferma>` | Registra l'account |
 | `/changepassword` | `/changepassword <vecchia> <nuova> <conferma>` | Cambia password |
 | `/logout` | `/logout` | Chiude la sessione |
-| `/2fa setup` | `/2fa setup` | Genera secret TOTP |
+| `/2fa init` | `/2fa init` | Avvia setup TOTP (QR/link + secret) |
+| `/2fa setup <codice>` | `/2fa setup <codice>` | Conferma setup TOTP con codice app |
 | `/2fa <codice>` | `/2fa <codice>` | Completa una challenge TOTP pendente |
+| `/2fa flow <true\\|false>` | `/2fa flow <true\\|false>` | Imposta se richiedere sempre il TOTP |
+| `/2fa status` | `/2fa status` | Mostra stato e policy attuale del TOTP |
 | `/2fa disable <codice>` | `/2fa disable <codice>` | Disattiva il TOTP |
 
 ### Admin
@@ -466,6 +471,13 @@ Per questo il backend espone anche:
 - `max-attempts`
 - `lockout-seconds`
 - `totp-enabled`
+- `totp-default-flow-always`
+- `totp-setup-timeout-seconds`
+- `totp-setup-max-attempts`
+- `totp-suspicious-enabled`
+- `totp-suspicious-max-usernames-per-ip-1h`
+- `totp-suspicious-max-ips-per-username-24h`
+- `totp-suspicious-deny-when-ip-banned`
 
 ### `protection`
 
@@ -530,12 +542,13 @@ Esempi pratici:
 
 ## Configurazione proxy: `velocity-config.yml`
 
-Il file proxy e stato ridotto alle sole sezioni effettivamente usate:
+Il file proxy contiene le sezioni effettivamente usate:
 
 - `language`
 - `database`
 - `premium`
 - `bridge`
+- `security`
 
 ## Esempio backend standalone
 
