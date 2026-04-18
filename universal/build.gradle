@@ -1,10 +1,13 @@
 plugins {
     id 'java'
+    id 'com.gradleup.shadow' version '9.3.1'
 }
 
 def resourceProperties = [version: project.version.toString()]
 
 dependencies {
+    implementation 'org.bstats:bstats-bukkit:3.2.1'
+
     compileOnly 'org.jetbrains:annotations:26.0.2'
 
     compileOnly 'io.papermc.paper:paper-api:1.21.1-R0.1-SNAPSHOT'
@@ -51,6 +54,22 @@ tasks.processResources {
 }
 
 tasks.jar {
+    enabled = false
+}
+
+tasks.shadowJar {
     archiveBaseName.set('ProudAuth')
     archiveClassifier.set('')
+    archiveVersion.set(project.version.toString())
+    configurations = [project.configurations.runtimeClasspath]
+
+    dependencies {
+        exclude { it.moduleGroup != 'org.bstats' }
+    }
+
+    relocate 'org.bstats', "${project.group}.libs.bstats"
+}
+
+tasks.assemble {
+    dependsOn tasks.shadowJar
 }

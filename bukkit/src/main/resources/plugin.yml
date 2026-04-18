@@ -65,6 +65,8 @@ permissions:
     default: op
   proudauth.admin.reload:
     default: op
+  proudauth.admin.update:
+    default: op
   proudauth.bypass.auth:
     description: Bypassa autenticazione
     default: false

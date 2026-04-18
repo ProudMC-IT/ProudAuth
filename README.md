@@ -28,6 +28,10 @@ Il jar finale da distribuire e uno solo:
 
 - `universal/build/libs/ProudAuth-1.0.0.jar`
 
+Build consigliata:
+
+- `./gradlew :universal:shadowJar`
+
 I moduli `common`, `bootstrap`, `bukkit` e `velocity` sono sorgenti organizzati per piattaforma.
 
 Il jar che devi consegnare o installare e sempre lo stesso.
@@ -195,14 +199,16 @@ Il proxy oggi usa:
 - `database`
 - `premium`
 - `bridge`
-- `security`
+- `guards`
+- `reports`
 
 Nel dettaglio:
 
 - `database` serve per lock IP, assertion e dati condivisi col backend
 - `premium` serve per la verifica Mojang e la risoluzione del profilo premium
 - `bridge` serve per firmare e pubblicare assertion trusted verso il backend
-- `security` governa il rilevamento accessi sospetti e la valutazione rischio lato proxy
+- `guards` governa antibot, identity guard e storico IP
+- `reports` governa export automatici del rischio
 
 Il proxy non usa:
 
@@ -223,7 +229,7 @@ Questa e una scelta intenzionale:
 - se `bridge.enabled: true`, firma e salva assertion trusted su MySQL
 - valuta segnali di rischio e puo forzare challenge addizionali nel flusso auth
 - mantiene un fallback pulito quando il backend riceverebbe ancora un offline UUID
-- espone `/proudauth reload` lato proxy
+- espone `/paproxy reload` lato proxy
 - scarica e carica automaticamente le librerie runtime necessarie al primo avvio
 
 ### Cosa non fa il companion Velocity
@@ -331,6 +337,8 @@ ProudAuth usa MySQL e crea automaticamente le tabelle necessarie:
 - `pa_sessions`
 - `pa_ip_bans`
 - `pa_proxy_assertions`
+- `pa_backend_join_probes`
+- `pa_ip_history`
 
 Non devi importare manualmente uno schema SQL separato.
 
@@ -367,8 +375,12 @@ Non devi importare manualmente uno schema SQL separato.
 
 | Comando | Descrizione |
 |---|---|
-| `/proudauth reload` | Ricarica `velocity-config.yml`, lingua e runtime proxy |
-| `/proudauthproxy reload` | Alias esplicito per ricaricare il proxy |
+| `/paproxy reload` | Ricarica `velocity-config.yml`, lingua e runtime proxy |
+| `/paproxy iphistory <ip>` | Mostra storico IP e stato ban lato proxy |
+| `/paproxy risk <username>` | Mostra profilo rischio utente |
+| `/paproxy risk-top [limit] [hours]` | Top sorgenti/utenti a rischio |
+| `/paproxy banwave-ip <ip> <seconds> [reason]` | Ban manuale IP lato proxy |
+| `/paproxy export-risk-csv [hours] [limit]` | Esporta report CSV rischio |
 
 ## Comandi backend dietro Velocity
 
@@ -404,6 +416,7 @@ Per questo il backend espone anche:
 | `proudauth.admin.unbanip` | `op` |
 | `proudauth.admin.stats` | `op` |
 | `proudauth.admin.reload` | `op` |
+| `proudauth.admin.update` | `op` |
 | `proudauth.bypass.auth` | `false` |
 
 ## Permessi proxy Velocity
@@ -411,6 +424,7 @@ Per questo il backend espone anche:
 | Permesso | Descrizione |
 |---|---|
 | `proudauth.admin.reload` | Consente il reload lato proxy |
+| `proudauth.admin.security` | Consente i subcommand sicurezza/risk lato proxy |
 
 ## Reload
 
@@ -429,13 +443,34 @@ Per questo il backend espone anche:
 
 ### Proxy
 
-`/proudauth reload` lato proxy ricarica:
+`/paproxy reload` lato proxy ricarica:
 
 - `velocity-config.yml`
 - `lang/<language>.yml`
 - storage MySQL lato proxy
 - premium verifier lato proxy
 - bridge service lato proxy
+
+## Telemetria e update check
+
+### bStats
+
+- il jar finale include `bstats-bukkit` in shading con relocate del package
+- bStats viene inizializzato sempre all'avvio backend
+- plugin id bStats hardcoded nel codice (`ProudAuth.java`)
+- ProudAuth inizializza metriche all'avvio e pubblica chart base
+
+### Update checker Spigot
+
+- ProudAuth effettua solo il controllo versione via API Spigot (`legacy/update.php`)
+- non esegue update automatici
+- non scarica file in automatico
+- all'avvio scrive nei log se esiste una versione nuova
+- quando entra un admin, invia notifica in chat se e disponibile un update
+- usa uno Spigot resource id hardcoded nel codice (`ProudAuth.java`)
+- configurazione backend:
+  - `updates.check-enabled`
+  - `updates.notify-admin-on-join`
 
 ## Configurazione backend: `config.yml`
 
@@ -474,10 +509,14 @@ Per questo il backend espone anche:
 - `totp-default-flow-always`
 - `totp-setup-timeout-seconds`
 - `totp-setup-max-attempts`
-- `totp-suspicious-enabled`
-- `totp-suspicious-max-usernames-per-ip-1h`
-- `totp-suspicious-max-ips-per-username-24h`
-- `totp-suspicious-deny-when-ip-banned`
+- `totp-suspicious.max-usernames-per-ip-1h`
+- `totp-suspicious.max-ips-per-username-24h`
+- `totp-suspicious.deny-when-ip-banned`
+
+### `updates`
+
+- `check-enabled`
+- `notify-admin-on-join`
 
 ### `protection`
 
@@ -548,7 +587,8 @@ Il file proxy contiene le sezioni effettivamente usate:
 - `database`
 - `premium`
 - `bridge`
-- `security`
+- `guards`
+- `reports`
 
 ## Esempio backend standalone
 

@@ -55,6 +55,7 @@ admin-ip-unbanned: "<green>IP <ip> sbloccato."
 admin-player-not-found: "<red>Giocatore <player> non trovato nel database."
 admin-reload: "<green>Configurazione ricaricata."
 admin-unknown-subcommand: "<red>Sottocomando sconosciuto."
+update-admin-notify: "<yellow>E disponibile un aggiornamento ProudAuth.</yellow> <gray>Current:</gray> <white><current></white> <gray>Latest:</gray> <white><latest></white> <gray>URL:</gray> <click:open_url:'<url>'><aqua><u><url></u></aqua></click>"
 
 stats-header: "<aqua>--- ProudAuth Stats ---"
 stats-registered: "<gray>Account registrati: <white><count>"

@@ -15,6 +15,10 @@ import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.listeners.*;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.update.SpigotUpdateChecker;
+import com.monkey.proudAuth.update.UpdateCheckResult;
+import org.bstats.bukkit.Metrics;
+import org.bstats.charts.SimplePie;
 import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -24,6 +28,9 @@ import java.util.Objects;
 import java.util.logging.Level;
 
 public final class ProudAuth extends JavaPlugin {
+
+    private static final int BSTATS_PLUGIN_ID = 30843;
+    private static final int SPIGOT_RESOURCE_ID = 123456;
 
     private final ProudAuthBootstrap bootstrap = new ProudAuthBootstrap();
 
@@ -35,6 +42,8 @@ public final class ProudAuth extends JavaPlugin {
     private BukkitTask cleanupTask;
     private BukkitTask backendJoinProbeTask;
     private ProudAuthConsoleLogger logger;
+    private SpigotUpdateChecker spigotUpdateChecker;
+    private volatile UpdateCheckResult latestUpdateCheckResult;
 
     @Override
     public void onEnable() {
@@ -55,6 +64,8 @@ public final class ProudAuth extends JavaPlugin {
             langConfig = new LangConfig(this, pluginConfig);
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
             playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
+            spigotUpdateChecker = new SpigotUpdateChecker(task -> Bukkit.getScheduler().runTaskAsynchronously(this, task));
+            latestUpdateCheckResult = UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId());
 
             logger.banner(
                     "ProudAuth v" + getPluginMeta().getVersion(),
@@ -67,10 +78,12 @@ public final class ProudAuth extends JavaPlugin {
                     "Debugger: " + pluginConfig.settings().debugger().summary()
             );
 
+            initializeMetrics();
             registerListeners();
             registerCommands();
             startCleanupTask();
             startBackendJoinProbeTask();
+            runUpdateCheck();
             logger.success("Bukkit backend enabled.");
         } catch (Exception exception) {
             if (logger != null) {
@@ -116,6 +129,7 @@ public final class ProudAuth extends JavaPlugin {
                 "backend_reload_applied",
                 "proxy_mode", pluginConfig.settings().proxy().mode(),
                 "bridge_enabled", pluginConfig.settings().bridge().enabled());
+        runUpdateCheck();
     }
 
     private void startCleanupTask() {
@@ -198,6 +212,12 @@ public final class ProudAuth extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerCommandPreprocessListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerInteractListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerDeathListener(playerProtection), this);
+        getServer().getPluginManager().registerEvents(new AdminUpdateNotifyListener(
+                this,
+                langConfig,
+                this::notifyAdminOnJoinEnabled,
+                this::latestUpdateCheckResult
+        ), this);
     }
 
     private void registerCommands() {
@@ -230,5 +250,74 @@ public final class ProudAuth extends JavaPlugin {
         );
         Objects.requireNonNull(getCommand("proudauth")).setExecutor(adminCommand);
         Objects.requireNonNull(getCommand("proudauth")).setTabCompleter(adminCommand);
+    }
+
+    private void initializeMetrics() {
+        int pluginId = bStatsPluginId();
+        try {
+            Metrics metrics = new Metrics(this, pluginId);
+            metrics.addCustomChart(new SimplePie("proxy_mode", () -> pluginConfig.settings().proxy().mode().name()));
+            metrics.addCustomChart(new SimplePie("bridge_enabled", () -> String.valueOf(pluginConfig.settings().bridge().enabled())));
+            logger.info("bStats enabled. pluginId=" + pluginId);
+        } catch (Exception exception) {
+            logger.warn("bStats initialization failed: " + exception.getMessage());
+        }
+    }
+
+    private void runUpdateCheck() {
+        if (!updateCheckEnabled()) {
+            latestUpdateCheckResult = UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId());
+            logger.info("Update checker disabled by configuration.");
+            return;
+        }
+
+        int resourceId = spigotResourceId();
+        String currentVersion = getPluginMeta().getVersion();
+        spigotUpdateChecker.check(resourceId, currentVersion).whenComplete((result, throwable) -> {
+            if (throwable != null) {
+                latestUpdateCheckResult = UpdateCheckResult.failed(currentVersion, resourceId, throwable.getClass().getSimpleName());
+                logger.warn("Update check failed for Spigot resource " + resourceId + ": " + throwable.getClass().getSimpleName());
+                return;
+            }
+
+            latestUpdateCheckResult = result;
+            if (!result.error().isBlank()) {
+                logger.warn("Update check failed for Spigot resource " + resourceId + ": " + result.error());
+                return;
+            }
+
+            if (result.updateAvailable()) {
+                logger.warn("Update available. current="
+                        + result.currentVersion()
+                        + " latest="
+                        + result.latestVersion()
+                        + " url="
+                        + result.resourceUrl());
+            } else {
+                logger.info("No updates found. current=" + result.currentVersion() + " latest=" + result.latestVersion());
+            }
+        });
+    }
+
+    private int bStatsPluginId() {
+        return BSTATS_PLUGIN_ID;
+    }
+
+    private boolean updateCheckEnabled() {
+        return getConfig().getBoolean("updates.check-enabled", true);
+    }
+
+    private boolean notifyAdminOnJoinEnabled() {
+        return getConfig().getBoolean("updates.notify-admin-on-join", true);
+    }
+
+    private int spigotResourceId() {
+        return SPIGOT_RESOURCE_ID;
+    }
+
+    private UpdateCheckResult latestUpdateCheckResult() {
+        return latestUpdateCheckResult == null
+                ? UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId())
+                : latestUpdateCheckResult;
     }
 }

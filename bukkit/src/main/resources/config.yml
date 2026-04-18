@@ -45,6 +45,10 @@ security:
     max-ips-per-username-24h: 3
     deny-when-ip-banned: true
 
+updates:
+  check-enabled: true
+  notify-admin-on-join: true
+
 protection:
   block-movement: true
   block-chat: true
