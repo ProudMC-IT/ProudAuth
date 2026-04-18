@@ -89,6 +89,22 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         if (args.length == 2 && ("forcelogin".equalsIgnoreCase(args[0]) || "forcelogout".equalsIgnoreCase(args[0]))) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[1]);
         }
+        if (args.length == 2 && "resetpassword".equalsIgnoreCase(args[0])) {
+            return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[1]);
+        }
+        if (args.length == 2 && ("banip".equalsIgnoreCase(args[0]) || "unbanip".equalsIgnoreCase(args[0]))) {
+            return filter(
+                    Bukkit.getOnlinePlayers().stream()
+                            .map(player -> player.getAddress() == null ? null : player.getAddress().getAddress().getHostAddress())
+                            .filter(java.util.Objects::nonNull)
+                            .distinct()
+                            .toList(),
+                    args[1]
+            );
+        }
+        if (args.length == 3 && "banip".equalsIgnoreCase(args[0])) {
+            return filter(List.of("300", "900", "1800", "3600", "7200"), args[2]);
+        }
         return Collections.emptyList();
     }
 

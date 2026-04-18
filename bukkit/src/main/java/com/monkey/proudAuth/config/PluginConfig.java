@@ -36,7 +36,8 @@ public final class PluginConfig {
                 new ProudAuthSettings.Premium(
                         config.getBoolean("premium.enabled", true),
                         config.getBoolean("premium.auto-login", true),
-                        Math.max(500, config.getInt("premium.api-timeout-ms", 3000))
+                        Math.max(500, config.getInt("premium.api-timeout-ms", 3000)),
+                        config.getBoolean("premium.require-uuid-proof", true)
                 ),
                 new ProudAuthSettings.Sessions(
                         config.getBoolean("sessions.enabled", true),
@@ -46,7 +47,13 @@ public final class PluginConfig {
                 new ProudAuthSettings.Security(
                         Math.max(1, config.getInt("security.max-attempts", 5)),
                         Math.max(1, config.getLong("security.lockout-seconds", 300)),
-                        config.getBoolean("security.totp-enabled", false)
+                        config.getBoolean("security.totp-enabled", false),
+                        Math.max(30, config.getInt("security.totp-setup-timeout-seconds", 180)),
+                        Math.max(1, config.getInt("security.totp-setup-max-attempts", 3)),
+                        config.getBoolean("security.totp-default-flow-always", false),
+                        Math.max(1, config.getInt("security.totp-suspicious.max-usernames-per-ip-1h", 2)),
+                        Math.max(1, config.getInt("security.totp-suspicious.max-ips-per-username-24h", 3)),
+                        config.getBoolean("security.totp-suspicious.deny-when-ip-banned", true)
                 ),
                 new ProudAuthSettings.Protection(
                         config.getBoolean("protection.block-movement", true),

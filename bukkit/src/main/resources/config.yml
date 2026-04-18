@@ -26,6 +26,7 @@ premium:
   enabled: true
   auto-login: true
   api-timeout-ms: 3000
+  require-uuid-proof: true
 
 sessions:
   enabled: true
@@ -36,6 +37,13 @@ security:
   max-attempts: 5
   lockout-seconds: 300
   totp-enabled: false
+  totp-setup-timeout-seconds: 180
+  totp-setup-max-attempts: 3
+  totp-default-flow-always: false
+  totp-suspicious:
+    max-usernames-per-ip-1h: 2
+    max-ips-per-username-24h: 3
+    deny-when-ip-banned: true
 
 protection:
   block-movement: true

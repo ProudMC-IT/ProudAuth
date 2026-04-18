@@ -30,7 +30,7 @@ commands:
     permission: proudauth.logout
   2fa:
     description: Gestione autenticazione a due fattori
-    usage: /2fa <setup|disable|codice>
+    usage: /2fa <init|setup|disable|flow|status|codice>
     permission: proudauth.2fa
   proudauth:
     description: Comandi amministrativi ProudAuth
