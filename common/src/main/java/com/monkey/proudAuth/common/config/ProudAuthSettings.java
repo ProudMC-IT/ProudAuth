@@ -23,13 +23,23 @@ public record ProudAuthSettings(
     public record Database(String host, int port, String name, String user, String password, int poolSize) {
     }
 
-    public record Premium(boolean enabled, boolean autoLogin, int apiTimeoutMs) {
+    public record Premium(boolean enabled, boolean autoLogin, int apiTimeoutMs, boolean requireUuidProof) {
     }
 
     public record Sessions(boolean enabled, long ttlMinutes, boolean bindToIp) {
     }
 
-    public record Security(int maxAttempts, long lockoutSeconds, boolean totpEnabled) {
+    public record Security(
+            int maxAttempts,
+            long lockoutSeconds,
+            boolean totpEnabled,
+            int totpSetupTimeoutSeconds,
+            int totpSetupMaxAttempts,
+            boolean totpDefaultFlowAlways,
+            int totpSuspiciousMaxUsernamesPerIp1h,
+            int totpSuspiciousMaxIpsPerUsername24h,
+            boolean totpSuspiciousDenyWhenIpBanned
+    ) {
     }
 
     public record Protection(

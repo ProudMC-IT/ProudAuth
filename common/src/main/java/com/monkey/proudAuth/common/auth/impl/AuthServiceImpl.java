@@ -9,10 +9,14 @@ import com.monkey.proudAuth.common.security.BruteForceGuard;
 import com.monkey.proudAuth.common.security.TotpService;
 import com.monkey.proudAuth.common.session.SessionManager;
 import com.monkey.proudAuth.common.storage.AccountRecord;
-import com.monkey.proudAuth.common.storage.AccountStorage;
+import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.util.HashUtil;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,16 +26,17 @@ import java.util.regex.Pattern;
 
 public final class AuthServiceImpl implements AuthService {
 
-    private final AccountStorage storage;
+    private final StorageProvider storage;
     private final SessionManager sessionManager;
     private final BruteForceGuard bruteForceGuard;
     private final TotpService totpService;
     private final Map<UUID, AuthPlayer> trackedPlayers;
     private final Map<UUID, PendingTotpChallenge> pendingTotpChallenges;
+    private final Map<UUID, PendingTotpSetup> pendingTotpSetups;
     private volatile ProudAuthSettings settings;
 
     public AuthServiceImpl(
-            AccountStorage storage,
+            StorageProvider storage,
             SessionManager sessionManager,
             BruteForceGuard bruteForceGuard,
             TotpService totpService,
@@ -44,6 +49,7 @@ public final class AuthServiceImpl implements AuthService {
         this.settings = settings;
         this.trackedPlayers = new ConcurrentHashMap<>();
         this.pendingTotpChallenges = new ConcurrentHashMap<>();
+        this.pendingTotpSetups = new ConcurrentHashMap<>();
     }
 
     @Override
@@ -55,12 +61,14 @@ public final class AuthServiceImpl implements AuthService {
     public void untrackPlayer(UUID uuid) {
         trackedPlayers.remove(uuid);
         pendingTotpChallenges.remove(uuid);
+        pendingTotpSetups.remove(uuid);
     }
 
     @Override
     public void markUnauthenticated(UUID uuid) {
         trackedPlayers.computeIfPresent(uuid, (ignored, current) -> current.withState(AuthState.UNAUTHENTICATED));
         pendingTotpChallenges.remove(uuid);
+        pendingTotpSetups.remove(uuid);
     }
 
     @Override
@@ -130,11 +138,14 @@ public final class AuthServiceImpl implements AuthService {
                     accountType,
                     optionalAccount.map(AccountRecord::email).orElse(null),
                     optionalAccount.map(AccountRecord::totpSecret).orElse(null),
+                    optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways()),
                     optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
                     optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
                     ipAddress
             );
-            return storage.saveAccount(accountRecord).thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
+            return storage.saveAccount(accountRecord)
+                    .thenCompose(ignored -> recordIpHistory(username, ipAddress, accountType))
+                    .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
         });
     }
 
@@ -178,6 +189,7 @@ public final class AuthServiceImpl implements AuthService {
     @Override
     public CompletableFuture<AuthenticationResult> autoAuthenticate(UUID uuid, String username, AccountType accountType, AuthState authState, String ipAddress) {
         return storage.touchLogin(uuid, username, ipAddress, accountType)
+                .thenCompose(ignored -> recordIpHistory(username, ipAddress, accountType))
                 .thenCompose(ignored -> sessionManager.create(uuid, ipAddress))
                 .thenApply(ignored -> {
                     bruteForceGuard.clearFailures(ipAddress);
@@ -207,30 +219,127 @@ public final class AuthServiceImpl implements AuthService {
                     }
 
                     pendingTotpChallenges.remove(uuid);
-                    return autoAuthenticate(uuid, username, challenge.accountType(), AuthState.AUTHENTICATED, challenge.ipAddress())
+                    return autoAuthenticate(uuid, username, challenge.accountType(), challenge.authState(), challenge.ipAddress())
                             .thenApply(authenticationResult -> new TotpSubmissionResult(TotpSubmissionStatus.SUCCESS, challenge.accountType()));
                 });
     }
 
     @Override
-    public CompletableFuture<TotpSetupResult> setupTotp(UUID uuid, String username) {
+    public CompletableFuture<TotpSetupInitResult> initTotpSetup(UUID uuid, String username) {
         if (!totpService.isEnabled()) {
-            return CompletableFuture.completedFuture(new TotpSetupResult(TotpSetupStatus.DISABLED_IN_CONFIG, "", ""));
+            return CompletableFuture.completedFuture(new TotpSetupInitResult(
+                    TotpSetupInitStatus.DISABLED_IN_CONFIG,
+                    "",
+                    "",
+                    "",
+                    0L,
+                    settings.security().totpSetupMaxAttempts()
+            ));
         }
 
         return findAccount(uuid, username).thenCompose(optionalAccount -> {
             if (optionalAccount.isEmpty()) {
-                return CompletableFuture.completedFuture(new TotpSetupResult(TotpSetupStatus.NOT_REGISTERED, "", ""));
+                return CompletableFuture.completedFuture(new TotpSetupInitResult(
+                        TotpSetupInitStatus.NOT_REGISTERED,
+                        "",
+                        "",
+                        "",
+                        0L,
+                        settings.security().totpSetupMaxAttempts()
+                ));
             }
 
             if (optionalAccount.get().totpSecret() != null) {
-                return CompletableFuture.completedFuture(new TotpSetupResult(TotpSetupStatus.ALREADY_ENABLED, "", ""));
+                return CompletableFuture.completedFuture(new TotpSetupInitResult(
+                        TotpSetupInitStatus.ALREADY_ENABLED,
+                        "",
+                        "",
+                        "",
+                        0L,
+                        settings.security().totpSetupMaxAttempts()
+                ));
             }
 
             TotpService.SetupData setupData = totpService.generate(username);
-            return storage.updateTotpSecret(uuid, totpService.encrypt(setupData.secret()))
-                    .thenApply(ignored -> new TotpSetupResult(TotpSetupStatus.SUCCESS, setupData.secret(), setupData.uri()));
+            Instant expiresAt = Instant.now().plusSeconds(settings.security().totpSetupTimeoutSeconds());
+            int maxAttempts = settings.security().totpSetupMaxAttempts();
+            PendingTotpSetup pendingTotpSetup = new PendingTotpSetup(
+                    setupData.secret(),
+                    setupData.uri(),
+                    buildQrCodeUrl(setupData.uri()),
+                    expiresAt,
+                    maxAttempts,
+                    maxAttempts
+            );
+            pendingTotpSetups.put(uuid, pendingTotpSetup);
+            return CompletableFuture.completedFuture(new TotpSetupInitResult(
+                    TotpSetupInitStatus.SUCCESS,
+                    pendingTotpSetup.secret(),
+                    pendingTotpSetup.uri(),
+                    pendingTotpSetup.qrCodeUrl(),
+                    pendingTotpSetup.expiresAt().getEpochSecond(),
+                    pendingTotpSetup.maxAttempts()
+            ));
         });
+    }
+
+    @Override
+    public CompletableFuture<TotpSetupConfirmResult> confirmTotpSetup(UUID uuid, String code) {
+        PendingTotpSetup pendingSetup = pendingTotpSetups.get(uuid);
+        if (pendingSetup == null) {
+            return CompletableFuture.completedFuture(new TotpSetupConfirmResult(
+                    TotpSetupConfirmStatus.SETUP_NOT_INITIALIZED,
+                    0,
+                    0L
+            ));
+        }
+        if (Instant.now().isAfter(pendingSetup.expiresAt())) {
+            pendingTotpSetups.remove(uuid);
+            return CompletableFuture.completedFuture(new TotpSetupConfirmResult(
+                    TotpSetupConfirmStatus.SETUP_EXPIRED,
+                    0,
+                    0L
+            ));
+        }
+        if (!totpService.verify(pendingSetup.secret(), code)) {
+            int remainingAttempts = Math.max(0, pendingSetup.remainingAttempts() - 1);
+            if (remainingAttempts <= 0) {
+                pendingTotpSetups.remove(uuid);
+                return CompletableFuture.completedFuture(new TotpSetupConfirmResult(
+                        TotpSetupConfirmStatus.SETUP_ATTEMPTS_EXHAUSTED,
+                        0,
+                        pendingSetup.expiresAt().getEpochSecond()
+                ));
+            }
+
+            pendingTotpSetups.put(
+                    uuid,
+                    new PendingTotpSetup(
+                            pendingSetup.secret(),
+                            pendingSetup.uri(),
+                            pendingSetup.qrCodeUrl(),
+                            pendingSetup.expiresAt(),
+                            remainingAttempts,
+                            pendingSetup.maxAttempts()
+                    )
+            );
+            return CompletableFuture.completedFuture(new TotpSetupConfirmResult(
+                    TotpSetupConfirmStatus.INVALID,
+                    remainingAttempts,
+                    pendingSetup.expiresAt().getEpochSecond()
+            ));
+        }
+
+        return storage.updateTotpSecret(uuid, totpService.encrypt(pendingSetup.secret()))
+                .thenCompose(ignored -> storage.updateTotpFlow(uuid, settings.security().totpDefaultFlowAlways()))
+                .thenApply(ignored -> {
+                    pendingTotpSetups.remove(uuid);
+                    return new TotpSetupConfirmResult(
+                            TotpSetupConfirmStatus.SUCCESS,
+                            pendingSetup.remainingAttempts(),
+                            pendingSetup.expiresAt().getEpochSecond()
+                    );
+                });
     }
 
     @Override
@@ -247,8 +356,71 @@ public final class AuthServiceImpl implements AuthService {
                     }
 
                     return storage.updateTotpSecret(uuid, null)
-                            .thenApply(ignored -> new TotpDisableResult(TotpDisableStatus.SUCCESS));
+                            .thenApply(ignored -> {
+                                pendingTotpSetups.remove(uuid);
+                                pendingTotpChallenges.remove(uuid);
+                                return new TotpDisableResult(TotpDisableStatus.SUCCESS);
+                            });
                 });
+    }
+
+    @Override
+    public CompletableFuture<TotpFlowResult> updateTotpFlow(UUID uuid, String username, boolean alwaysRequired) {
+        if (!totpService.isEnabled()) {
+            return CompletableFuture.completedFuture(new TotpFlowResult(TotpFlowStatus.NOT_ENABLED, alwaysRequired));
+        }
+        return findAccount(uuid, username).thenCompose(optionalAccount -> {
+            if (optionalAccount.isEmpty()) {
+                return CompletableFuture.completedFuture(new TotpFlowResult(TotpFlowStatus.NOT_REGISTERED, alwaysRequired));
+            }
+            if (optionalAccount.get().totpSecret() == null) {
+                return CompletableFuture.completedFuture(new TotpFlowResult(TotpFlowStatus.NOT_ENABLED, alwaysRequired));
+            }
+            return storage.updateTotpFlow(uuid, alwaysRequired)
+                    .thenApply(ignored -> new TotpFlowResult(TotpFlowStatus.SUCCESS, alwaysRequired));
+        });
+    }
+
+    @Override
+    public CompletableFuture<TotpFlowResult> fetchTotpFlow(UUID uuid, String username) {
+        return findAccount(uuid, username).thenApply(optionalAccount -> {
+            if (optionalAccount.isEmpty()) {
+                return new TotpFlowResult(TotpFlowStatus.NOT_REGISTERED, settings.security().totpDefaultFlowAlways());
+            }
+            if (optionalAccount.get().totpSecret() == null) {
+                return new TotpFlowResult(TotpFlowStatus.NOT_ENABLED, optionalAccount.get().totpFlowAlways());
+            }
+            return new TotpFlowResult(TotpFlowStatus.SUCCESS, optionalAccount.get().totpFlowAlways());
+        });
+    }
+
+    @Override
+    public CompletableFuture<TotpChallengeResult> authenticateWithTotpGate(
+            UUID uuid,
+            String username,
+            AccountType accountType,
+            AuthState authState,
+            String ipAddress
+    ) {
+        return findAccount(uuid, username)
+                .thenCompose(optionalAccount -> {
+                    String storedSecret = optionalAccount.map(AccountRecord::totpSecret).orElse(null);
+                    boolean alwaysRequired = optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways());
+                    return completeAuthenticationWithTotpGate(
+                            uuid,
+                            username,
+                            accountType,
+                            authState,
+                            ipAddress,
+                            storedSecret,
+                            alwaysRequired
+                    );
+                });
+    }
+
+    @Override
+    public boolean hasPendingTotpChallenge(UUID uuid) {
+        return pendingTotpChallenges.containsKey(uuid);
     }
 
     @Override
@@ -271,6 +443,7 @@ public final class AuthServiceImpl implements AuthService {
     @Override
     public void reload(ProudAuthSettings settings) {
         this.settings = settings;
+        pendingTotpSetups.clear();
     }
 
     private CompletableFuture<LoginResult> handleLogin(
@@ -303,28 +476,21 @@ public final class AuthServiceImpl implements AuthService {
         }
 
         bruteForceGuard.clearFailures(ipAddress);
-        return storage.touchLogin(uuid, username, ipAddress, account.accountType())
-                .thenCompose(ignored -> {
-                    if (settings.security().totpEnabled() && account.totpSecret() != null) {
-                        pendingTotpChallenges.put(uuid, new PendingTotpChallenge(account.accountType(), ipAddress));
-                        return CompletableFuture.completedFuture(new LoginResult(
-                                LoginStatus.TOTP_REQUIRED,
-                                account.accountType(),
-                                0,
-                                settings.security().maxAttempts(),
-                                0
-                        ));
-                    }
-
-                    return autoAuthenticate(uuid, username, account.accountType(), AuthState.AUTHENTICATED, ipAddress)
-                            .thenApply(authentication -> new LoginResult(
-                                    LoginStatus.SUCCESS,
-                                    account.accountType(),
-                                    0,
-                                    settings.security().maxAttempts(),
-                                    0
-                            ));
-                });
+        return completeAuthenticationWithTotpGate(
+                uuid,
+                username,
+                account.accountType(),
+                AuthState.AUTHENTICATED,
+                ipAddress,
+                account.totpSecret(),
+                account.totpFlowAlways()
+        ).thenApply(result -> new LoginResult(
+                result.status() == TotpChallengeStatus.TOTP_REQUIRED ? LoginStatus.TOTP_REQUIRED : LoginStatus.SUCCESS,
+                account.accountType(),
+                0,
+                settings.security().maxAttempts(),
+                0
+        ));
     }
 
     private CompletableFuture<Optional<AccountRecord>> findAccount(UUID uuid, String username) {
@@ -356,6 +522,93 @@ public final class AuthServiceImpl implements AuthService {
         return trackedPlayers.getOrDefault(uuid, new AuthPlayer(uuid, username, AccountType.CRACKED, AuthState.UNAUTHENTICATED)).accountType();
     }
 
-    private record PendingTotpChallenge(AccountType accountType, String ipAddress) {
+    private CompletableFuture<TotpChallengeResult> completeAuthenticationWithTotpGate(
+            UUID uuid,
+            String username,
+            AccountType accountType,
+            AuthState authState,
+            String ipAddress,
+            String totpSecret,
+            boolean alwaysRequired
+    ) {
+        if (!settings.security().totpEnabled() || totpSecret == null) {
+            return autoAuthenticate(uuid, username, accountType, authState, ipAddress)
+                    .thenApply(authenticationResult -> new TotpChallengeResult(TotpChallengeStatus.AUTHENTICATED, false));
+        }
+        if (alwaysRequired) {
+            pendingTotpChallenges.put(uuid, new PendingTotpChallenge(accountType, ipAddress, authState));
+            trackedPlayers.computeIfPresent(uuid, (ignored, authPlayer) -> authPlayer.withState(AuthState.UNAUTHENTICATED));
+            return CompletableFuture.completedFuture(new TotpChallengeResult(TotpChallengeStatus.TOTP_REQUIRED, false));
+        }
+
+        return isSuspiciousAccess(username, ipAddress).thenCompose(suspicious -> {
+            if (suspicious) {
+                pendingTotpChallenges.put(uuid, new PendingTotpChallenge(accountType, ipAddress, authState));
+                trackedPlayers.computeIfPresent(uuid, (ignored, authPlayer) -> authPlayer.withState(AuthState.UNAUTHENTICATED));
+                return CompletableFuture.completedFuture(new TotpChallengeResult(TotpChallengeStatus.TOTP_REQUIRED, true));
+            }
+            return autoAuthenticate(uuid, username, accountType, authState, ipAddress)
+                    .thenApply(authenticationResult -> new TotpChallengeResult(TotpChallengeStatus.AUTHENTICATED, false));
+        });
+    }
+
+    private CompletableFuture<Boolean> isSuspiciousAccess(String username, String ipAddress) {
+        if (ipAddress == null || ipAddress.isBlank() || "unknown".equalsIgnoreCase(ipAddress)) {
+            return CompletableFuture.completedFuture(true);
+        }
+
+        Instant now = Instant.now();
+        CompletableFuture<Integer> usernamesForIp1h = storage.countDistinctUsernamesForIpSince(
+                ipAddress,
+                now.minus(Duration.ofHours(1))
+        );
+        CompletableFuture<Integer> ipsForUsername24h = storage.countDistinctIpsForUsernameSince(
+                canonicalUsername(username),
+                now.minus(Duration.ofHours(24))
+        );
+        CompletableFuture<Boolean> ipBanned = settings.security().totpSuspiciousDenyWhenIpBanned()
+                ? storage.findActiveBan(ipAddress).thenApply(Optional::isPresent)
+                : CompletableFuture.completedFuture(false);
+
+        return CompletableFuture.allOf(usernamesForIp1h, ipsForUsername24h, ipBanned)
+                .thenApply(ignored -> {
+                    if (ipBanned.join()) {
+                        return true;
+                    }
+                    if (usernamesForIp1h.join() > settings.security().totpSuspiciousMaxUsernamesPerIp1h()) {
+                        return true;
+                    }
+                    return ipsForUsername24h.join() > settings.security().totpSuspiciousMaxIpsPerUsername24h();
+                })
+                .exceptionally(ignored -> true);
+    }
+
+    private CompletableFuture<Void> recordIpHistory(String username, String ipAddress, AccountType accountType) {
+        if (ipAddress == null || ipAddress.isBlank() || "unknown".equalsIgnoreCase(ipAddress)) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return storage.saveIpHistory(canonicalUsername(username), ipAddress, accountType, Instant.now());
+    }
+
+    private String canonicalUsername(String username) {
+        return username.toLowerCase(Locale.ROOT);
+    }
+
+    private String buildQrCodeUrl(String otpAuthUri) {
+        return "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data="
+                + URLEncoder.encode(otpAuthUri, StandardCharsets.UTF_8);
+    }
+
+    private record PendingTotpChallenge(AccountType accountType, String ipAddress, AuthState authState) {
+    }
+
+    private record PendingTotpSetup(
+            String secret,
+            String uri,
+            String qrCodeUrl,
+            Instant expiresAt,
+            int remainingAttempts,
+            int maxAttempts
+    ) {
     }
 }

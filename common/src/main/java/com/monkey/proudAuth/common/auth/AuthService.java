@@ -38,9 +38,25 @@ public interface AuthService {
 
     CompletableFuture<TotpSubmissionResult> submitTotp(UUID uuid, String username, String code);
 
-    CompletableFuture<TotpSetupResult> setupTotp(UUID uuid, String username);
+    CompletableFuture<TotpSetupInitResult> initTotpSetup(UUID uuid, String username);
+
+    CompletableFuture<TotpSetupConfirmResult> confirmTotpSetup(UUID uuid, String code);
 
     CompletableFuture<TotpDisableResult> disableTotp(UUID uuid, String code);
+
+    CompletableFuture<TotpFlowResult> updateTotpFlow(UUID uuid, String username, boolean alwaysRequired);
+
+    CompletableFuture<TotpFlowResult> fetchTotpFlow(UUID uuid, String username);
+
+    CompletableFuture<TotpChallengeResult> authenticateWithTotpGate(
+            UUID uuid,
+            String username,
+            AccountType accountType,
+            AuthState authState,
+            String ipAddress
+    );
+
+    boolean hasPendingTotpChallenge(UUID uuid);
 
     CompletableFuture<Optional<AccountRecord>> findAccountByUsername(String username);
 
@@ -97,14 +113,36 @@ public interface AuthService {
     record TotpSubmissionResult(TotpSubmissionStatus status, AccountType accountType) {
     }
 
-    enum TotpSetupStatus {
+    enum TotpSetupInitStatus {
         SUCCESS,
         DISABLED_IN_CONFIG,
         ALREADY_ENABLED,
         NOT_REGISTERED
     }
 
-    record TotpSetupResult(TotpSetupStatus status, String secret, String uri) {
+    record TotpSetupInitResult(
+            TotpSetupInitStatus status,
+            String secret,
+            String uri,
+            String qrCodeUrl,
+            long expiresAtEpochSecond,
+            int maxAttempts
+    ) {
+    }
+
+    enum TotpSetupConfirmStatus {
+        SUCCESS,
+        INVALID,
+        SETUP_NOT_INITIALIZED,
+        SETUP_EXPIRED,
+        SETUP_ATTEMPTS_EXHAUSTED
+    }
+
+    record TotpSetupConfirmResult(
+            TotpSetupConfirmStatus status,
+            int attemptsRemaining,
+            long expiresAtEpochSecond
+    ) {
     }
 
     enum TotpDisableStatus {
@@ -114,5 +152,22 @@ public interface AuthService {
     }
 
     record TotpDisableResult(TotpDisableStatus status) {
+    }
+
+    enum TotpFlowStatus {
+        SUCCESS,
+        NOT_ENABLED,
+        NOT_REGISTERED
+    }
+
+    record TotpFlowResult(TotpFlowStatus status, boolean alwaysRequired) {
+    }
+
+    enum TotpChallengeStatus {
+        AUTHENTICATED,
+        TOTP_REQUIRED
+    }
+
+    record TotpChallengeResult(TotpChallengeStatus status, boolean suspiciousAccess) {
     }
 }
