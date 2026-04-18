@@ -26,7 +26,7 @@ ProudAuth/
 
 Il jar finale da distribuire e uno solo:
 
-- `universal/build/libs/ProudAuth-1.0.0.jar`
+- `universal/build/libs/ProudAuth.jar`
 
 Build consigliata:
 
@@ -67,7 +67,7 @@ ProudAuth e pensato per:
 ### Backend
 
 - Paper `1.21.11`
-- Java `21`
+- Java `21+`
 - MySQL
 
 ### Proxy
@@ -82,7 +82,7 @@ Questa build non e destinata a Bukkit o Spigot puro.
 
 Se la devi vendere, dichiaralo in modo netto:
 
-`Backend supportato: Paper 1.21.1`
+`Backend supportato: Paper 1.21.x`
 
 ## Come funziona
 
@@ -112,8 +112,8 @@ In quel caso ProudAuth usa solo il backend e `proxy.mode: NONE`.
 
 Con Velocity il flusso consigliato e:
 
-1. Il proxy carica `ProudAuth-1.0.0.jar`.
-2. Il backend Paper carica `ProudAuth-1.0.0.jar`.
+1. Il proxy carica `ProudAuth.jar`.
+2. Il backend Paper carica `ProudAuth.jar`.
 3. Il companion Velocity prova a risolvere il profilo premium gia sul proxy.
 4. Se il proxy sta gia inoltrando un UUID premium, ProudAuth lo usa.
 5. Se arriva ancora un offline UUID, ProudAuth esegue fallback alla verifica Mojang.
@@ -133,7 +133,7 @@ Questa build non include un companion dedicato per Bungee/Waterfall.
 
 Per quei proxy il supporto resta backend-side:
 
-- installi `ProudAuth-1.0.0.jar` sui backend Paper
+- installi `ProudAuth.jar` sui backend Paper
 - configuri correttamente il forwarding del proxy
 - imposti `proxy.mode: BUNGEE` in `config.yml`
 
@@ -143,7 +143,7 @@ Il comportamento auth continua a vivere sul backend.
 
 ### File da usare
 
-- Jar universale: `ProudAuth-1.0.0.jar`
+- Jar universale: `ProudAuth.jar`
 
 ### Percorsi generati
 
@@ -158,7 +158,7 @@ Se il file non esiste ma la lingua e inclusa nel jar, la copia automaticamente d
 ### Passaggi
 
 1. Imposta il backend Paper in `online-mode=false` dentro `server.properties`.
-2. Copia `ProudAuth-1.0.0.jar` nella cartella `plugins/`.
+2. Copia `ProudAuth.jar` nella cartella `plugins/`.
 3. Avvia il server una prima volta.
 4. Configura `plugins/ProudAuth/config.yml`.
 5. Riavvia il server oppure usa `/proudauth reload`.
@@ -180,7 +180,7 @@ Quindi il backend deve avere accesso a internet al primo boot.
 
 ### File da usare
 
-- Jar universale: `ProudAuth-1.0.0.jar`
+- Jar universale: `ProudAuth.jar`
 
 ### Percorsi generati
 
@@ -294,8 +294,8 @@ Secondo la documentazione ufficiale PaperMC:
    - `proxies.velocity.enabled=true`
    - `proxies.velocity.secret=<stesso secret>`
    - `proxies.velocity.online-mode=<uguale a velocity.toml>`
-7. Installa `ProudAuth-1.0.0.jar` sui backend.
-8. Installa `ProudAuth-1.0.0.jar` sul proxy.
+7. Installa `ProudAuth.jar` sui backend.
+8. Installa `ProudAuth.jar` sul proxy.
 9. In `plugins/ProudAuth/config.yml` del backend imposta:
 
 ```yaml
@@ -681,8 +681,8 @@ bridge:
 
 Per ridurre ticket e contestazioni, conviene dichiarare in modo trasparente:
 
-- backend supportato: Paper `1.21.1`
-- Java richiesto: `21`
+- backend supportato: Paper `1.21.x`
+- Java richiesto: `21+`
 - MySQL richiesto
 - il jar distribuito e unico e va riusato sia su backend sia su Velocity
 - il companion proxy incluso e per Velocity
@@ -721,3 +721,4 @@ Aggiungi qui:
 - eventuali limiti di ridistribuzione
 
 Se prevedi di venderlo pubblicamente, questa sezione va completata prima della distribuzione.
+

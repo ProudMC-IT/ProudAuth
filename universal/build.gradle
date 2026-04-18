@@ -58,9 +58,7 @@ tasks.jar {
 }
 
 tasks.shadowJar {
-    archiveBaseName.set('ProudAuth')
-    archiveClassifier.set('')
-    archiveVersion.set(project.version.toString())
+    archiveFileName.set('ProudAuth.jar')
     configurations = [project.configurations.runtimeClasspath]
 
     dependencies {

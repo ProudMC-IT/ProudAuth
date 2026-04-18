@@ -30,7 +30,7 @@ import java.util.logging.Level;
 public final class ProudAuth extends JavaPlugin {
 
     private static final int BSTATS_PLUGIN_ID = 30843;
-    private static final int SPIGOT_RESOURCE_ID = 123456;
+    private static final int SPIGOT_RESOURCE_ID = 134388;
 
     private final ProudAuthBootstrap bootstrap = new ProudAuthBootstrap();
 
