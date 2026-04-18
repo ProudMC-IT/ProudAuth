@@ -22,4 +22,6 @@ public interface AccountStorage {
     CompletableFuture<Void> updateTotpSecret(UUID uuid, @Nullable String encryptedSecret);
 
     CompletableFuture<Optional<String>> findTotpSecret(UUID uuid);
+
+    CompletableFuture<Void> updateTotpFlow(UUID uuid, boolean alwaysRequired);
 }

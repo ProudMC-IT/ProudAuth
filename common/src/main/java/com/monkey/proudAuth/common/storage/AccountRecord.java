@@ -13,6 +13,7 @@ public record AccountRecord(
         AccountType accountType,
         @Nullable String email,
         @Nullable String totpSecret,
+        boolean totpFlowAlways,
         Instant registeredAt,
         @Nullable Instant lastLoginAt,
         @Nullable String lastIp

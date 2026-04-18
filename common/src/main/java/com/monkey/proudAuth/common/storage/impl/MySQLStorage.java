@@ -14,6 +14,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.sql.*;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -50,7 +52,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<AccountRecord>> findAccountByUuid(UUID uuid) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT uuid, username, password_hash, account_type, email, totp_secret, registered_at, last_login_at, last_ip
+                    SELECT uuid, username, password_hash, account_type, email, totp_secret, totp_flow_always, registered_at, last_login_at, last_ip
                     FROM pa_accounts
                     WHERE uuid = ?
                     """;
@@ -71,7 +73,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<AccountRecord>> findAccountByUsername(String username) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT uuid, username, password_hash, account_type, email, totp_secret, registered_at, last_login_at, last_ip
+                    SELECT uuid, username, password_hash, account_type, email, totp_secret, totp_flow_always, registered_at, last_login_at, last_ip
                     FROM pa_accounts
                     WHERE username = ?
                     LIMIT 1
@@ -94,14 +96,15 @@ public final class MySQLStorage implements StorageProvider {
         return runAsync(() -> {
             String sql = """
                     INSERT INTO pa_accounts
-                    (uuid, username, password_hash, account_type, email, totp_secret, registered_at, last_login_at, last_ip)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (uuid, username, password_hash, account_type, email, totp_secret, totp_flow_always, registered_at, last_login_at, last_ip)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         password_hash = IFNULL(VALUES(password_hash), password_hash),
                         account_type = VALUES(account_type),
                         email = IFNULL(VALUES(email), email),
                         totp_secret = IFNULL(VALUES(totp_secret), totp_secret),
+                        totp_flow_always = VALUES(totp_flow_always),
                         last_login_at = IFNULL(VALUES(last_login_at), last_login_at),
                         last_ip = IFNULL(VALUES(last_ip), last_ip)
                     """;
@@ -113,9 +116,10 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(4, accountRecord.accountType().name());
                 setNullableString(statement, 5, accountRecord.email());
                 setNullableString(statement, 6, accountRecord.totpSecret());
-                statement.setTimestamp(7, Timestamp.from(accountRecord.registeredAt()));
-                setNullableTimestamp(statement, 8, accountRecord.lastLoginAt());
-                setNullableString(statement, 9, accountRecord.lastIp());
+                statement.setBoolean(7, accountRecord.totpFlowAlways());
+                statement.setTimestamp(8, Timestamp.from(accountRecord.registeredAt()));
+                setNullableTimestamp(statement, 9, accountRecord.lastLoginAt());
+                setNullableString(statement, 10, accountRecord.lastIp());
                 statement.executeUpdate();
             }
         });
@@ -180,6 +184,18 @@ public final class MySQLStorage implements StorageProvider {
                     }
                     return Optional.ofNullable(resultSet.getString("totp_secret"));
                 }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> updateTotpFlow(UUID uuid, boolean alwaysRequired) {
+        return runAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("UPDATE pa_accounts SET totp_flow_always = ? WHERE uuid = ?")) {
+                statement.setBoolean(1, alwaysRequired);
+                statement.setString(2, uuid.toString());
+                statement.executeUpdate();
             }
         });
     }
@@ -359,6 +375,138 @@ public final class MySQLStorage implements StorageProvider {
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP")) {
                 return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> saveIpHistory(String username, String ipAddress, AccountType accountType, Instant observedAt) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_ip_history (username, ip, account_type, observed_at)
+                    VALUES (?, ?, ?, ?)
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, username);
+                statement.setString(2, ipAddress);
+                statement.setString(3, accountType.name());
+                statement.setTimestamp(4, Timestamp.from(observedAt));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> countDistinctUsernamesForIpSince(String ipAddress, Instant since) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT COUNT(DISTINCT username)
+                    FROM pa_ip_history
+                    WHERE ip = ? AND observed_at >= ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, ipAddress);
+                statement.setTimestamp(2, Timestamp.from(since));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next();
+                    return resultSet.getInt(1);
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> countDistinctIpsForUsernameSince(String username, Instant since) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT COUNT(DISTINCT ip)
+                    FROM pa_ip_history
+                    WHERE username = ? AND observed_at >= ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, username);
+                statement.setTimestamp(2, Timestamp.from(since));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next();
+                    return resultSet.getInt(1);
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> deleteIpHistoryOlderThan(Instant cutoff) {
+        return supplyAsync(() -> {
+            String sql = "DELETE FROM pa_ip_history WHERE observed_at < ?";
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setTimestamp(1, Timestamp.from(cutoff));
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<IpSummary>> topIpsByDistinctUsernamesSince(Instant since, int limit) {
+        return supplyAsync(() -> {
+            int boundedLimit = Math.max(1, limit);
+            String sql = """
+                    SELECT ip, COUNT(DISTINCT username) AS distinct_usernames, COUNT(*) AS total_hits
+                    FROM pa_ip_history
+                    WHERE observed_at >= ?
+                    GROUP BY ip
+                    ORDER BY distinct_usernames DESC, total_hits DESC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setTimestamp(1, Timestamp.from(since));
+                statement.setInt(2, boundedLimit);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<IpSummary> rows = new ArrayList<>();
+                    while (resultSet.next()) {
+                        rows.add(new IpSummary(
+                                resultSet.getString("ip"),
+                                resultSet.getInt("distinct_usernames"),
+                                resultSet.getInt("total_hits")
+                        ));
+                    }
+                    return rows;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<UserSummary>> topUsersByDistinctIpsSince(Instant since, int limit) {
+        return supplyAsync(() -> {
+            int boundedLimit = Math.max(1, limit);
+            String sql = """
+                    SELECT username, COUNT(DISTINCT ip) AS distinct_ips, COUNT(*) AS total_hits
+                    FROM pa_ip_history
+                    WHERE observed_at >= ?
+                    GROUP BY username
+                    ORDER BY distinct_ips DESC, total_hits DESC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setTimestamp(1, Timestamp.from(since));
+                statement.setInt(2, boundedLimit);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<UserSummary> rows = new ArrayList<>();
+                    while (resultSet.next()) {
+                        rows.add(new UserSummary(
+                                resultSet.getString("username"),
+                                resultSet.getInt("distinct_ips"),
+                                resultSet.getInt("total_hits")
+                        ));
+                    }
+                    return rows;
+                }
             }
         });
     }
@@ -552,11 +700,13 @@ public final class MySQLStorage implements StorageProvider {
                         account_type ENUM('PREMIUM','CRACKED') NOT NULL DEFAULT 'CRACKED',
                         email VARCHAR(255),
                         totp_secret VARCHAR(255),
+                        totp_flow_always TINYINT(1) NOT NULL DEFAULT 0,
                         registered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         last_login_at DATETIME,
                         last_ip VARCHAR(45)
                     )
                     """);
+            statement.executeUpdate("ALTER TABLE pa_accounts ADD COLUMN IF NOT EXISTS totp_flow_always TINYINT(1) NOT NULL DEFAULT 0");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_sessions (
                         token VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -605,10 +755,22 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_backend_probe_pending (acknowledged_at, expires_at)
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_ip_history (
+                        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(16) NOT NULL,
+                        ip VARCHAR(45) NOT NULL,
+                        account_type ENUM('PREMIUM','CRACKED') NOT NULL,
+                        observed_at DATETIME NOT NULL,
+                        INDEX idx_ip_history_ip_time (ip, observed_at),
+                        INDEX idx_ip_history_user_time (username, observed_at)
+                    )
+                    """);
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP");
+            statement.executeUpdate("DELETE FROM pa_ip_history WHERE observed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)");
         } catch (SQLException exception) {
             throw new IllegalStateException("Impossibile inizializzare lo schema MySQL.", exception);
         }
@@ -626,6 +788,7 @@ public final class MySQLStorage implements StorageProvider {
                 AccountType.valueOf(resultSet.getString("account_type")),
                 resultSet.getString("email"),
                 resultSet.getString("totp_secret"),
+                resultSet.getBoolean("totp_flow_always"),
                 resultSet.getTimestamp("registered_at").toInstant(),
                 nullableTimestamp(resultSet, "last_login_at"),
                 resultSet.getString("last_ip")

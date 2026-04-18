@@ -7,6 +7,7 @@ public interface StorageProvider extends
         SessionStorage,
         BackendJoinProbeStorage,
         BridgeAssertionStorage,
+        IpHistoryStorage,
         IpBanStorage,
         StatsStorage,
         AutoCloseable {
