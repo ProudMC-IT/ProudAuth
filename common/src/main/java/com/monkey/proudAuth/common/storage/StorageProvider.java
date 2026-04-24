@@ -4,6 +4,7 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 
 public interface StorageProvider extends
         AccountStorage,
+        TrustedIpStorage,
         SessionStorage,
         BackendJoinProbeStorage,
         BridgeAssertionStorage,
