@@ -34,7 +34,7 @@ commands:
     permission: proudauth.2fa
   proudauth:
     description: Comandi amministrativi ProudAuth
-    usage: /proudauth <subcommand>
+    usage: /proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|stats|reload>
     permission: proudauth.admin
     aliases: [proudauthbackend]
 
@@ -60,6 +60,8 @@ permissions:
   proudauth.admin.banip:
     default: op
   proudauth.admin.unbanip:
+    default: op
+  proudauth.admin.trustip:
     default: op
   proudauth.admin.stats:
     default: op
