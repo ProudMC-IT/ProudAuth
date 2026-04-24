@@ -59,6 +59,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
                 }
                 case ALREADY_AUTHENTICATED -> langConfig.send(player, "already-authenticated");
+                case PREMIUM_ACCOUNT -> langConfig.send(player, "login-premium-account");
                 case NEEDS_REGISTER -> langConfig.send(player, "register-required-first");
                 case WRONG_PASSWORD -> {
                     langConfig.send(player, "login-wrong-password");
