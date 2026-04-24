@@ -67,6 +67,7 @@ public interface AuthService {
     enum LoginStatus {
         SUCCESS,
         ALREADY_AUTHENTICATED,
+        PREMIUM_ACCOUNT,
         NEEDS_REGISTER,
         WRONG_PASSWORD,
         LOCKED,
@@ -79,6 +80,7 @@ public interface AuthService {
     enum RegisterStatus {
         SUCCESS,
         ALREADY_REGISTERED,
+        PREMIUM_ACCOUNT,
         PASSWORD_MISMATCH,
         PASSWORD_TOO_SHORT,
         PASSWORD_TOO_LONG,
