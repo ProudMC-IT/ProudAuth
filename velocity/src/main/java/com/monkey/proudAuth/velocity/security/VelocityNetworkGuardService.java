@@ -6,8 +6,8 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 
-import java.time.Instant;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.Deque;
 import java.util.Locale;
