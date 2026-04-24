@@ -4,7 +4,7 @@ import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.security.BruteForceGuard;
-import com.monkey.proudAuth.common.storage.StatsStorage;
+import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -31,7 +31,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
     private final AuthService authService;
     private final PlayerProtection playerProtection;
     private final BruteForceGuard bruteForceGuard;
-    private final StatsStorage storage;
+    private final StorageProvider storage;
     private final Runnable reloadAction;
 
     public ProudAuthAdminCommand(
@@ -41,7 +41,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             AuthService authService,
             PlayerProtection playerProtection,
             BruteForceGuard bruteForceGuard,
-            StatsStorage storage,
+            StorageProvider storage,
             Runnable reloadAction
     ) {
         this.plugin = plugin;
@@ -61,7 +61,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             return true;
         }
         if (args.length == 0) {
-            langConfig.send(sender, "error-usage", Placeholder.unparsed("usage", "/proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|stats|reload>"));
+            langConfig.send(sender, "error-usage", Placeholder.unparsed("usage", "/proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|stats|reload>"));
             return true;
         }
 
@@ -72,6 +72,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             case "resetpassword" -> handleResetPassword(sender, args);
             case "banip" -> handleBanIp(sender, args);
             case "unbanip" -> handleUnbanIp(sender, args);
+            case "trustip" -> handleTrustIp(sender, args);
             case "stats" -> handleStats(sender);
             case "reload" -> handleReload(sender);
             default -> {
@@ -84,13 +85,23 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("forcelogin", "forcelogout", "resetpassword", "banip", "unbanip", "stats", "reload"), args[0]);
+            return filter(List.of("forcelogin", "forcelogout", "resetpassword", "banip", "unbanip", "trustip", "stats", "reload"), args[0]);
         }
         if (args.length == 2 && ("forcelogin".equalsIgnoreCase(args[0]) || "forcelogout".equalsIgnoreCase(args[0]))) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[1]);
         }
         if (args.length == 2 && "resetpassword".equalsIgnoreCase(args[0])) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[1]);
+        }
+        if (args.length == 2 && "trustip".equalsIgnoreCase(args[0])) {
+            return filter(
+                    Bukkit.getOnlinePlayers().stream()
+                            .map(player -> player.getAddress() == null ? null : player.getAddress().getAddress().getHostAddress())
+                            .filter(java.util.Objects::nonNull)
+                            .distinct()
+                            .toList(),
+                    args[1]
+            );
         }
         if (args.length == 2 && ("banip".equalsIgnoreCase(args[0]) || "unbanip".equalsIgnoreCase(args[0]))) {
             return filter(
@@ -104,6 +115,9 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         }
         if (args.length == 3 && "banip".equalsIgnoreCase(args[0])) {
             return filter(List.of("300", "900", "1800", "3600", "7200"), args[2]);
+        }
+        if (args.length == 3 && "trustip".equalsIgnoreCase(args[0])) {
+            return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
         }
         return Collections.emptyList();
     }
@@ -229,6 +243,38 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         return true;
     }
 
+    private boolean handleTrustIp(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("proudauth.admin.trustip")) {
+            langConfig.send(sender, "no-permission");
+            return true;
+        }
+        if (args.length != 3) {
+            langConfig.send(sender, "error-usage", Placeholder.unparsed("usage", "/proudauth trustip <ip> <player>"));
+            return true;
+        }
+
+        String ipAddress = args[1].trim();
+        if (!isLikelyIpAddress(ipAddress)) {
+            langConfig.send(sender, "admin-invalid-ip", Placeholder.unparsed("ip", ipAddress));
+            return true;
+        }
+
+        String username = args[2].trim();
+        storage.setTrustedIp(username, ipAddress).whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+            if (exception != null) {
+                langConfig.send(sender, "error-generic");
+                return;
+            }
+            langConfig.send(
+                    sender,
+                    "admin-trust-ip-set",
+                    Placeholder.unparsed("player", username),
+                    Placeholder.unparsed("ip", ipAddress)
+            );
+        }));
+        return true;
+    }
+
     private boolean handleStats(CommandSender sender) {
         if (!sender.hasPermission("proudauth.admin.stats")) {
             langConfig.send(sender, "no-permission");
@@ -273,5 +319,23 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         } catch (NumberFormatException exception) {
             return fallback;
         }
+    }
+
+    private boolean isLikelyIpAddress(String raw) {
+        if (raw == null || raw.isBlank() || raw.length() > 45) {
+            return false;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            char character = raw.charAt(i);
+            if (Character.isDigit(character)
+                    || (character >= 'a' && character <= 'f')
+                    || (character >= 'A' && character <= 'F')
+                    || character == '.'
+                    || character == ':') {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 }
