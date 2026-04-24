@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthPlayer;
 import com.monkey.proudAuth.common.model.AuthState;
+import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.security.BruteForceGuard;
 import com.monkey.proudAuth.common.security.TotpService;
 import com.monkey.proudAuth.common.session.SessionManager;
@@ -29,6 +30,7 @@ public final class AuthServiceImpl implements AuthService {
     private final StorageProvider storage;
     private final SessionManager sessionManager;
     private final BruteForceGuard bruteForceGuard;
+    private final PremiumVerifier premiumVerifier;
     private final TotpService totpService;
     private final Map<UUID, AuthPlayer> trackedPlayers;
     private final Map<UUID, PendingTotpChallenge> pendingTotpChallenges;
@@ -39,12 +41,14 @@ public final class AuthServiceImpl implements AuthService {
             StorageProvider storage,
             SessionManager sessionManager,
             BruteForceGuard bruteForceGuard,
+            PremiumVerifier premiumVerifier,
             TotpService totpService,
             ProudAuthSettings settings
     ) {
         this.storage = storage;
         this.sessionManager = sessionManager;
         this.bruteForceGuard = bruteForceGuard;
+        this.premiumVerifier = premiumVerifier;
         this.totpService = totpService;
         this.settings = settings;
         this.trackedPlayers = new ConcurrentHashMap<>();
@@ -126,26 +130,42 @@ public final class AuthServiceImpl implements AuthService {
             return CompletableFuture.completedFuture(new RegisterResult(validation));
         }
 
-        return findAccount(uuid, username).thenCompose(optionalAccount -> {
-            if (optionalAccount.isPresent() && optionalAccount.get().passwordHash() != null) {
-                return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
+        return premiumVerifier.verify(username).thenCompose(premiumCheck -> {
+            if (premiumCheck.premium()) {
+                return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT));
             }
 
-            AccountRecord accountRecord = new AccountRecord(
-                    uuid,
-                    username,
-                    HashUtil.hash(password),
-                    accountType,
-                    optionalAccount.map(AccountRecord::email).orElse(null),
-                    optionalAccount.map(AccountRecord::totpSecret).orElse(null),
-                    optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways()),
-                    optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
-                    optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
-                    ipAddress
-            );
-            return storage.saveAccount(accountRecord)
-                    .thenCompose(ignored -> recordIpHistory(username, ipAddress, accountType))
-                    .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
+            return findAccount(uuid, username).thenCompose(optionalAccount -> {
+                if (optionalAccount.isPresent() && optionalAccount.get().passwordHash() != null) {
+                    return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
+                }
+                if (optionalAccount.map(AccountRecord::accountType).orElse(AccountType.CRACKED) == AccountType.PREMIUM) {
+                    return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT));
+                }
+
+                UUID targetUuid = optionalAccount.map(AccountRecord::uuid).orElse(uuid);
+                String targetUsername = optionalAccount.map(AccountRecord::username).orElse(username);
+                AccountType targetAccountType = optionalAccount
+                        .map(AccountRecord::accountType)
+                        .map(existingType -> existingType == AccountType.PREMIUM ? AccountType.PREMIUM : accountType)
+                        .orElse(accountType);
+
+                AccountRecord accountRecord = new AccountRecord(
+                        targetUuid,
+                        targetUsername,
+                        HashUtil.hash(password),
+                        targetAccountType,
+                        optionalAccount.map(AccountRecord::email).orElse(null),
+                        optionalAccount.map(AccountRecord::totpSecret).orElse(null),
+                        optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways()),
+                        optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
+                        optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
+                        ipAddress
+                );
+                return storage.saveAccount(accountRecord)
+                        .thenCompose(ignored -> recordIpHistory(targetUsername, ipAddress, targetAccountType))
+                        .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
+            });
         });
     }
 
@@ -453,7 +473,7 @@ public final class AuthServiceImpl implements AuthService {
             String ipAddress,
             Optional<AccountRecord> optionalAccount
     ) {
-        if (optionalAccount.isEmpty() || optionalAccount.get().passwordHash() == null) {
+        if (optionalAccount.isEmpty()) {
             return CompletableFuture.completedFuture(new LoginResult(
                     LoginStatus.NEEDS_REGISTER,
                     trackedAccountType(uuid, username),
@@ -464,6 +484,19 @@ public final class AuthServiceImpl implements AuthService {
         }
 
         AccountRecord account = optionalAccount.get();
+        if (account.passwordHash() == null) {
+            LoginStatus status = account.accountType() == AccountType.PREMIUM
+                    ? LoginStatus.PREMIUM_ACCOUNT
+                    : LoginStatus.NEEDS_REGISTER;
+            return CompletableFuture.completedFuture(new LoginResult(
+                    status,
+                    account.accountType(),
+                    0,
+                    settings.security().maxAttempts(),
+                    0
+            ));
+        }
+
         if (!HashUtil.matches(password, account.passwordHash())) {
             return bruteForceGuard.recordFailure(ipAddress)
                     .thenApply(failure -> new LoginResult(
