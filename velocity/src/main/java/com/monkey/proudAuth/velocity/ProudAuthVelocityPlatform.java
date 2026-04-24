@@ -88,7 +88,7 @@ public final class ProudAuthVelocityPlatform {
             riskCsvExporter = new VelocityRiskCsvExporter(securityInspectorService, dataDirectory.resolve("reports"));
             lastAutoExportAt = Instant.EPOCH;
             platformLogger.banner(
-                    "ProudAuth v1.0.0",
+                    "ProudAuth v1.0.1",
                     "Platform: Velocity proxy",
                     "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
