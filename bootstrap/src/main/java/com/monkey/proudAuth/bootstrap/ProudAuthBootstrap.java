@@ -23,7 +23,7 @@ public final class ProudAuthBootstrap {
         ProxyBridgeService bridgeService = new ProxyBridgeService(storage, settings);
         BruteForceGuard bruteForceGuard = new BruteForceGuard(storage, settings);
         TotpService totpService = new TotpService(settings);
-        AuthService authService = new AuthServiceImpl(storage, sessionManager, bruteForceGuard, totpService, settings);
+        AuthService authService = new AuthServiceImpl(storage, sessionManager, bruteForceGuard, premiumVerifier, totpService, settings);
 
         return new ProudAuthRuntime(
                 platformType,
