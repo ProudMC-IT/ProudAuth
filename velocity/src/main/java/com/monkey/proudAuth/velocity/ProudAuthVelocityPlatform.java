@@ -18,6 +18,7 @@ import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumProofStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -46,6 +47,7 @@ public final class ProudAuthVelocityPlatform {
     private VelocityRiskCsvExporter riskCsvExporter;
     private Instant lastAutoExportAt;
     private ScheduledTask maintenanceTask;
+    private final VelocityPremiumProofStore premiumProofStore = new VelocityPremiumProofStore();
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
@@ -109,20 +111,24 @@ public final class ProudAuthVelocityPlatform {
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
+                    () -> premiumVerifier,
+                    () -> settings.premium(),
                     () -> lang,
                     () -> settings.debugger(),
                     backendJoinProbeService,
                     networkGuardService,
+                    premiumProofStore,
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
+                    () -> storage,
                     () -> bridgeService,
                     () -> settings.premium().rewriteGameProfile(),
                     () -> settings.premium().requireUuidProof(),
-                    () -> settings.premium(),
                     () -> settings.debugger(),
                     networkGuardService,
+                    premiumProofStore,
                     resolvedPlayerStore,
                     platformLogger
             ));
