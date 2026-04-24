@@ -8,6 +8,7 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.security.BruteForceGuard;
+import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import org.bukkit.Bukkit;
@@ -23,6 +24,7 @@ public final class BukkitPreLoginService {
     private final PremiumVerifier premiumVerifier;
     private final ProxyBridgeService bridgeService;
     private final BruteForceGuard bruteForceGuard;
+    private final StorageProvider storage;
     private final ProudAuthConsoleLogger logger;
 
     public BukkitPreLoginService(
@@ -31,6 +33,7 @@ public final class BukkitPreLoginService {
             PremiumVerifier premiumVerifier,
             ProxyBridgeService bridgeService,
             BruteForceGuard bruteForceGuard,
+            StorageProvider storage,
             ProudAuthConsoleLogger logger
     ) {
         this.pluginConfig = pluginConfig;
@@ -38,6 +41,7 @@ public final class BukkitPreLoginService {
         this.premiumVerifier = premiumVerifier;
         this.bridgeService = bridgeService;
         this.bruteForceGuard = bruteForceGuard;
+        this.storage = storage;
         this.logger = logger;
     }
 
@@ -60,20 +64,31 @@ public final class BukkitPreLoginService {
             return Optional.empty();
         }
 
-        ResolvedLogin resolvedLogin = pluginConfig.settings().proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY
-                ? resolveForVelocity(event, ip).orElse(null)
-                : resolveStandalone(event, ip);
-        if (resolvedLogin == null) {
+        Optional<String> trustedIp = storage.findTrustedIp(event.getName()).join();
+        if (trustedIp.isPresent() && !trustedIp.get().equalsIgnoreCase(ip)) {
+            debugEvent(DebugChannel.SECURITY_FLOW, "trusted_ip_mismatch",
+                    "player", event.getName(),
+                    "ip", ip,
+                    "trusted_ip", trustedIp.get());
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-trusted-ip-mismatch"));
             return Optional.empty();
         }
 
+        Optional<ResolvedLogin> resolvedLogin = pluginConfig.settings().proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY
+                ? resolveForVelocity(event, ip)
+                : resolveStandalone(event, ip);
+        if (resolvedLogin.isEmpty()) {
+            return Optional.empty();
+        }
+        ResolvedLogin login = resolvedLogin.get();
+
         debugEvent(DebugChannel.PLAYER_RESOLUTION, "prelogin_resolved",
                 "player", event.getName(),
-                "resolved_name", resolvedLogin.username(),
-                "account_type", resolvedLogin.accountType(),
-                "stored_key", resolvedLogin.uuid(),
-                "ip", resolvedLogin.ipAddress());
-        return Optional.of(resolvedLogin);
+                "resolved_name", login.username(),
+                "account_type", login.accountType(),
+                "stored_key", login.uuid(),
+                "ip", login.ipAddress());
+        return resolvedLogin;
     }
 
     private Optional<ResolvedLogin> resolveForVelocity(AsyncPlayerPreLoginEvent event, String ip) {
@@ -84,7 +99,17 @@ public final class BukkitPreLoginService {
                 "accepted", bridgeResult.accepted());
 
         if (bridgeResult.accepted()) {
-            return Optional.of(applyBridgeAssertion(event, bridgeResult.assertion().orElseThrow()));
+            ProxyBridgeAssertion assertion = bridgeResult.assertion().orElseThrow();
+            if (assertion.accountType() == AccountType.CRACKED
+                    && shouldDenyPremiumImpersonation(event.getName(), assertion.uuid(), ip)) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "bridge_impersonation_denied",
+                        "player", event.getName(),
+                        "assertion_uuid", assertion.uuid(),
+                        "ip", ip);
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
+                return Optional.empty();
+            }
+            return Optional.of(applyBridgeAssertion(event, assertion));
         }
 
         if (pluginConfig.settings().bridge().enabled()
@@ -96,10 +121,11 @@ public final class BukkitPreLoginService {
             return Optional.empty();
         }
 
-        return Optional.of(resolveVelocityFallback(event, ip));
+        return resolveVelocityFallback(event, ip);
     }
 
-    private ResolvedLogin resolveStandalone(AsyncPlayerPreLoginEvent event, String ip) {
+    private Optional<ResolvedLogin> resolveStandalone(AsyncPlayerPreLoginEvent event, String ip) {
+        UUID currentUuid = event.getUniqueId();
         PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(event.getName()).join();
         debugEvent(DebugChannel.PREMIUM_FLOW, "premium_check_standalone",
                 "player", event.getName(),
@@ -107,14 +133,33 @@ public final class BukkitPreLoginService {
                 "resolved_uuid", premiumCheck.resolvedUuid(),
                 "resolved_name", premiumCheck.resolvedName());
 
-        UUID resolvedUuid = premiumCheck.premium()
-                ? premiumCheck.resolvedUuid()
-                : PremiumVerifier.offlineUuid(event.getName());
-        String resolvedName = premiumCheck.resolvedName();
-        AccountType accountType = premiumCheck.premium() ? AccountType.PREMIUM : AccountType.CRACKED;
+        if (!premiumCheck.premium()) {
+            return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ip));
+        }
 
+        boolean currentUuidProvesPremium = currentUuid != null && currentUuid.equals(premiumCheck.resolvedUuid());
+        if (pluginConfig.settings().premium().requireUuidProof() && !currentUuidProvesPremium) {
+            if (hasTrustedIpMatch(event.getName(), ip)) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_trusted_ip_override",
+                        "player", event.getName(),
+                        "ip", ip,
+                        "current_uuid", currentUuid,
+                        "resolved_uuid", premiumCheck.resolvedUuid());
+            } else {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_downgraded",
+                        "player", event.getName(),
+                        "reason", "UUID_PROOF_REQUIRED",
+                        "current_uuid", currentUuid,
+                        "resolved_uuid", premiumCheck.resolvedUuid());
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
+                return Optional.empty();
+            }
+        }
+
+        UUID resolvedUuid = premiumCheck.resolvedUuid();
+        String resolvedName = premiumCheck.resolvedName();
         applyProfile(event, resolvedUuid, resolvedName);
-        return new ResolvedLogin(resolvedUuid, resolvedName, accountType, ip);
+        return Optional.of(new ResolvedLogin(resolvedUuid, resolvedName, AccountType.PREMIUM, ip));
     }
 
     private ResolvedLogin applyBridgeAssertion(AsyncPlayerPreLoginEvent event, ProxyBridgeAssertion assertion) {
@@ -131,20 +176,11 @@ public final class BukkitPreLoginService {
         return new ResolvedLogin(assertion.uuid(), assertion.resolvedName(), assertion.accountType(), assertion.ipAddress());
     }
 
-    private ResolvedLogin resolveVelocityFallback(AsyncPlayerPreLoginEvent event, String ipAddress) {
+    private Optional<ResolvedLogin> resolveVelocityFallback(AsyncPlayerPreLoginEvent event, String ipAddress) {
         UUID currentUuid = event.getUniqueId();
-        UUID offlineUuid = PremiumVerifier.offlineUuid(event.getName());
         debugEvent(DebugChannel.PROFILE_FLOW, "velocity_fallback_start",
                 "player", event.getName(),
-                "current_uuid", currentUuid,
-                "offline_uuid", offlineUuid);
-
-        if (!currentUuid.equals(offlineUuid)) {
-            debugEvent(DebugChannel.PROFILE_FLOW, "velocity_fallback_forwarded_premium",
-                    "player", event.getName(),
-                    "uuid", currentUuid);
-            return new ResolvedLogin(currentUuid, event.getName(), AccountType.PREMIUM, ipAddress);
-        }
+                "current_uuid", currentUuid);
 
         PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(event.getName()).join();
         debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_check",
@@ -153,27 +189,64 @@ public final class BukkitPreLoginService {
                 "resolved_uuid", premiumCheck.resolvedUuid(),
                 "resolved_name", premiumCheck.resolvedName());
         if (premiumCheck.premium()) {
-            if (pluginConfig.settings().premium().requireUuidProof()) {
+            boolean currentUuidProvesPremium = currentUuid != null && currentUuid.equals(premiumCheck.resolvedUuid());
+            boolean trustedIpMatch = hasTrustedIpMatch(event.getName(), ipAddress);
+            if (pluginConfig.settings().premium().requireUuidProof() && !trustedIpMatch && !currentUuidProvesPremium) {
                 debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_downgraded",
                         "player", event.getName(),
                         "reason", "UUID_PROOF_REQUIRED",
-                        "current_uuid", currentUuid);
-                return new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress);
+                        "current_uuid", currentUuid,
+                        "resolved_uuid", premiumCheck.resolvedUuid());
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
+                return Optional.empty();
+            }
+            if (pluginConfig.settings().premium().requireUuidProof() && trustedIpMatch && !currentUuidProvesPremium) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_trusted_ip_override",
+                        "player", event.getName(),
+                        "ip", ipAddress);
             }
             applyProfile(event, premiumCheck.resolvedUuid(), premiumCheck.resolvedName());
-            return new ResolvedLogin(
+            return Optional.of(new ResolvedLogin(
                     premiumCheck.resolvedUuid(),
                     premiumCheck.resolvedName(),
                     AccountType.PREMIUM,
                     ipAddress
-            );
+            ));
         }
 
-        return new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress);
+        return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
     }
 
     private void applyProfile(AsyncPlayerPreLoginEvent event, UUID uuid, String name) {
         event.setPlayerProfile(Bukkit.createProfileExact(uuid, name));
+    }
+
+    private boolean hasTrustedIpMatch(String username, String ipAddress) {
+        if (ipAddress == null || ipAddress.isBlank() || "unknown".equalsIgnoreCase(ipAddress)) {
+            return false;
+        }
+        return storage.findTrustedIp(username)
+                .thenApply(trustedIp -> trustedIp.map(ipAddress::equalsIgnoreCase).orElse(false))
+                .exceptionally(ignored -> false)
+                .join();
+    }
+
+    private boolean shouldDenyPremiumImpersonation(String username, UUID currentUuid, String ipAddress) {
+        if (!pluginConfig.settings().premium().enabled() || !pluginConfig.settings().premium().requireUuidProof()) {
+            return false;
+        }
+        if (hasTrustedIpMatch(username, ipAddress)) {
+            return false;
+        }
+        try {
+            PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(username).join();
+            if (!premiumCheck.premium()) {
+                return false;
+            }
+            return currentUuid == null || !currentUuid.equals(premiumCheck.resolvedUuid());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
