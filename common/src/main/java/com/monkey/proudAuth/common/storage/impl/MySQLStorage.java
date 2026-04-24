@@ -16,6 +16,7 @@ import java.sql.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -75,7 +76,12 @@ public final class MySQLStorage implements StorageProvider {
             String sql = """
                     SELECT uuid, username, password_hash, account_type, email, totp_secret, totp_flow_always, registered_at, last_login_at, last_ip
                     FROM pa_accounts
-                    WHERE username = ?
+                    WHERE LOWER(username) = LOWER(?)
+                    ORDER BY
+                        CASE WHEN account_type = 'PREMIUM' THEN 0 ELSE 1 END,
+                        CASE WHEN password_hash IS NULL THEN 1 ELSE 0 END,
+                        last_login_at DESC,
+                        registered_at ASC
                     LIMIT 1
                     """;
             try (Connection connection = connection();
@@ -101,7 +107,11 @@ public final class MySQLStorage implements StorageProvider {
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         password_hash = IFNULL(VALUES(password_hash), password_hash),
-                        account_type = VALUES(account_type),
+                        account_type = CASE
+                            WHEN account_type = 'PREMIUM' THEN account_type
+                            WHEN VALUES(account_type) = 'PREMIUM' THEN 'PREMIUM'
+                            ELSE VALUES(account_type)
+                        END,
                         email = IFNULL(VALUES(email), email),
                         totp_secret = IFNULL(VALUES(totp_secret), totp_secret),
                         totp_flow_always = VALUES(totp_flow_always),
@@ -140,22 +150,116 @@ public final class MySQLStorage implements StorageProvider {
     @Override
     public CompletableFuture<Void> touchLogin(UUID uuid, String username, String ip, AccountType accountType) {
         return runAsync(() -> {
+            try (Connection connection = connection()) {
+                String updateByUuidSql = """
+                        UPDATE pa_accounts
+                        SET username = ?,
+                            account_type = CASE
+                                WHEN account_type = 'PREMIUM' OR ? = 'PREMIUM' THEN 'PREMIUM'
+                                ELSE account_type
+                            END,
+                            last_login_at = CURRENT_TIMESTAMP,
+                            last_ip = ?
+                        WHERE uuid = ?
+                        """;
+                int updatedByUuid;
+                try (PreparedStatement statement = connection.prepareStatement(updateByUuidSql)) {
+                    statement.setString(1, username);
+                    statement.setString(2, accountType.name());
+                    statement.setString(3, ip);
+                    statement.setString(4, uuid.toString());
+                    updatedByUuid = statement.executeUpdate();
+                }
+                if (updatedByUuid > 0) {
+                    return;
+                }
+
+                String updateByUsernameSql = """
+                        UPDATE pa_accounts
+                        SET uuid = CASE
+                                WHEN account_type = 'PREMIUM' AND ? <> 'PREMIUM' THEN uuid
+                                ELSE ?
+                            END,
+                            username = ?,
+                            account_type = CASE
+                                WHEN account_type = 'PREMIUM' OR ? = 'PREMIUM' THEN 'PREMIUM'
+                                ELSE account_type
+                            END,
+                            last_login_at = CURRENT_TIMESTAMP,
+                            last_ip = ?
+                        WHERE LOWER(username) = LOWER(?)
+                        ORDER BY
+                            CASE WHEN account_type = 'PREMIUM' THEN 0 ELSE 1 END,
+                            last_login_at DESC,
+                            registered_at ASC
+                        LIMIT 1
+                        """;
+                int updatedByUsername;
+                try (PreparedStatement statement = connection.prepareStatement(updateByUsernameSql)) {
+                    statement.setString(1, accountType.name());
+                    statement.setString(2, uuid.toString());
+                    statement.setString(3, username);
+                    statement.setString(4, accountType.name());
+                    statement.setString(5, ip);
+                    statement.setString(6, username);
+                    updatedByUsername = statement.executeUpdate();
+                }
+                if (updatedByUsername > 0) {
+                    return;
+                }
+
+                String insertSql = """
+                        INSERT INTO pa_accounts (uuid, username, password_hash, account_type, registered_at, last_login_at, last_ip)
+                        VALUES (?, ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+                        """;
+                try (PreparedStatement statement = connection.prepareStatement(insertSql)) {
+                    statement.setString(1, uuid.toString());
+                    statement.setString(2, username);
+                    statement.setString(3, accountType.name());
+                    statement.setString(4, ip);
+                    statement.executeUpdate();
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> setTrustedIp(String username, String ipAddress) {
+        return runAsync(() -> {
             String sql = """
-                    INSERT INTO pa_accounts (uuid, username, password_hash, account_type, registered_at, last_login_at, last_ip)
-                    VALUES (?, ?, NULL, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)
+                    INSERT INTO pa_trusted_ips (username, ip, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
                     ON DUPLICATE KEY UPDATE
-                        username = VALUES(username),
-                        account_type = VALUES(account_type),
-                        last_login_at = CURRENT_TIMESTAMP,
-                        last_ip = VALUES(last_ip)
+                        ip = VALUES(ip),
+                        updated_at = CURRENT_TIMESTAMP
                     """;
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, uuid.toString());
-                statement.setString(2, username);
-                statement.setString(3, accountType.name());
-                statement.setString(4, ip);
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, ipAddress);
                 statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<String>> findTrustedIp(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT ip
+                    FROM pa_trusted_ips
+                    WHERE username = ?
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.ofNullable(resultSet.getString("ip"));
+                }
             }
         });
     }
@@ -766,6 +870,13 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_ip_history_user_time (username, observed_at)
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_trusted_ips (
+                        username VARCHAR(16) NOT NULL PRIMARY KEY,
+                        ip VARCHAR(45) NOT NULL,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+                    )
+                    """);
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
@@ -815,6 +926,10 @@ public final class MySQLStorage implements StorageProvider {
             resultSet.next();
             return resultSet.getLong(1);
         }
+    }
+
+    private static String canonicalUsername(String username) {
+        return username.toLowerCase(Locale.ROOT);
     }
 
     private <T> CompletableFuture<T> supplyAsync(SqlSupplier<T> supplier) {
