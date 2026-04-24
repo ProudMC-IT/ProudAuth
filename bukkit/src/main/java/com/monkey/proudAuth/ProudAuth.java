@@ -182,6 +182,7 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.premiumVerifier(),
                 runtime.bridgeService(),
                 runtime.bruteForceGuard(),
+                runtime.storage(),
                 logger
         );
         playerPreLoginListener = new PlayerPreLoginListener(preLoginService);
