@@ -12,7 +12,7 @@ import java.util.concurrent.CompletableFuture;
 
 public interface AuthService {
 
-    void trackPlayer(UUID uuid, String username, AccountType accountType);
+    void trackPlayer(UUID uuid, UUID accountUuid, String username, AccountType accountType);
 
     void untrackPlayer(UUID uuid);
 

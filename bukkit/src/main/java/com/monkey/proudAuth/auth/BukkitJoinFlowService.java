@@ -43,7 +43,7 @@ public final class BukkitJoinFlowService {
     }
 
     public void handleJoin(Player player, ResolvedLogin resolvedLogin) {
-        authService.trackPlayer(player.getUniqueId(), player.getName(), resolvedLogin.accountType());
+        authService.trackPlayer(player.getUniqueId(), resolvedLogin.uuid(), player.getName(), resolvedLogin.accountType());
 
         boolean rawBypassPermission = player.hasPermission("proudauth.bypass.auth");
         boolean bypassAuth = rawBypassPermission && resolvedLogin.accountType() != AccountType.PREMIUM;
@@ -139,11 +139,12 @@ public final class BukkitJoinFlowService {
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
 
-        sessionManager.findValid(player.getUniqueId(), resolvedLogin.ipAddress(), resolvedLogin.accountType())
+        sessionManager.findValid(resolvedLogin.uuid(), resolvedLogin.ipAddress(), resolvedLogin.accountType())
                 .thenCompose(optionalSession -> {
                     debugEvent(DebugChannel.SESSION_FLOW, "join_session_lookup",
                             "player", player.getName(),
                             "uuid", player.getUniqueId(),
+                            "account_uuid", resolvedLogin.uuid(),
                             "session_present", optionalSession.isPresent());
                     if (optionalSession.isPresent()) {
                         return authService.authenticateWithTotpGate(
