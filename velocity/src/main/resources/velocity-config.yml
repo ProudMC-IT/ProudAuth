@@ -25,6 +25,7 @@ debugger:
 premium:
   enabled: true
   api-timeout-ms: 3000
+  online-mode-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"
 
 bridge:
   enabled: false

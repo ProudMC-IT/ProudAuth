@@ -19,6 +19,8 @@ dependencies {
     compileOnly 'dev.samstevens.totp:totp:1.7.1'
     compileOnly 'com.mysql:mysql-connector-j:9.6.0'
     compileOnly 'org.yaml:snakeyaml:2.6'
+    compileOnly 'net.bytebuddy:byte-buddy:1.18.2'
+    compileOnly 'net.bytebuddy:byte-buddy-agent:1.18.2'
 }
 
 sourceSets {

@@ -49,6 +49,7 @@ final class VelocityRuntimeLibraryLoader {
                     pluginClass.getClassLoader(),
                     List.of(
                             "com.monkey.proudAuth.",
+                            "net.bytebuddy.",
                             "com.zaxxer.hikari.",
                             "org.mindrot.jbcrypt.",
                             "dev.samstevens.totp.",
@@ -88,7 +89,9 @@ final class VelocityRuntimeLibraryLoader {
                 new LibraryCoordinate("com.beust", "jcommander", "1.72"),
                 new LibraryCoordinate("com.mysql", "mysql-connector-j", "9.6.0"),
                 new LibraryCoordinate("com.google.protobuf", "protobuf-java", "4.31.1"),
-                new LibraryCoordinate("org.yaml", "snakeyaml", "2.6")
+                new LibraryCoordinate("org.yaml", "snakeyaml", "2.6"),
+                new LibraryCoordinate("net.bytebuddy", "byte-buddy", "1.18.2"),
+                new LibraryCoordinate("net.bytebuddy", "byte-buddy-agent", "1.18.2")
         );
     }
 

@@ -12,6 +12,7 @@ import com.monkey.proudAuth.velocity.commands.ProudAuthVelocityCommand;
 import com.monkey.proudAuth.velocity.config.VelocityConfigLoader;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
+import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectInstrumentation;
 import com.monkey.proudAuth.velocity.listeners.VelocityGameProfileListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityPreLoginListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
@@ -45,6 +46,7 @@ public final class ProudAuthVelocityPlatform {
     private VelocityNetworkGuardService networkGuardService;
     private VelocitySecurityInspectorService securityInspectorService;
     private VelocityRiskCsvExporter riskCsvExporter;
+    private VelocityOnlineModeDisconnectInstrumentation disconnectInstrumentation;
     private Instant lastAutoExportAt;
     private ScheduledTask maintenanceTask;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore = new VelocityWhitelistEnforcementStore();
@@ -86,6 +88,7 @@ public final class ProudAuthVelocityPlatform {
             );
             securityInspectorService = new VelocitySecurityInspectorService(() -> storage);
             riskCsvExporter = new VelocityRiskCsvExporter(securityInspectorService, dataDirectory.resolve("reports"));
+            disconnectInstrumentation = new VelocityOnlineModeDisconnectInstrumentation(platformLogger);
             lastAutoExportAt = Instant.EPOCH;
             platformLogger.banner(
                     "ProudAuth v1.0.1",
@@ -100,6 +103,8 @@ public final class ProudAuthVelocityPlatform {
                     "bridge_mode", settings.bridge().mode(),
                     "premium_enabled", settings.premium().enabled(),
                     "premium_api_timeout_ms", settings.premium().apiTimeoutMs());
+            disconnectInstrumentation.updateMessage(settings.premium().onlineModeDeniedMessage());
+            disconnectInstrumentation.install();
 
             VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
                     () -> storage,
@@ -156,6 +161,10 @@ public final class ProudAuthVelocityPlatform {
                 maintenanceTask.cancel();
                 maintenanceTask = null;
             }
+            if (disconnectInstrumentation != null) {
+                disconnectInstrumentation.shutdown();
+                disconnectInstrumentation = null;
+            }
             if (storage != null) {
                 storage.close();
             }
@@ -172,6 +181,9 @@ public final class ProudAuthVelocityPlatform {
             premiumVerifier.reload(settings.toCommonSettings());
             bridgeService.reload(settings.toCommonSettings());
             lastAutoExportAt = Instant.EPOCH;
+            if (disconnectInstrumentation != null) {
+                disconnectInstrumentation.updateMessage(settings.premium().onlineModeDeniedMessage());
+            }
             if (maintenanceTask != null) {
                 maintenanceTask.cancel();
                 maintenanceTask = null;

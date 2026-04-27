@@ -74,7 +74,8 @@ public record VelocityPluginSettings(
 
     public record Premium(
             boolean enabled,
-            int apiTimeoutMs
+            int apiTimeoutMs,
+            String onlineModeDeniedMessage
     ) {
     }
 
