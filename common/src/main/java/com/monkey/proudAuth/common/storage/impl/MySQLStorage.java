@@ -261,6 +261,100 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Void> addPremiumIpWhitelist(String username, String ip) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT IGNORE INTO pa_premium_ip_whitelist (username, ip)
+                    VALUES (?, ?)
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, ip);
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> removePremiumIpWhitelist(String username, String ip) {
+        return supplyAsync(() -> {
+            String sql = """
+                    DELETE FROM pa_premium_ip_whitelist
+                    WHERE username = ? AND ip = ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, ip);
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<String>> listPremiumIpWhitelist(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT ip
+                    FROM pa_premium_ip_whitelist
+                    WHERE username = ?
+                    ORDER BY added_at
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<String> ips = new ArrayList<>();
+                    while (resultSet.next()) {
+                        ips.add(resultSet.getString("ip"));
+                    }
+                    return ips;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> isInPremiumIpWhitelist(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT COUNT(*)
+                    FROM pa_premium_ip_whitelist
+                    WHERE username = ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next();
+                    return resultSet.getInt(1) > 0;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> isPremiumIpWhitelisted(String username, String ip) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT COUNT(*)
+                    FROM pa_premium_ip_whitelist
+                    WHERE username = ? AND ip = ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, ip);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next();
+                    return resultSet.getInt(1) > 0;
+                }
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> updateTotpSecret(UUID uuid, @Nullable String encryptedSecret) {
         return runAsync(() -> {
             try (Connection connection = connection();
@@ -301,27 +395,25 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
-    public CompletableFuture<Optional<Session>> findValidSession(UUID uuid, @Nullable String ip) {
+    public CompletableFuture<Optional<Session>> findValidSession(UUID uuid, @Nullable String ip, AccountType expectedAccountType) {
         return supplyAsync(() -> {
             String sql = ip == null
-                    ? "SELECT token, uuid, ip, expires_at FROM pa_sessions WHERE uuid = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1"
-                    : "SELECT token, uuid, ip, expires_at FROM pa_sessions WHERE uuid = ? AND ip = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1";
+                    ? "SELECT token, uuid, ip, account_type, expires_at FROM pa_sessions WHERE uuid = ? AND account_type = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1"
+                    : "SELECT token, uuid, ip, account_type, expires_at FROM pa_sessions WHERE uuid = ? AND ip = ? AND account_type = ? AND expires_at > CURRENT_TIMESTAMP LIMIT 1";
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, uuid.toString());
                 if (ip != null) {
                     statement.setString(2, ip);
+                    statement.setString(3, expectedAccountType.name());
+                } else {
+                    statement.setString(2, expectedAccountType.name());
                 }
                 try (ResultSet resultSet = statement.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
                     }
-                    return Optional.of(new Session(
-                            resultSet.getString("token"),
-                            resultSet.getString("ip"),
-                            UUID.fromString(resultSet.getString("uuid")),
-                            resultSet.getTimestamp("expires_at").toInstant()
-                    ));
+                    return Optional.of(mapSession(resultSet));
                 }
             }
         });
@@ -331,11 +423,12 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Void> saveSession(Session session) {
         return runAsync(() -> {
             String sql = """
-                    INSERT INTO pa_sessions (token, uuid, ip, expires_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO pa_sessions (token, uuid, ip, account_type, expires_at)
+                    VALUES (?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         uuid = VALUES(uuid),
                         ip = VALUES(ip),
+                        account_type = VALUES(account_type),
                         expires_at = VALUES(expires_at)
                     """;
             try (Connection connection = connection();
@@ -343,7 +436,8 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(1, session.token());
                 statement.setString(2, session.uuid().toString());
                 statement.setString(3, session.ip());
-                statement.setTimestamp(4, Timestamp.from(session.expiresAt()));
+                statement.setString(4, session.accountType().name());
+                statement.setTimestamp(5, Timestamp.from(session.expiresAt()));
                 statement.executeUpdate();
             }
         });
@@ -355,6 +449,18 @@ public final class MySQLStorage implements StorageProvider {
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_sessions WHERE uuid = ?")) {
                 statement.setString(1, uuid.toString());
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> deleteSessionsByUuidAndNotAccountType(UUID uuid, AccountType keepType) {
+        return runAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_sessions WHERE uuid = ? AND account_type <> ?")) {
+                statement.setString(1, uuid.toString());
+                statement.setString(2, keepType.name());
                 statement.executeUpdate();
             }
         });
@@ -812,6 +918,7 @@ public final class MySQLStorage implements StorageProvider {
                         token VARCHAR(64) NOT NULL PRIMARY KEY,
                         uuid VARCHAR(36) NOT NULL,
                         ip VARCHAR(45) NOT NULL,
+                        account_type ENUM('PREMIUM','CRACKED') NOT NULL DEFAULT 'CRACKED',
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         expires_at DATETIME NOT NULL,
                         FOREIGN KEY (uuid) REFERENCES pa_accounts(uuid) ON DELETE CASCADE,
@@ -819,6 +926,7 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_session_expires (expires_at)
                     )
                     """);
+            statement.executeUpdate("ALTER TABLE pa_sessions ADD COLUMN IF NOT EXISTS account_type ENUM('PREMIUM','CRACKED') NOT NULL DEFAULT 'CRACKED'");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_ip_bans (
                         ip VARCHAR(45) NOT NULL PRIMARY KEY,
@@ -873,6 +981,16 @@ public final class MySQLStorage implements StorageProvider {
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_premium_ip_whitelist (
+                        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        username VARCHAR(16) NOT NULL,
+                        ip VARCHAR(45) NOT NULL,
+                        added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        UNIQUE KEY uk_whitelist_user_ip (username, ip),
+                        INDEX idx_whitelist_username (username)
+                    )
+                    """);
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
@@ -899,6 +1017,16 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getTimestamp("registered_at").toInstant(),
                 nullableTimestamp(resultSet, "last_login_at"),
                 resultSet.getString("last_ip")
+        );
+    }
+
+    private Session mapSession(ResultSet resultSet) throws SQLException {
+        return new Session(
+                resultSet.getString("token"),
+                resultSet.getString("ip"),
+                UUID.fromString(resultSet.getString("uuid")),
+                AccountType.valueOf(resultSet.getString("account_type")),
+                resultSet.getTimestamp("expires_at").toInstant()
         );
     }
 

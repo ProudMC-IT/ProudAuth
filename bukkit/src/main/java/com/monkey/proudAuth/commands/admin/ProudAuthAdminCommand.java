@@ -61,7 +61,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             return true;
         }
         if (args.length == 0) {
-            langConfig.send(sender, "error-usage", Placeholder.unparsed("usage", "/proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|stats|reload>"));
+            langConfig.send(sender, "error-usage", Placeholder.unparsed("usage", "/proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|whitelistip|stats|reload>"));
             return true;
         }
 
@@ -73,6 +73,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             case "banip" -> handleBanIp(sender, args);
             case "unbanip" -> handleUnbanIp(sender, args);
             case "trustip" -> handleTrustIp(sender, args);
+            case "whitelistip" -> handleWhitelistIp(sender, args);
             case "stats" -> handleStats(sender);
             case "reload" -> handleReload(sender);
             default -> {
@@ -85,7 +86,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return filter(List.of("forcelogin", "forcelogout", "resetpassword", "banip", "unbanip", "trustip", "stats", "reload"), args[0]);
+            return filter(List.of("forcelogin", "forcelogout", "resetpassword", "banip", "unbanip", "trustip", "whitelistip", "stats", "reload"), args[0]);
         }
         if (args.length == 2 && ("forcelogin".equalsIgnoreCase(args[0]) || "forcelogout".equalsIgnoreCase(args[0]))) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[1]);
@@ -117,6 +118,12 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             return filter(List.of("300", "900", "1800", "3600", "7200"), args[2]);
         }
         if (args.length == 3 && "trustip".equalsIgnoreCase(args[0])) {
+            return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
+        }
+        if (args.length == 2 && "whitelistip".equalsIgnoreCase(args[0])) {
+            return filter(List.of("add", "remove", "list"), args[1]);
+        }
+        if (args.length == 3 && "whitelistip".equalsIgnoreCase(args[0])) {
             return filter(Bukkit.getOnlinePlayers().stream().map(Player::getName).toList(), args[2]);
         }
         return Collections.emptyList();
@@ -272,6 +279,105 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
                     Placeholder.unparsed("ip", ipAddress)
             );
         }));
+        return true;
+    }
+
+    private boolean handleWhitelistIp(CommandSender sender, String[] args) {
+        if (!sender.hasPermission("proudauth.admin.whitelistip")) {
+            langConfig.send(sender, "no-permission");
+            return true;
+        }
+        if (args.length < 2) {
+            langConfig.send(sender, "error-usage",
+                    Placeholder.unparsed("usage", "/proudauth whitelistip <add|remove|list> <player> [ip]"));
+            return true;
+        }
+        String sub = args[1].toLowerCase(Locale.ROOT);
+        return switch (sub) {
+            case "add" -> handleWhitelistIpAdd(sender, args);
+            case "remove" -> handleWhitelistIpRemove(sender, args);
+            case "list" -> handleWhitelistIpList(sender, args);
+            default -> {
+                langConfig.send(sender, "admin-unknown-subcommand");
+                yield true;
+            }
+        };
+    }
+
+    private boolean handleWhitelistIpAdd(CommandSender sender, String[] args) {
+        if (args.length != 4) {
+            langConfig.send(sender, "error-usage",
+                    Placeholder.unparsed("usage", "/proudauth whitelistip add <player> <ip>"));
+            return true;
+        }
+        String username = args[2];
+        String ip = args[3].trim();
+        if (!isLikelyIpAddress(ip)) {
+            langConfig.send(sender, "admin-invalid-ip", Placeholder.unparsed("ip", ip));
+            return true;
+        }
+        storage.addPremiumIpWhitelist(username, ip).whenComplete((ignored, exception) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (exception != null) {
+                        langConfig.send(sender, "error-generic");
+                        return;
+                    }
+                    langConfig.send(sender, "admin-whitelist-ip-added",
+                            Placeholder.unparsed("player", username),
+                            Placeholder.unparsed("ip", ip));
+                }));
+        return true;
+    }
+
+    private boolean handleWhitelistIpRemove(CommandSender sender, String[] args) {
+        if (args.length != 4) {
+            langConfig.send(sender, "error-usage",
+                    Placeholder.unparsed("usage", "/proudauth whitelistip remove <player> <ip>"));
+            return true;
+        }
+        String username = args[2];
+        String ip = args[3].trim();
+        storage.removePremiumIpWhitelist(username, ip).whenComplete((removed, exception) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (exception != null) {
+                        langConfig.send(sender, "error-generic");
+                        return;
+                    }
+                    if (!removed) {
+                        langConfig.send(sender, "admin-whitelist-ip-not-found",
+                                Placeholder.unparsed("player", username),
+                                Placeholder.unparsed("ip", ip));
+                        return;
+                    }
+                    langConfig.send(sender, "admin-whitelist-ip-removed",
+                            Placeholder.unparsed("player", username),
+                            Placeholder.unparsed("ip", ip));
+                }));
+        return true;
+    }
+
+    private boolean handleWhitelistIpList(CommandSender sender, String[] args) {
+        if (args.length != 3) {
+            langConfig.send(sender, "error-usage",
+                    Placeholder.unparsed("usage", "/proudauth whitelistip list <player>"));
+            return true;
+        }
+        String username = args[2];
+        storage.listPremiumIpWhitelist(username).whenComplete((ips, exception) ->
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (exception != null) {
+                        langConfig.send(sender, "error-generic");
+                        return;
+                    }
+                    if (ips.isEmpty()) {
+                        langConfig.send(sender, "admin-whitelist-ip-empty",
+                                Placeholder.unparsed("player", username));
+                        return;
+                    }
+                    langConfig.send(sender, "admin-whitelist-ip-list",
+                            Placeholder.unparsed("player", username),
+                            Placeholder.unparsed("ips", String.join(", ", ips)));
+                }));
         return true;
     }
 

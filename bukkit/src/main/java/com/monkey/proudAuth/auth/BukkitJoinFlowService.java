@@ -139,7 +139,7 @@ public final class BukkitJoinFlowService {
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
 
-        sessionManager.findValid(player.getUniqueId(), resolvedLogin.ipAddress())
+        sessionManager.findValid(player.getUniqueId(), resolvedLogin.ipAddress(), resolvedLogin.accountType())
                 .thenCompose(optionalSession -> {
                     debugEvent(DebugChannel.SESSION_FLOW, "join_session_lookup",
                             "player", player.getName(),

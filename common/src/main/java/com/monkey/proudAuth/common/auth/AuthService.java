@@ -81,6 +81,7 @@ public interface AuthService {
         SUCCESS,
         ALREADY_REGISTERED,
         PREMIUM_ACCOUNT,
+        MOJANG_UNAVAILABLE,
         PASSWORD_MISMATCH,
         PASSWORD_TOO_SHORT,
         PASSWORD_TOO_LONG,
@@ -93,6 +94,8 @@ public interface AuthService {
     enum ChangePasswordStatus {
         SUCCESS,
         WRONG_OLD_PASSWORD,
+        PREMIUM_ACCOUNT,
+        MOJANG_UNAVAILABLE,
         PASSWORD_MISMATCH,
         PASSWORD_TOO_SHORT,
         PASSWORD_TOO_LONG,

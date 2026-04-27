@@ -56,6 +56,8 @@ public final class ChangePasswordCommand implements CommandExecutor, TabComplete
             switch (result.status()) {
                 case SUCCESS -> langConfig.send(player, "change-password-success");
                 case WRONG_OLD_PASSWORD -> langConfig.send(player, "change-password-wrong-old");
+                case PREMIUM_ACCOUNT -> langConfig.send(player, "change-password-premium-account");
+                case MOJANG_UNAVAILABLE -> langConfig.send(player, "change-password-mojang-unavailable");
                 case PASSWORD_MISMATCH -> langConfig.send(player, "register-password-mismatch");
                 case PASSWORD_TOO_SHORT -> langConfig.send(
                         player,

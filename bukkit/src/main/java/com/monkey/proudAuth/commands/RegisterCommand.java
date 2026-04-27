@@ -56,6 +56,7 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
                 case SUCCESS -> langConfig.send(player, "register-success");
                 case ALREADY_REGISTERED -> langConfig.send(player, "register-already-exists");
                 case PREMIUM_ACCOUNT -> langConfig.send(player, "register-premium-account");
+                case MOJANG_UNAVAILABLE -> langConfig.send(player, "register-mojang-unavailable");
                 case PASSWORD_MISMATCH -> langConfig.send(player, "register-password-mismatch");
                 case PASSWORD_TOO_SHORT -> langConfig.send(
                         player,

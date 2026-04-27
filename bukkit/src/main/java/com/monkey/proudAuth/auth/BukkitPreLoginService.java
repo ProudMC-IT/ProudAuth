@@ -74,6 +74,27 @@ public final class BukkitPreLoginService {
             return Optional.empty();
         }
 
+        boolean inWhitelist = storage.isInPremiumIpWhitelist(event.getName()).join();
+        if (inWhitelist) {
+            boolean ipAllowed = storage.isPremiumIpWhitelisted(event.getName(), ip).join();
+            if (!ipAllowed) {
+                debugEvent(DebugChannel.SECURITY_FLOW, "premium_whitelist_ip_mismatch",
+                        "player", event.getName(),
+                        "ip", ip);
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-whitelist-ip-required"));
+                return Optional.empty();
+            }
+
+            PremiumVerifier.PremiumCheckResult whitelistCheck = premiumVerifier.verify(event.getName()).join();
+            if (!whitelistCheck.premium()) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "premium_whitelist_non_premium_denied",
+                        "player", event.getName(),
+                        "ip", ip);
+                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-whitelist-premium-required"));
+                return Optional.empty();
+            }
+        }
+
         Optional<ResolvedLogin> resolvedLogin = pluginConfig.settings().proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY
                 ? resolveForVelocity(event, ip)
                 : resolveStandalone(event, ip);
@@ -134,32 +155,31 @@ public final class BukkitPreLoginService {
                 "resolved_name", premiumCheck.resolvedName());
 
         if (!premiumCheck.premium()) {
+            Optional<com.monkey.proudAuth.common.storage.AccountRecord> dbAccount = storage.findAccountByUsername(event.getName()).join();
+            if (dbAccount.isPresent() && dbAccount.get().accountType() == AccountType.PREMIUM) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_db_mismatch",
+                        "player", event.getName(),
+                        "stored_uuid", dbAccount.get().uuid(),
+                        "stored_name", dbAccount.get().username());
+            }
             return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ip));
         }
 
-        boolean currentUuidProvesPremium = currentUuid != null && currentUuid.equals(premiumCheck.resolvedUuid());
-        if (pluginConfig.settings().premium().requireUuidProof() && !currentUuidProvesPremium) {
-            if (hasTrustedIpMatch(event.getName(), ip)) {
-                debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_trusted_ip_override",
-                        "player", event.getName(),
-                        "ip", ip,
-                        "current_uuid", currentUuid,
-                        "resolved_uuid", premiumCheck.resolvedUuid());
-            } else {
-                debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_downgraded",
-                        "player", event.getName(),
-                        "reason", "UUID_PROOF_REQUIRED",
-                        "current_uuid", currentUuid,
-                        "resolved_uuid", premiumCheck.resolvedUuid());
-                event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
-                return Optional.empty();
-            }
+        UUID mojangUuid = premiumCheck.resolvedUuid();
+        boolean currentUuidProvesPremium = mojangUuid.equals(currentUuid);
+        boolean trustedIpMatch = hasTrustedIpMatch(event.getName(), ip);
+        if (!currentUuidProvesPremium && !trustedIpMatch) {
+            debugEvent(DebugChannel.PREMIUM_FLOW, "standalone_premium_impersonation_denied",
+                    "player", event.getName(),
+                    "current_uuid", currentUuid,
+                    "resolved_uuid", mojangUuid,
+                    "ip", ip);
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
+            return Optional.empty();
         }
 
-        UUID resolvedUuid = premiumCheck.resolvedUuid();
-        String resolvedName = premiumCheck.resolvedName();
-        applyProfile(event, resolvedUuid, resolvedName);
-        return Optional.of(new ResolvedLogin(resolvedUuid, resolvedName, AccountType.PREMIUM, ip));
+        applyProfile(event, mojangUuid, premiumCheck.resolvedName());
+        return Optional.of(new ResolvedLogin(mojangUuid, premiumCheck.resolvedName(), AccountType.PREMIUM, ip));
     }
 
     private ResolvedLogin applyBridgeAssertion(AsyncPlayerPreLoginEvent event, ProxyBridgeAssertion assertion) {
@@ -189,25 +209,26 @@ public final class BukkitPreLoginService {
                 "resolved_uuid", premiumCheck.resolvedUuid(),
                 "resolved_name", premiumCheck.resolvedName());
         if (premiumCheck.premium()) {
-            boolean currentUuidProvesPremium = currentUuid != null && currentUuid.equals(premiumCheck.resolvedUuid());
+            UUID mojangUuid = premiumCheck.resolvedUuid();
+            boolean currentUuidProvesPremium = mojangUuid.equals(currentUuid);
             boolean trustedIpMatch = hasTrustedIpMatch(event.getName(), ipAddress);
-            if (pluginConfig.settings().premium().requireUuidProof() && !trustedIpMatch && !currentUuidProvesPremium) {
-                debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_downgraded",
+            if (!trustedIpMatch && !currentUuidProvesPremium) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_impersonation_denied",
                         "player", event.getName(),
-                        "reason", "UUID_PROOF_REQUIRED",
                         "current_uuid", currentUuid,
-                        "resolved_uuid", premiumCheck.resolvedUuid());
+                        "resolved_uuid", mojangUuid,
+                        "ip", ipAddress);
                 event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
                 return Optional.empty();
             }
-            if (pluginConfig.settings().premium().requireUuidProof() && trustedIpMatch && !currentUuidProvesPremium) {
+            if (trustedIpMatch && !currentUuidProvesPremium) {
                 debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_trusted_ip_override",
                         "player", event.getName(),
                         "ip", ipAddress);
             }
-            applyProfile(event, premiumCheck.resolvedUuid(), premiumCheck.resolvedName());
+            applyProfile(event, mojangUuid, premiumCheck.resolvedName());
             return Optional.of(new ResolvedLogin(
-                    premiumCheck.resolvedUuid(),
+                    mojangUuid,
                     premiumCheck.resolvedName(),
                     AccountType.PREMIUM,
                     ipAddress
@@ -232,7 +253,7 @@ public final class BukkitPreLoginService {
     }
 
     private boolean shouldDenyPremiumImpersonation(String username, UUID currentUuid, String ipAddress) {
-        if (!pluginConfig.settings().premium().enabled() || !pluginConfig.settings().premium().requireUuidProof()) {
+        if (!pluginConfig.settings().premium().enabled()) {
             return false;
         }
         if (hasTrustedIpMatch(username, ipAddress)) {

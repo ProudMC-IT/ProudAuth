@@ -12,7 +12,7 @@ import java.util.Set;
 
 public final class PlayerCommandPreprocessListener implements Listener {
 
-    private static final Set<String> ALLOWED = Set.of("/login", "/register", "/2fa");
+    private static final Set<String> ALLOWED = Set.of("/login", "/register", "/2fa", "/proudauthbackend");
 
     private final PlayerProtection playerProtection;
     private final LangConfig langConfig;

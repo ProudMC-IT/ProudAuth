@@ -130,42 +130,27 @@ public final class AuthServiceImpl implements AuthService {
             return CompletableFuture.completedFuture(new RegisterResult(validation));
         }
 
-        return premiumVerifier.verify(username).thenCompose(premiumCheck -> {
-            if (premiumCheck.premium()) {
+        return findAccount(uuid, username).thenCompose(optionalAccount -> {
+            if (optionalAccount.map(AccountRecord::accountType).filter(type -> type == AccountType.PREMIUM).isPresent()) {
                 return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT));
             }
+            if (optionalAccount.isPresent() && optionalAccount.get().passwordHash() != null) {
+                return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
+            }
 
-            return findAccount(uuid, username).thenCompose(optionalAccount -> {
-                if (optionalAccount.isPresent() && optionalAccount.get().passwordHash() != null) {
-                    return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
-                }
-                if (optionalAccount.map(AccountRecord::accountType).orElse(AccountType.CRACKED) == AccountType.PREMIUM) {
-                    return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT));
-                }
-
-                UUID targetUuid = optionalAccount.map(AccountRecord::uuid).orElse(uuid);
-                String targetUsername = optionalAccount.map(AccountRecord::username).orElse(username);
-                AccountType targetAccountType = optionalAccount
-                        .map(AccountRecord::accountType)
-                        .map(existingType -> existingType == AccountType.PREMIUM ? AccountType.PREMIUM : accountType)
-                        .orElse(accountType);
-
-                AccountRecord accountRecord = new AccountRecord(
-                        targetUuid,
-                        targetUsername,
-                        HashUtil.hash(password),
-                        targetAccountType,
-                        optionalAccount.map(AccountRecord::email).orElse(null),
-                        optionalAccount.map(AccountRecord::totpSecret).orElse(null),
-                        optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways()),
-                        optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
-                        optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
-                        ipAddress
-                );
-                return storage.saveAccount(accountRecord)
-                        .thenCompose(ignored -> recordIpHistory(targetUsername, ipAddress, targetAccountType))
-                        .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
-            });
+            return premiumVerifier.verify(username)
+                    .handle((premiumCheck, exception) -> {
+                        if (exception != null) {
+                            return new RegisterResult(RegisterStatus.MOJANG_UNAVAILABLE);
+                        }
+                        if (premiumCheck.premium()) {
+                            return new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT);
+                        }
+                        return null;
+                    })
+                    .thenCompose(blockingResult -> blockingResult != null
+                            ? CompletableFuture.completedFuture(blockingResult)
+                            : proceedWithRegistration(uuid, username, accountType, ipAddress, password, optionalAccount));
         });
     }
 
@@ -186,17 +171,36 @@ public final class AuthServiceImpl implements AuthService {
         }
 
         return findAccount(uuid, username).thenCompose(optionalAccount -> {
-            if (optionalAccount.isEmpty() || optionalAccount.get().passwordHash() == null) {
-                return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.NOT_REGISTERED));
+            if (optionalAccount.map(AccountRecord::accountType).filter(type -> type == AccountType.PREMIUM).isPresent()) {
+                return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.PREMIUM_ACCOUNT));
             }
 
-            AccountRecord account = optionalAccount.get();
-            if (!HashUtil.matches(oldPassword, account.passwordHash())) {
-                return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.WRONG_OLD_PASSWORD));
-            }
+            return premiumVerifier.verify(username)
+                    .handle((premiumCheck, exception) -> {
+                        if (exception != null) {
+                            return new ChangePasswordResult(ChangePasswordStatus.MOJANG_UNAVAILABLE);
+                        }
+                        if (premiumCheck.premium()) {
+                            return new ChangePasswordResult(ChangePasswordStatus.PREMIUM_ACCOUNT);
+                        }
+                        return null;
+                    })
+                    .thenCompose(blockingResult -> {
+                        if (blockingResult != null) {
+                            return CompletableFuture.completedFuture(blockingResult);
+                        }
+                        if (optionalAccount.isEmpty() || optionalAccount.get().passwordHash() == null) {
+                            return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.NOT_REGISTERED));
+                        }
 
-            return storage.updatePassword(uuid, HashUtil.hash(newPassword))
-                    .thenApply(ignored -> new ChangePasswordResult(ChangePasswordStatus.SUCCESS));
+                        AccountRecord account = optionalAccount.get();
+                        if (!HashUtil.matches(oldPassword, account.passwordHash())) {
+                            return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.WRONG_OLD_PASSWORD));
+                        }
+
+                        return storage.updatePassword(account.uuid(), HashUtil.hash(newPassword))
+                                .thenApply(ignored -> new ChangePasswordResult(ChangePasswordStatus.SUCCESS));
+                    });
         });
     }
 
@@ -210,7 +214,8 @@ public final class AuthServiceImpl implements AuthService {
     public CompletableFuture<AuthenticationResult> autoAuthenticate(UUID uuid, String username, AccountType accountType, AuthState authState, String ipAddress) {
         return storage.touchLogin(uuid, username, ipAddress, accountType)
                 .thenCompose(ignored -> recordIpHistory(username, ipAddress, accountType))
-                .thenCompose(ignored -> sessionManager.create(uuid, ipAddress))
+                .thenCompose(ignored -> storage.deleteSessionsByUuidAndNotAccountType(uuid, accountType))
+                .thenCompose(ignored -> sessionManager.create(uuid, ipAddress, accountType))
                 .thenApply(ignored -> {
                     bruteForceGuard.clearFailures(ipAddress);
                     pendingTotpChallenges.remove(uuid);
@@ -455,6 +460,9 @@ public final class AuthServiceImpl implements AuthService {
                     if (optionalAccount.isEmpty()) {
                         return CompletableFuture.completedFuture(false);
                     }
+                    if (optionalAccount.get().accountType() == AccountType.PREMIUM) {
+                        return CompletableFuture.completedFuture(false);
+                    }
                     return storage.updatePassword(optionalAccount.get().uuid(), HashUtil.hash(newPassword))
                             .thenApply(ignored -> true);
                 });
@@ -531,6 +539,37 @@ public final class AuthServiceImpl implements AuthService {
                 .thenCompose(optionalAccount -> optionalAccount.isPresent()
                         ? CompletableFuture.completedFuture(optionalAccount)
                         : storage.findAccountByUsername(username));
+    }
+
+    private CompletableFuture<RegisterResult> proceedWithRegistration(
+            UUID uuid,
+            String username,
+            AccountType accountType,
+            String ipAddress,
+            String password,
+            Optional<AccountRecord> optionalAccount
+    ) {
+        UUID targetUuid = optionalAccount.map(AccountRecord::uuid).orElse(uuid);
+        String targetUsername = optionalAccount.map(AccountRecord::username).orElse(username);
+        AccountType targetAccountType = optionalAccount
+                .map(AccountRecord::accountType)
+                .orElse(accountType);
+
+        AccountRecord accountRecord = new AccountRecord(
+                targetUuid,
+                targetUsername,
+                HashUtil.hash(password),
+                targetAccountType,
+                optionalAccount.map(AccountRecord::email).orElse(null),
+                optionalAccount.map(AccountRecord::totpSecret).orElse(null),
+                optionalAccount.map(AccountRecord::totpFlowAlways).orElse(settings.security().totpDefaultFlowAlways()),
+                optionalAccount.map(AccountRecord::registeredAt).orElse(Instant.now()),
+                optionalAccount.map(AccountRecord::lastLoginAt).orElse(null),
+                ipAddress
+        );
+        return storage.saveAccount(accountRecord)
+                .thenCompose(ignored -> recordIpHistory(targetUsername, ipAddress, targetAccountType))
+                .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
     }
 
     private RegisterStatus validateNewPassword(String password, String confirmation) {

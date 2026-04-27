@@ -212,6 +212,7 @@ public final class ProudAuth extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerChatListener(this, playerProtection, runtime.authService(), langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandPreprocessListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerInteractListener(playerProtection, langConfig), this);
+        getServer().getPluginManager().registerEvents(new PlayerActionBlockListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerDeathListener(playerProtection), this);
         getServer().getPluginManager().registerEvents(new AdminUpdateNotifyListener(
                 this,

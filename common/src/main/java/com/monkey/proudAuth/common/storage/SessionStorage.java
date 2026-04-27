@@ -1,5 +1,6 @@
 package com.monkey.proudAuth.common.storage;
 
+import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.Session;
 import org.jetbrains.annotations.Nullable;
 
@@ -9,11 +10,13 @@ import java.util.concurrent.CompletableFuture;
 
 public interface SessionStorage {
 
-    CompletableFuture<Optional<Session>> findValidSession(UUID uuid, @Nullable String ip);
+    CompletableFuture<Optional<Session>> findValidSession(UUID uuid, @Nullable String ip, AccountType expectedAccountType);
 
     CompletableFuture<Void> saveSession(Session session);
 
     CompletableFuture<Void> deleteSessions(UUID uuid);
+
+    CompletableFuture<Void> deleteSessionsByUuidAndNotAccountType(UUID uuid, AccountType keepType);
 
     CompletableFuture<Void> deleteSession(String token);
 
