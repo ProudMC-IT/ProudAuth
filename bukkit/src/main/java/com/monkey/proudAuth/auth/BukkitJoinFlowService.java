@@ -95,6 +95,7 @@ public final class BukkitJoinFlowService {
         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_start",
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
+        playerProtection.applyProtectionTransient(player);
         authService.authenticateWithTotpGate(
                         player.getUniqueId(),
                         player.getName(),
@@ -104,6 +105,7 @@ public final class BukkitJoinFlowService {
                 )
                 .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!player.isOnline()) {
+                        playerProtection.removeProtection(player);
                         return;
                     }
                     if (exception != null) {
@@ -111,12 +113,13 @@ public final class BukkitJoinFlowService {
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId(),
                                 "error", exception.getMessage());
+                        playerProtection.removeProtection(player);
                         langConfig.send(player, "error-generic");
                         return;
                     }
 
                     if (ignored.status() == com.monkey.proudAuth.common.auth.AuthService.TotpChallengeStatus.TOTP_REQUIRED) {
-                        playerProtection.applyProtection(player);
+                        playerProtection.upgradeToFullProtection(player);
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_totp_required",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId(),
@@ -125,11 +128,16 @@ public final class BukkitJoinFlowService {
                         return;
                     }
 
-                    playerProtection.removeProtection(player);
-                    debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
-                            "player", player.getName(),
-                            "uuid", player.getUniqueId());
-                    langConfig.send(player, "premium-auto-login");
+                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                        if (!player.isOnline()) {
+                            return;
+                        }
+                        playerProtection.removeProtection(player);
+                        debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId());
+                        langConfig.send(player, "premium-auto-login");
+                    }, 1L);
                 }));
     }
 

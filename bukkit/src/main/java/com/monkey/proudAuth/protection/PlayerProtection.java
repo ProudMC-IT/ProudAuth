@@ -19,6 +19,7 @@ public final class PlayerProtection {
     private final JavaPlugin plugin;
     private final Set<UUID> protectedPlayers;
     private final Map<UUID, BukkitTask> timeoutTasks;
+    private final Map<UUID, MovementStateSnapshot> movementStateSnapshots;
     private volatile PluginConfig pluginConfig;
     private volatile LangConfig langConfig;
     private final ProudAuthConsoleLogger logger;
@@ -30,6 +31,7 @@ public final class PlayerProtection {
         this.logger = logger;
         this.protectedPlayers = ConcurrentHashMap.newKeySet();
         this.timeoutTasks = new ConcurrentHashMap<>();
+        this.movementStateSnapshots = new ConcurrentHashMap<>();
     }
 
     public void reload(PluginConfig pluginConfig, LangConfig langConfig) {
@@ -39,6 +41,7 @@ public final class PlayerProtection {
 
     public void applyProtection(Player player) {
         protectedPlayers.add(player.getUniqueId());
+        captureMovementState(player);
         debugEvent("protection_apply",
                 "player", player.getName(),
                 "uuid", player.getUniqueId(),
@@ -48,9 +51,28 @@ public final class PlayerProtection {
         scheduleAuthTimeout(player);
     }
 
+    public void applyProtectionTransient(Player player) {
+        protectedPlayers.add(player.getUniqueId());
+        captureMovementState(player);
+        debugEvent("protection_apply_transient",
+                "player", player.getName(),
+                "uuid", player.getUniqueId());
+        scheduleAuthTimeout(player);
+    }
+
+    public void upgradeToFullProtection(Player player) {
+        debugEvent("protection_upgrade_full",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "auth_spawn_enabled", pluginConfig.settings().protection().authSpawn().enabled());
+        pluginConfig.authSpawn(plugin.getServer()).ifPresent(player::teleportAsync);
+        applyInvisibility(player);
+    }
+
     public void removeProtection(Player player) {
         boolean wasProtected = protectedPlayers.remove(player.getUniqueId());
         BukkitTask timeoutTask = timeoutTasks.remove(player.getUniqueId());
+        MovementStateSnapshot movementStateSnapshot = movementStateSnapshots.remove(player.getUniqueId());
         if (timeoutTask != null) {
             timeoutTask.cancel();
         }
@@ -58,7 +80,11 @@ public final class PlayerProtection {
                 "player", player.getName(),
                 "uuid", player.getUniqueId(),
                 "was_protected", wasProtected,
-                "timeout_task", timeoutTask != null);
+                "timeout_task", timeoutTask != null,
+                "movement_snapshot", movementStateSnapshot != null);
+        if (movementStateSnapshot != null) {
+            restoreMovementState(player, movementStateSnapshot);
+        }
         if (wasProtected) {
             removeInvisibility(player);
         }
@@ -134,5 +160,48 @@ public final class PlayerProtection {
             other.showPlayer(plugin, player);
             player.showPlayer(plugin, other);
         }
+    }
+
+    private void captureMovementState(Player player) {
+        movementStateSnapshots.putIfAbsent(
+                player.getUniqueId(),
+                new MovementStateSnapshot(
+                        player.getWalkSpeed(),
+                        player.getFlySpeed(),
+                        player.getAllowFlight(),
+                        player.isFlying(),
+                        player.isInvulnerable()
+                )
+        );
+    }
+
+    private void restoreMovementState(Player player, MovementStateSnapshot snapshot) {
+        float walkSpeed = Math.abs(snapshot.walkSpeed()) < 1.0E-6F ? 0.2F : snapshot.walkSpeed();
+        float flySpeed = Math.abs(snapshot.flySpeed()) < 1.0E-6F ? 0.1F : snapshot.flySpeed();
+
+        player.setWalkSpeed(walkSpeed);
+        player.setFlySpeed(flySpeed);
+        player.setAllowFlight(snapshot.allowFlight());
+        player.setFlying(snapshot.allowFlight() && snapshot.flying());
+        player.setInvulnerable(snapshot.invulnerable());
+        player.setFreezeTicks(0);
+
+        debugEvent("protection_restore_movement_state",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "walk_speed", walkSpeed,
+                "fly_speed", flySpeed,
+                "allow_flight", snapshot.allowFlight(),
+                "flying", snapshot.allowFlight() && snapshot.flying(),
+                "invulnerable", snapshot.invulnerable());
+    }
+
+    private record MovementStateSnapshot(
+            float walkSpeed,
+            float flySpeed,
+            boolean allowFlight,
+            boolean flying,
+            boolean invulnerable
+    ) {
     }
 }
