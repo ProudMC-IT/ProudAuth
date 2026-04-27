@@ -720,7 +720,11 @@ public final class MySQLStorage implements StorageProvider {
     @Override
     public CompletableFuture<Void> saveProxyAssertion(ProxyBridgeAssertion assertion) {
         return runAsync(() -> {
-            String sql = """
+            String deleteSql = """
+                    DELETE FROM pa_proxy_assertions
+                    WHERE username = ? AND ip = ?
+                    """;
+            String insertSql = """
                     INSERT INTO pa_proxy_assertions
                     (nonce, username, resolved_name, uuid, account_type, ip, issued_at, expires_at, signature)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -734,18 +738,24 @@ public final class MySQLStorage implements StorageProvider {
                         expires_at = VALUES(expires_at),
                         signature = VALUES(signature)
                     """;
-            try (Connection connection = connection();
-                 PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, assertion.nonce());
-                statement.setString(2, assertion.username());
-                statement.setString(3, assertion.resolvedName());
-                statement.setString(4, assertion.uuid().toString());
-                statement.setString(5, assertion.accountType().name());
-                statement.setString(6, assertion.ipAddress());
-                statement.setTimestamp(7, Timestamp.from(assertion.issuedAt()));
-                statement.setTimestamp(8, Timestamp.from(assertion.expiresAt()));
-                statement.setString(9, assertion.signature());
-                statement.executeUpdate();
+            try (Connection connection = connection()) {
+                try (PreparedStatement deleteStatement = connection.prepareStatement(deleteSql)) {
+                    deleteStatement.setString(1, assertion.username());
+                    deleteStatement.setString(2, assertion.ipAddress());
+                    deleteStatement.executeUpdate();
+                }
+                try (PreparedStatement insertStatement = connection.prepareStatement(insertSql)) {
+                    insertStatement.setString(1, assertion.nonce());
+                    insertStatement.setString(2, assertion.username());
+                    insertStatement.setString(3, assertion.resolvedName());
+                    insertStatement.setString(4, assertion.uuid().toString());
+                    insertStatement.setString(5, assertion.accountType().name());
+                    insertStatement.setString(6, assertion.ipAddress());
+                    insertStatement.setTimestamp(7, Timestamp.from(assertion.issuedAt()));
+                    insertStatement.setTimestamp(8, Timestamp.from(assertion.expiresAt()));
+                    insertStatement.setString(9, assertion.signature());
+                    insertStatement.executeUpdate();
+                }
             }
         });
     }

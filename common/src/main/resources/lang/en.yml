@@ -29,6 +29,7 @@ kick-backend-unavailable: "<red>Connection temporarily blocked: backend is not r
 kick-suspicious-network: "<red>Connection blocked by the network security system."
 kick-trusted-ip-mismatch: "<red>Access denied: this account can only join from a trusted IP."
 kick-premium-impersonation: "<red>Access denied: unauthorized use attempt of a premium account."
+kick-premium-proof-required: "<red>Access denied: this premium account must complete secure premium verification with a modern authenticated client."
 kick-whitelist-ip-required: "<red>Access denied: this account can only connect from the authorized whitelist IP."
 kick-whitelist-premium-required: "<red>Access denied: this account must connect as premium from the whitelist."
 move-blocked: "<red>You must authenticate before moving!"

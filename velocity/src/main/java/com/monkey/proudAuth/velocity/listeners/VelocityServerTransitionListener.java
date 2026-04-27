@@ -63,8 +63,8 @@ public final class VelocityServerTransitionListener {
         bridgeServiceSupplier.get()
                 .publish(
                         event.getPlayer().getUsername(),
-                        profile.resolvedName(),
-                        profile.resolvedUuid(),
+                        profile.accountName(),
+                        profile.accountUuid(),
                         profile.accountType(),
                         ipAddress
                 )
@@ -80,7 +80,7 @@ public final class VelocityServerTransitionListener {
         debugEvent("server_switch_publish_done",
                 "player", event.getPlayer().getUsername(),
                 "target", targetServer,
-                "resolved_uuid", profile.resolvedUuid(),
+                "resolved_uuid", profile.accountUuid(),
                 "account_type", profile.accountType());
     }
 

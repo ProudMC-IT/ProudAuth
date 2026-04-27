@@ -14,15 +14,15 @@ public final class VelocityResolvedPlayerStore {
 
     public void remember(
             String username,
-            UUID resolvedUuid,
-            String resolvedName,
+            UUID accountUuid,
+            String accountName,
             AccountType accountType,
             boolean premiumNameDetected,
             boolean premiumVerified
     ) {
         resolvedPlayers.put(key(username), new ResolvedPlayer(
-                resolvedUuid,
-                resolvedName,
+                accountUuid,
+                accountName,
                 accountType,
                 premiumNameDetected,
                 premiumVerified
@@ -42,8 +42,8 @@ public final class VelocityResolvedPlayerStore {
     }
 
     public record ResolvedPlayer(
-            UUID resolvedUuid,
-            String resolvedName,
+            UUID accountUuid,
+            String accountName,
             AccountType accountType,
             boolean premiumNameDetected,
             boolean premiumVerified

@@ -29,6 +29,7 @@ kick-backend-unavailable: "<red>Connessione temporaneamente bloccata: backend no
 kick-suspicious-network: "<red>Connessione bloccata dal sistema di sicurezza di rete."
 kick-trusted-ip-mismatch: "<red>Accesso rifiutato: questo account puo entrare solo da un IP trusted."
 kick-premium-impersonation: "<red>Accesso rifiutato: tentativo di uso non autorizzato di un account premium."
+kick-premium-proof-required: "<red>Accesso rifiutato: questo account premium deve completare una verifica premium sicura con un client moderno autenticato."
 kick-whitelist-ip-required: "<red>Accesso rifiutato: questo account puo entrare solo dall'IP autorizzato nella whitelist."
 kick-whitelist-premium-required: "<red>Accesso rifiutato: questo account deve accedere come premium dalla whitelist."
 move-blocked: "<red>Devi autenticarti prima di muoverti!"
