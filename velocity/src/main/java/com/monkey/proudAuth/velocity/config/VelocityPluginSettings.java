@@ -26,7 +26,7 @@ public record VelocityPluginSettings(
                         premium.enabled(),
                         false,
                         premium.apiTimeoutMs(),
-                        premium.requireUuidProof()
+                        false
                 ),
                 new ProudAuthSettings.Sessions(false, 0, false),
                 new ProudAuthSettings.Security(
@@ -74,13 +74,7 @@ public record VelocityPluginSettings(
 
     public record Premium(
             boolean enabled,
-            int apiTimeoutMs,
-            boolean rewriteGameProfile,
-            boolean requireUuidProof,
-            boolean autoPromoteVerifiedLowRisk,
-            int autoPromoteMaxUsernamesPerIp1h,
-            int autoPromoteMaxIpsPerUsername24h,
-            boolean autoPromoteDenyWhenIpBanned
+            int apiTimeoutMs
     ) {
     }
 

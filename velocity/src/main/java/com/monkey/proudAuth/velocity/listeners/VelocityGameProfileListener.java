@@ -7,12 +7,17 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
-import com.monkey.proudAuth.velocity.session.VelocityPremiumProofStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.event.PostOrder;
+import com.velocitypowered.api.event.ResultedEvent;
 import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.connection.LoginEvent;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
+import com.velocitypowered.api.proxy.InboundConnection;
 import com.velocitypowered.api.util.GameProfile;
 
 import java.net.InetSocketAddress;
@@ -24,11 +29,10 @@ public final class VelocityGameProfileListener {
     private final Supplier<PremiumVerifier> premiumVerifierSupplier;
     private final Supplier<StorageProvider> storageSupplier;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
-    private final Supplier<Boolean> rewriteGameProfileSupplier;
-    private final Supplier<Boolean> requireUuidProofSupplier;
+    private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final VelocityNetworkGuardService networkGuardService;
-    private final VelocityPremiumProofStore premiumProofStore;
+    private final VelocityWhitelistEnforcementStore whitelistEnforcementStore;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final ProudAuthConsoleLogger logger;
 
@@ -36,22 +40,20 @@ public final class VelocityGameProfileListener {
             Supplier<PremiumVerifier> premiumVerifierSupplier,
             Supplier<StorageProvider> storageSupplier,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
-            Supplier<Boolean> rewriteGameProfileSupplier,
-            Supplier<Boolean> requireUuidProofSupplier,
+            Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             VelocityNetworkGuardService networkGuardService,
-            VelocityPremiumProofStore premiumProofStore,
+            VelocityWhitelistEnforcementStore whitelistEnforcementStore,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             ProudAuthConsoleLogger logger
     ) {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
         this.storageSupplier = storageSupplier;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
-        this.rewriteGameProfileSupplier = rewriteGameProfileSupplier;
-        this.requireUuidProofSupplier = requireUuidProofSupplier;
+        this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.networkGuardService = networkGuardService;
-        this.premiumProofStore = premiumProofStore;
+        this.whitelistEnforcementStore = whitelistEnforcementStore;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.logger = logger;
     }
@@ -60,121 +62,72 @@ public final class VelocityGameProfileListener {
     @Subscribe(order = PostOrder.FIRST)
     public void onGameProfileRequest(GameProfileRequestEvent event) {
         GameProfile currentProfile = event.getGameProfile();
-        GameProfile resolvedProfile = currentProfile;
+        String ipAddress = resolveIp(event.getConnection());
         UUID offlineUuid = PremiumVerifier.offlineUuid(event.getUsername());
-        AccountType accountType;
-        String ipAddress = "unknown";
-        if (event.getConnection().getRemoteAddress() instanceof InetSocketAddress socketAddress
-                && socketAddress.getAddress() != null) {
-            ipAddress = socketAddress.getAddress().getHostAddress();
-        }
-        debugEvent(DebugChannel.PROFILE_FLOW, "profile_request",
-                "player", event.getUsername(),
-                "current_uuid", currentProfile.getId(),
-                "offline_uuid", offlineUuid);
+        boolean premiumRequiredByWhitelist = whitelistEnforcementStore.requiresPremium(event.getUsername(), ipAddress);
 
-        if (!currentProfile.getId().equals(offlineUuid)) {
-            boolean trustedIpMatch = hasTrustedIpMatch(event.getUsername(), ipAddress);
-            if (requireUuidProofSupplier.get() && !trustedIpMatch) {
-                var premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
-                if (premiumCheck.premium() && currentProfile.getId().equals(premiumCheck.resolvedUuid())) {
-                    accountType = AccountType.PREMIUM;
-                    debugEvent(DebugChannel.PROFILE_FLOW, "profile_forwarded_premium_verified",
-                            "player", event.getUsername(),
-                            "uuid", currentProfile.getId(),
-                            "resolved_uuid", premiumCheck.resolvedUuid());
-                } else {
-                    accountType = AccountType.CRACKED;
-                    debugEvent(DebugChannel.PREMIUM_FLOW, "premium_downgraded",
-                            "player", event.getUsername(),
-                            "reason", "UUID_PROOF_REQUIRED_FORWARDED_MISMATCH",
-                            "current_uuid", currentProfile.getId(),
-                            "resolved_uuid", premiumCheck.resolvedUuid(),
-                            "offline_uuid", offlineUuid);
-                }
-            } else {
+        PremiumVerifier.PremiumCheckResult premiumCheck =
+                premiumVerifierSupplier.get().verify(event.getUsername()).join();
+
+        AccountType accountType;
+        GameProfile resolvedProfile;
+
+        if (premiumCheck.premium()) {
+            boolean uuidAlreadyCorrect = !currentProfile.getId().equals(offlineUuid);
+            boolean trustedIpOverride = hasTrustedIpMatch(event.getUsername(), ipAddress);
+
+            if (uuidAlreadyCorrect) {
                 accountType = AccountType.PREMIUM;
-                debugEvent(DebugChannel.PROFILE_FLOW, "profile_forwarded_premium",
-                        "player", event.getUsername(),
-                        "uuid", currentProfile.getId());
+                resolvedProfile = currentProfile;
+            } else {
+                resolvedProfile = currentProfile
+                        .withId(premiumCheck.resolvedUuid())
+                        .withName(premiumCheck.resolvedName())
+                        .withProperties(currentProfile.getProperties());
+                event.setGameProfile(resolvedProfile);
+                accountType = AccountType.PREMIUM;
+
+                if (trustedIpOverride) {
+                    debugEvent(DebugChannel.PREMIUM_FLOW, "premium_trusted_ip_override",
+                            "player", event.getUsername(),
+                            "ip", ipAddress,
+                            "offline_uuid", offlineUuid,
+                            "resolved_uuid", premiumCheck.resolvedUuid());
+                }
+            }
+
+            if (premiumRequiredByWhitelist) {
+                whitelistEnforcementStore.forget(event.getUsername(), ipAddress);
             }
         } else {
-            var premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
-            debugEvent(DebugChannel.PREMIUM_FLOW, "premium_check",
-                    "player", event.getUsername(),
-                    "premium", premiumCheck.premium(),
-                    "resolved_uuid", premiumCheck.resolvedUuid(),
-                    "resolved_name", premiumCheck.resolvedName());
-            if (premiumCheck.premium()) {
-                boolean currentUuidProvesPremium = !currentProfile.getId().equals(offlineUuid);
-                if (requireUuidProofSupplier.get() && !currentUuidProvesPremium) {
-                    if (hasTrustedIpMatch(event.getUsername(), ipAddress)) {
-                        accountType = AccountType.PREMIUM;
-                        debugEvent(DebugChannel.PREMIUM_FLOW, "premium_trusted_ip_override",
-                                "player", event.getUsername(),
-                                "ip", ipAddress,
-                                "current_uuid", currentProfile.getId(),
-                                "offline_uuid", offlineUuid);
-                    } else {
-                        var cachedProof = premiumProofStore.consume(event.getUsername(), ipAddress);
-                        if (cachedProof.isPresent()) {
-                            VelocityPremiumProofStore.PremiumProof proof = cachedProof.get();
-                            accountType = AccountType.PREMIUM;
-                            debugEvent(DebugChannel.PREMIUM_FLOW, "premium_prelogin_proof_accepted",
-                                    "player", event.getUsername(),
-                                    "ip", ipAddress,
-                                    "proof_uuid", proof.resolvedUuid(),
-                                    "current_uuid", currentProfile.getId(),
-                                    "offline_uuid", offlineUuid);
-                        } else {
-                            accountType = AccountType.CRACKED;
-                            debugEvent(DebugChannel.PREMIUM_FLOW, "premium_downgraded",
-                                    "player", event.getUsername(),
-                                    "reason", "UUID_PROOF_REQUIRED",
-                                    "current_uuid", currentProfile.getId(),
-                                    "offline_uuid", offlineUuid);
-                        }
-                    }
-                } else if (rewriteGameProfileSupplier.get()) {
-                    resolvedProfile = currentProfile
-                            .withId(premiumCheck.resolvedUuid())
-                            .withName(premiumCheck.resolvedName())
-                            .withProperties(currentProfile.getProperties());
-                    event.setGameProfile(resolvedProfile);
-                    debugEvent(DebugChannel.PROFILE_FLOW, "profile_rewritten_premium",
-                            "player", event.getUsername(),
-                            "forwarded_uuid", currentProfile.getId(),
-                            "resolved_uuid", resolvedProfile.getId());
-                    accountType = AccountType.PREMIUM;
-                } else {
-                    debugEvent(DebugChannel.PROFILE_FLOW, "profile_rewrite_skipped",
-                            "player", event.getUsername(),
-                            "forwarded_uuid", currentProfile.getId(),
-                            "resolved_premium_uuid", premiumCheck.resolvedUuid());
-                    accountType = AccountType.PREMIUM;
-                }
-            } else {
-                accountType = AccountType.CRACKED;
+            accountType = AccountType.CRACKED;
+            resolvedProfile = currentProfile;
+
+            if (premiumRequiredByWhitelist) {
+                debugEvent(DebugChannel.PREMIUM_FLOW, "whitelist_premium_required_pending_disconnect",
+                        "player", event.getUsername(),
+                        "ip", ipAddress,
+                        "current_uuid", currentProfile.getId());
             }
         }
 
-        networkGuardService.recordResolvedProfile(event.getUsername(), ipAddress, accountType);
-        debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_publish_start",
-                "player", event.getUsername(),
-                "resolved_uuid", resolvedProfile.getId(),
-                "resolved_name", resolvedProfile.getName(),
-                "account_type", accountType,
-                "ip", ipAddress,
-                "bridge_operational", bridgeServiceSupplier.get().isOperational());
+        resolvedPlayerStore.remember(
+                event.getUsername(),
+                resolvedProfile.getId(),
+                resolvedProfile.getName(),
+                accountType
+        );
 
-        resolvedPlayerStore.remember(event.getUsername(), resolvedProfile.getId(), resolvedProfile.getName(), accountType);
-        debugEvent(DebugChannel.BRIDGE_FLOW, "profile_cache_saved",
-                "player", event.getUsername(),
-                "resolved_uuid", resolvedProfile.getId(),
-                "account_type", accountType);
+        networkGuardService.recordResolvedProfile(event.getUsername(), ipAddress, accountType);
 
         bridgeServiceSupplier.get()
-                .publish(event.getUsername(), resolvedProfile.getName(), resolvedProfile.getId(), accountType, ipAddress)
+                .publish(
+                        event.getUsername(),
+                        resolvedProfile.getName(),
+                        resolvedProfile.getId(),
+                        accountType,
+                        ipAddress
+                )
                 .exceptionally(exception -> {
                     debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_publish_error",
                             "player", event.getUsername(),
@@ -182,9 +135,40 @@ public final class VelocityGameProfileListener {
                     return null;
                 })
                 .join();
-        debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_publish_complete",
+
+        debugEvent(DebugChannel.PROFILE_FLOW, "profile_resolved",
                 "player", event.getUsername(),
-                "resolved_uuid", resolvedProfile.getId());
+                "uuid", resolvedProfile.getId(),
+                "account_type", accountType,
+                "premium_check", premiumCheck.premium(),
+                "ip", ipAddress);
+    }
+
+    @SuppressWarnings("deprecation")
+    @Subscribe(order = PostOrder.FIRST)
+    public void onLogin(LoginEvent event) {
+        String username = event.getPlayer().getUsername();
+        String ipAddress = resolveIp(event.getPlayer());
+        if (!whitelistEnforcementStore.requiresPremium(username, ipAddress)) {
+            return;
+        }
+
+        VelocityResolvedPlayerStore.ResolvedPlayer resolvedPlayer = resolvedPlayerStore.find(username).orElse(null);
+        if (resolvedPlayer == null || resolvedPlayer.accountType() != AccountType.PREMIUM) {
+            debugEvent(DebugChannel.PREMIUM_FLOW, "whitelist_premium_required_denied",
+                    "player", username,
+                    "ip", ipAddress,
+                    "resolved_account_type", resolvedPlayer == null ? "missing" : resolvedPlayer.accountType());
+            event.setResult(ResultedEvent.ComponentResult.denied(
+                    langSupplier.get().message("kick-whitelist-premium-required")));
+        }
+
+        whitelistEnforcementStore.forget(username, ipAddress);
+    }
+
+    @Subscribe
+    public void onDisconnect(DisconnectEvent event) {
+        whitelistEnforcementStore.forget(event.getPlayer().getUsername(), resolveIp(event.getPlayer()));
     }
 
     private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {
@@ -204,5 +188,12 @@ public final class VelocityGameProfileListener {
         } catch (Exception exception) {
             return false;
         }
+    }
+
+    private String resolveIp(InboundConnection connection) {
+        if (connection.getRemoteAddress() instanceof InetSocketAddress socketAddress && socketAddress.getAddress() != null) {
+            return socketAddress.getAddress().getHostAddress();
+        }
+        return "unknown";
     }
 }

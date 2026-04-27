@@ -18,8 +18,8 @@ import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
-import com.monkey.proudAuth.velocity.session.VelocityPremiumProofStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
@@ -47,7 +47,7 @@ public final class ProudAuthVelocityPlatform {
     private VelocityRiskCsvExporter riskCsvExporter;
     private Instant lastAutoExportAt;
     private ScheduledTask maintenanceTask;
-    private final VelocityPremiumProofStore premiumProofStore = new VelocityPremiumProofStore();
+    private final VelocityWhitelistEnforcementStore whitelistEnforcementStore = new VelocityWhitelistEnforcementStore();
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
@@ -92,15 +92,14 @@ public final class ProudAuthVelocityPlatform {
                     "Platform: Velocity proxy",
                     "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
-                    "Rewrite game profile: " + settings.premium().rewriteGameProfile(),
-                    "Premium auto-promote low-risk: " + settings.premium().autoPromoteVerifiedLowRisk(),
+                    "Premium resolution: enabled=" + settings.premium().enabled() + ", api-timeout-ms=" + settings.premium().apiTimeoutMs(),
                     "Debugger: " + settings.debugger().summary()
             );
             debugEvent(DebugChannel.COMMAND_FLOW, "velocity_init_config",
                     "bridge_enabled", settings.bridge().enabled(),
                     "bridge_mode", settings.bridge().mode(),
-                    "rewrite_game_profile", settings.premium().rewriteGameProfile(),
-                    "premium_auto_promote_low_risk", settings.premium().autoPromoteVerifiedLowRisk());
+                    "premium_enabled", settings.premium().enabled(),
+                    "premium_api_timeout_ms", settings.premium().apiTimeoutMs());
 
             VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
                     () -> storage,
@@ -111,24 +110,21 @@ public final class ProudAuthVelocityPlatform {
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
-                    () -> premiumVerifier,
-                    () -> settings.premium(),
                     () -> lang,
                     () -> settings.debugger(),
                     backendJoinProbeService,
                     networkGuardService,
-                    premiumProofStore,
+                    whitelistEnforcementStore,
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
                     () -> storage,
                     () -> bridgeService,
-                    () -> settings.premium().rewriteGameProfile(),
-                    () -> settings.premium().requireUuidProof(),
+                    () -> lang,
                     () -> settings.debugger(),
                     networkGuardService,
-                    premiumProofStore,
+                    whitelistEnforcementStore,
                     resolvedPlayerStore,
                     platformLogger
             ));
@@ -188,8 +184,8 @@ public final class ProudAuthVelocityPlatform {
             debugEvent(DebugChannel.COMMAND_FLOW, "velocity_reload_config",
                     "bridge_enabled", settings.bridge().enabled(),
                     "bridge_mode", settings.bridge().mode(),
-                    "rewrite_game_profile", settings.premium().rewriteGameProfile(),
-                    "premium_auto_promote_low_risk", settings.premium().autoPromoteVerifiedLowRisk());
+                    "premium_enabled", settings.premium().enabled(),
+                    "premium_api_timeout_ms", settings.premium().apiTimeoutMs());
         });
     }
 

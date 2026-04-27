@@ -47,7 +47,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         VelocityLang lang = langSupplier.get();
         String[] args = invocation.arguments();
         if (args.length == 0) {
-            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|iphistory|risk|risk-top|banwave-ip|export-risk-csv>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|iphistory|risk|risk-top|banwave-ip|export-risk-csv|whitelistip>"));
             return;
         }
 
@@ -59,6 +59,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             case "risk-top" -> handleRiskTop(invocation, args, lang);
             case "banwave-ip" -> handleBanwaveIp(invocation, args, lang);
             case "export-risk-csv" -> handleExportRiskCsv(invocation, args, lang);
+            case "whitelistip" -> handleWhitelistIp(invocation, args, lang);
             default -> lang.send(invocation.source(), "admin-unknown-subcommand");
         }
     }
@@ -321,6 +322,101 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         });
     }
 
+    private void handleWhitelistIp(Invocation invocation, String[] args, VelocityLang lang) {
+        if (!invocation.source().hasPermission("proudauth.admin.whitelistip")) {
+            lang.send(invocation.source(), "no-permission");
+            return;
+        }
+        if (args.length < 2) {
+            lang.send(invocation.source(), "error-usage",
+                    Placeholder.unparsed("usage", "/paproxy whitelistip <add|remove|list> <player> [ip]"));
+            return;
+        }
+
+        String action = args[1].toLowerCase(Locale.ROOT);
+        switch (action) {
+            case "add" -> handleWhitelistIpAdd(invocation, args, lang);
+            case "remove" -> handleWhitelistIpRemove(invocation, args, lang);
+            case "list" -> handleWhitelistIpList(invocation, args, lang);
+            default -> lang.send(invocation.source(), "admin-unknown-subcommand");
+        }
+    }
+
+    private void handleWhitelistIpAdd(Invocation invocation, String[] args, VelocityLang lang) {
+        if (args.length != 4) {
+            lang.send(invocation.source(), "error-usage",
+                    Placeholder.unparsed("usage", "/paproxy whitelistip add <player> <ip>"));
+            return;
+        }
+
+        String username = args[2];
+        String ipAddress = args[3].trim();
+        if (!isLikelyIpAddress(ipAddress)) {
+            lang.send(invocation.source(), "admin-invalid-ip", Placeholder.unparsed("ip", ipAddress));
+            return;
+        }
+
+        storageSupplier.get().addPremiumIpWhitelist(username, ipAddress).whenComplete((ignored, exception) -> {
+            if (exception != null) {
+                lang.send(invocation.source(), "error-generic");
+                return;
+            }
+            lang.send(invocation.source(), "admin-whitelist-ip-added",
+                    Placeholder.unparsed("player", username),
+                    Placeholder.unparsed("ip", ipAddress));
+        });
+    }
+
+    private void handleWhitelistIpRemove(Invocation invocation, String[] args, VelocityLang lang) {
+        if (args.length != 4) {
+            lang.send(invocation.source(), "error-usage",
+                    Placeholder.unparsed("usage", "/paproxy whitelistip remove <player> <ip>"));
+            return;
+        }
+
+        String username = args[2];
+        String ipAddress = args[3].trim();
+        storageSupplier.get().removePremiumIpWhitelist(username, ipAddress).whenComplete((removed, exception) -> {
+            if (exception != null) {
+                lang.send(invocation.source(), "error-generic");
+                return;
+            }
+            if (!removed) {
+                lang.send(invocation.source(), "admin-whitelist-ip-not-found",
+                        Placeholder.unparsed("player", username),
+                        Placeholder.unparsed("ip", ipAddress));
+                return;
+            }
+            lang.send(invocation.source(), "admin-whitelist-ip-removed",
+                    Placeholder.unparsed("player", username),
+                    Placeholder.unparsed("ip", ipAddress));
+        });
+    }
+
+    private void handleWhitelistIpList(Invocation invocation, String[] args, VelocityLang lang) {
+        if (args.length != 3) {
+            lang.send(invocation.source(), "error-usage",
+                    Placeholder.unparsed("usage", "/paproxy whitelistip list <player>"));
+            return;
+        }
+
+        String username = args[2];
+        storageSupplier.get().listPremiumIpWhitelist(username).whenComplete((ips, exception) -> {
+            if (exception != null) {
+                lang.send(invocation.source(), "error-generic");
+                return;
+            }
+            if (ips.isEmpty()) {
+                lang.send(invocation.source(), "admin-whitelist-ip-empty",
+                        Placeholder.unparsed("player", username));
+                return;
+            }
+            lang.send(invocation.source(), "admin-whitelist-ip-list",
+                    Placeholder.unparsed("player", username),
+                    Placeholder.unparsed("ips", String.join(", ", ips)));
+        });
+    }
+
     private boolean hasReloadPermission(Invocation invocation) {
         return invocation.source().hasPermission("proudauth.admin.reload");
     }
@@ -330,9 +426,13 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 || invocation.source().hasPermission("proudauth.admin.reload");
     }
 
+    private boolean hasWhitelistPermission(Invocation invocation) {
+        return invocation.source().hasPermission("proudauth.admin.whitelistip");
+    }
+
     @Override
     public boolean hasPermission(Invocation invocation) {
-        return hasReloadPermission(invocation) || hasSecurityPermission(invocation);
+        return hasReloadPermission(invocation) || hasSecurityPermission(invocation) || hasWhitelistPermission(invocation);
     }
 
     @Override
@@ -340,7 +440,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         String[] args = invocation.arguments();
         if (args.length <= 1) {
             String token = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
-            return filter(List.of("reload", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv"), token);
+            return filter(List.of("reload", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv", "whitelistip"), token);
         }
 
         String subcommand = args[0].toLowerCase(Locale.ROOT);
@@ -384,6 +484,15 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 }
                 yield List.of();
             }
+            case "whitelistip" -> {
+                if (args.length == 2) {
+                    yield filter(List.of("add", "remove", "list"), args[1]);
+                }
+                if (args.length == 3 && invocation.source() instanceof Player player) {
+                    yield filter(List.of(player.getUsername()), args[2]);
+                }
+                yield List.of();
+            }
             default -> List.of();
         };
     }
@@ -393,5 +502,23 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         return source.stream()
                 .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(lowered))
                 .toList();
+    }
+
+    private boolean isLikelyIpAddress(String raw) {
+        if (raw == null || raw.isBlank() || raw.length() > 45) {
+            return false;
+        }
+        for (int i = 0; i < raw.length(); i++) {
+            char character = raw.charAt(i);
+            if (Character.isDigit(character)
+                    || (character >= 'a' && character <= 'f')
+                    || (character >= 'A' && character <= 'F')
+                    || character == '.'
+                    || character == ':') {
+                continue;
+            }
+            return false;
+        }
+        return true;
     }
 }

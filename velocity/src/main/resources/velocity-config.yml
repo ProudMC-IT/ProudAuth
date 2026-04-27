@@ -25,12 +25,6 @@ debugger:
 premium:
   enabled: true
   api-timeout-ms: 3000
-  rewrite-game-profile: false
-  require-uuid-proof: true
-  auto-promote-verified-low-risk: true
-  auto-promote-max-usernames-per-ip-1h: 2
-  auto-promote-max-ips-per-username-24h: 3
-  auto-promote-deny-when-ip-banned: true
 
 bridge:
   enabled: false

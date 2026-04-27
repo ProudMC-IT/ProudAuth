@@ -43,13 +43,7 @@ public final class VelocityConfigLoader {
                 ),
                 new VelocityPluginSettings.Premium(
                         bool(root, "premium.enabled", true),
-                        Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
-                        bool(root, "premium.rewrite-game-profile", false),
-                        bool(root, "premium.require-uuid-proof", true),
-                        bool(root, "premium.auto-promote-verified-low-risk", true),
-                        Math.max(1, integer(root, "premium.auto-promote-max-usernames-per-ip-1h", 2)),
-                        Math.max(1, integer(root, "premium.auto-promote-max-ips-per-username-24h", 3)),
-                        bool(root, "premium.auto-promote-deny-when-ip-banned", true)
+                        Math.max(500, integer(root, "premium.api-timeout-ms", 3000))
                 ),
                 new VelocityPluginSettings.Bridge(
                         bool(root, "bridge.enabled", false),
