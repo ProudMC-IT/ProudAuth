@@ -1,9 +1,4 @@
 import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.api.artifacts.MinimalExternalModuleDependency
-import org.gradle.api.file.DuplicatesStrategy
-import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.api.tasks.WriteProperties
 
 plugins {
     alias(libs.plugins.shadow)

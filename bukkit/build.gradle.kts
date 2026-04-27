@@ -1,5 +1,3 @@
-import org.gradle.api.tasks.SourceSetContainer
-
 the<SourceSetContainer>().named("main") {
     resources.srcDir("../common/src/main/resources")
 }

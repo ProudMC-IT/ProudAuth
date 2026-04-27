@@ -1,8 +1,3 @@
-import org.gradle.api.artifacts.MinimalExternalModuleDependency
-import org.gradle.api.provider.Provider
-import org.gradle.api.tasks.SourceSetContainer
-import org.gradle.api.tasks.WriteProperties
-
 fun Provider<MinimalExternalModuleDependency>.coordinate(): String {
     val dependency = get()
     return "${dependency.module.group}:${dependency.module.name}:${dependency.versionConstraint.requiredVersion}"
