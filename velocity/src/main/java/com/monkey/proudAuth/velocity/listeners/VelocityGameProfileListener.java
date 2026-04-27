@@ -70,7 +70,8 @@ public final class VelocityGameProfileListener {
                 premiumVerifierSupplier.get().verify(event.getUsername()).join();
 
         AccountType accountType;
-        GameProfile resolvedProfile;
+        UUID resolvedUuid;
+        String resolvedName;
 
         if (premiumCheck.premium()) {
             boolean uuidAlreadyCorrect = !currentProfile.getId().equals(offlineUuid);
@@ -78,14 +79,12 @@ public final class VelocityGameProfileListener {
 
             if (uuidAlreadyCorrect) {
                 accountType = AccountType.PREMIUM;
-                resolvedProfile = currentProfile;
+                resolvedUuid = currentProfile.getId();
+                resolvedName = currentProfile.getName();
             } else {
-                resolvedProfile = currentProfile
-                        .withId(premiumCheck.resolvedUuid())
-                        .withName(premiumCheck.resolvedName())
-                        .withProperties(currentProfile.getProperties());
-                event.setGameProfile(resolvedProfile);
                 accountType = AccountType.PREMIUM;
+                resolvedUuid = premiumCheck.resolvedUuid();
+                resolvedName = premiumCheck.resolvedName();
 
                 if (trustedIpOverride) {
                     debugEvent(DebugChannel.PREMIUM_FLOW, "premium_trusted_ip_override",
@@ -101,7 +100,8 @@ public final class VelocityGameProfileListener {
             }
         } else {
             accountType = AccountType.CRACKED;
-            resolvedProfile = currentProfile;
+            resolvedUuid = currentProfile.getId();
+            resolvedName = currentProfile.getName();
 
             if (premiumRequiredByWhitelist) {
                 debugEvent(DebugChannel.PREMIUM_FLOW, "whitelist_premium_required_pending_disconnect",
@@ -113,8 +113,8 @@ public final class VelocityGameProfileListener {
 
         resolvedPlayerStore.remember(
                 event.getUsername(),
-                resolvedProfile.getId(),
-                resolvedProfile.getName(),
+                resolvedUuid,
+                resolvedName,
                 accountType
         );
 
@@ -123,8 +123,8 @@ public final class VelocityGameProfileListener {
         bridgeServiceSupplier.get()
                 .publish(
                         event.getUsername(),
-                        resolvedProfile.getName(),
-                        resolvedProfile.getId(),
+                        resolvedName,
+                        resolvedUuid,
                         accountType,
                         ipAddress
                 )
@@ -138,7 +138,8 @@ public final class VelocityGameProfileListener {
 
         debugEvent(DebugChannel.PROFILE_FLOW, "profile_resolved",
                 "player", event.getUsername(),
-                "uuid", resolvedProfile.getId(),
+                "current_profile_uuid", currentProfile.getId(),
+                "resolved_uuid", resolvedUuid,
                 "account_type", accountType,
                 "premium_check", premiumCheck.premium(),
                 "ip", ipAddress);

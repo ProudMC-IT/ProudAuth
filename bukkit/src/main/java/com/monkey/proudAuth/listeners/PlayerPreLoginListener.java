@@ -24,10 +24,20 @@ public final class PlayerPreLoginListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST)
     public void onPreLogin(AsyncPlayerPreLoginEvent event) {
-        preLoginService.resolve(event).ifPresent(resolvedLogin -> resolvedLogins.put(resolvedLogin.uuid(), resolvedLogin));
+        preLoginService.resolve(event).ifPresent(resolvedLogin -> {
+            resolvedLogins.put(event.getUniqueId(), resolvedLogin);
+            if (!event.getUniqueId().equals(resolvedLogin.uuid())) {
+                resolvedLogins.put(resolvedLogin.uuid(), resolvedLogin);
+            }
+        });
     }
 
     public Optional<ResolvedLogin> consume(UUID uuid) {
-        return Optional.ofNullable(resolvedLogins.remove(uuid));
+        ResolvedLogin resolvedLogin = resolvedLogins.remove(uuid);
+        if (resolvedLogin == null) {
+            return Optional.empty();
+        }
+        resolvedLogins.entrySet().removeIf(entry -> entry.getValue().equals(resolvedLogin));
+        return Optional.of(resolvedLogin);
     }
 }

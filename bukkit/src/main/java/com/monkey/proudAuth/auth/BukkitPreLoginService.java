@@ -226,7 +226,6 @@ public final class BukkitPreLoginService {
                         "player", event.getName(),
                         "ip", ipAddress);
             }
-            applyProfile(event, mojangUuid, premiumCheck.resolvedName());
             return Optional.of(new ResolvedLogin(
                     mojangUuid,
                     premiumCheck.resolvedName(),
