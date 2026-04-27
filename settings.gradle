@@ -1,7 +1,0 @@
-rootProject.name = 'ProudAuth'
-
-include 'common'
-include 'bootstrap'
-include 'bukkit'
-include 'velocity'
-include 'universal'

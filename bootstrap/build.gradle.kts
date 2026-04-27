@@ -1,5 +1,5 @@
 dependencies {
-    api project(':common')
+    api(project(":common"))
 }
 
 tasks.jar {

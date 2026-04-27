@@ -4,20 +4,25 @@ import org.slf4j.Logger;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Properties;
 
 final class VelocityRuntimeLibraryLoader {
 
     private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
     private static final Duration READ_TIMEOUT = Duration.ofSeconds(30);
+    private static final String RUNTIME_LIBRARIES_RESOURCE = "proudauth-velocity-runtime-libraries.properties";
 
     private final Logger logger;
     private final Path dataDirectory;
@@ -35,7 +40,7 @@ final class VelocityRuntimeLibraryLoader {
             List<URL> urls = new ArrayList<>();
             urls.add(pluginClass.getProtectionDomain().getCodeSource().getLocation().toURI().toURL());
 
-            for (LibraryCoordinate coordinate : runtimeLibraries()) {
+            for (LibraryCoordinate coordinate : runtimeLibraries(pluginClass)) {
                 Path target = libsDirectory.resolve(coordinate.fileName());
                 if (Files.notExists(target)) {
                     download(coordinate.downloadUri(), target);
@@ -78,21 +83,50 @@ final class VelocityRuntimeLibraryLoader {
         }
     }
 
-    private List<LibraryCoordinate> runtimeLibraries() {
-        return List.of(
-                new LibraryCoordinate("com.zaxxer", "HikariCP", "7.0.2"),
-                new LibraryCoordinate("org.mindrot", "jbcrypt", "0.4"),
-                new LibraryCoordinate("dev.samstevens.totp", "totp", "1.7.1"),
-                new LibraryCoordinate("commons-codec", "commons-codec", "1.13"),
-                new LibraryCoordinate("com.google.zxing", "core", "3.4.0"),
-                new LibraryCoordinate("com.google.zxing", "javase", "3.4.0"),
-                new LibraryCoordinate("com.beust", "jcommander", "1.72"),
-                new LibraryCoordinate("com.mysql", "mysql-connector-j", "9.6.0"),
-                new LibraryCoordinate("com.google.protobuf", "protobuf-java", "4.31.1"),
-                new LibraryCoordinate("org.yaml", "snakeyaml", "2.6"),
-                new LibraryCoordinate("net.bytebuddy", "byte-buddy", "1.18.2"),
-                new LibraryCoordinate("net.bytebuddy", "byte-buddy-agent", "1.18.2")
-        );
+    private List<LibraryCoordinate> runtimeLibraries(Class<?> pluginClass) throws IOException {
+        try (InputStream inputStream = pluginClass.getClassLoader().getResourceAsStream(RUNTIME_LIBRARIES_RESOURCE)) {
+            if (inputStream == null) {
+                throw new IOException("Risorsa runtime libraries mancante nel jar: " + RUNTIME_LIBRARIES_RESOURCE);
+            }
+
+            Properties properties = new Properties();
+            properties.load(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
+
+            List<String> orderedKeys = properties.stringPropertyNames().stream()
+                    .filter(name -> name.startsWith("library."))
+                    .sorted(Comparator.comparingInt(this::libraryIndex))
+                    .toList();
+
+            if (orderedKeys.isEmpty()) {
+                throw new IOException("Nessuna libreria runtime definita in " + RUNTIME_LIBRARIES_RESOURCE);
+            }
+
+            List<LibraryCoordinate> coordinates = new ArrayList<>(orderedKeys.size());
+            for (String key : orderedKeys) {
+                coordinates.add(parseCoordinate(properties.getProperty(key), key));
+            }
+            return coordinates;
+        }
+    }
+
+    private int libraryIndex(String key) {
+        try {
+            return Integer.parseInt(key.substring("library.".length()));
+        } catch (NumberFormatException ignored) {
+            return Integer.MAX_VALUE;
+        }
+    }
+
+    private LibraryCoordinate parseCoordinate(String rawCoordinate, String key) throws IOException {
+        if (rawCoordinate == null || rawCoordinate.isBlank()) {
+            throw new IOException("Coordinata libreria runtime vuota per " + key);
+        }
+
+        String[] parts = rawCoordinate.split(":");
+        if (parts.length != 3) {
+            throw new IOException("Coordinata libreria runtime non valida per " + key + ": " + rawCoordinate);
+        }
+        return new LibraryCoordinate(parts[0], parts[1], parts[2]);
     }
 
     private record LibraryCoordinate(String groupId, String artifactId, String version) {
