@@ -16,11 +16,11 @@ dependencies {
     implementation 'com.zaxxer:HikariCP:7.0.2'
     implementation 'org.mindrot:jbcrypt:0.4'
     implementation 'dev.samstevens.totp:totp:1.7.1'
-    implementation 'com.mysql:mysql-connector-j:9.6.0'
+    implementation 'com.mysql:mysql-connector-j:9.7.0'
     implementation 'org.yaml:snakeyaml:2.6'
 
-    compileOnly 'net.bytebuddy:byte-buddy:1.18.2'
-    compileOnly 'net.bytebuddy:byte-buddy-agent:1.18.2'
+    compileOnly 'net.bytebuddy:byte-buddy:1.18.8'
+    compileOnly 'net.bytebuddy:byte-buddy-agent:1.18.8'
 }
 
 tasks.jar {

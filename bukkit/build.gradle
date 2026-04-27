@@ -17,7 +17,7 @@ dependencies {
     compileOnly 'com.zaxxer:HikariCP:7.0.2'
     compileOnly 'org.mindrot:jbcrypt:0.4'
     compileOnly 'dev.samstevens.totp:totp:1.7.1'
-    compileOnly 'com.mysql:mysql-connector-j:9.6.0'
+    compileOnly 'com.mysql:mysql-connector-j:9.7.0'
 }
 
 tasks.processResources {
