@@ -119,7 +119,6 @@ public final class ProudAuthVelocityPlatform {
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
-                    () -> storage,
                     () -> bridgeService,
                     () -> lang,
                     () -> settings.debugger(),

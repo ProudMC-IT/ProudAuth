@@ -12,8 +12,21 @@ public final class VelocityResolvedPlayerStore {
 
     private final Map<String, ResolvedPlayer> resolvedPlayers = new ConcurrentHashMap<>();
 
-    public void remember(String username, UUID resolvedUuid, String resolvedName, AccountType accountType) {
-        resolvedPlayers.put(key(username), new ResolvedPlayer(resolvedUuid, resolvedName, accountType));
+    public void remember(
+            String username,
+            UUID resolvedUuid,
+            String resolvedName,
+            AccountType accountType,
+            boolean premiumNameDetected,
+            boolean premiumVerified
+    ) {
+        resolvedPlayers.put(key(username), new ResolvedPlayer(
+                resolvedUuid,
+                resolvedName,
+                accountType,
+                premiumNameDetected,
+                premiumVerified
+        ));
     }
 
     public Optional<ResolvedPlayer> find(String username) {
@@ -28,6 +41,12 @@ public final class VelocityResolvedPlayerStore {
         return username.toLowerCase(Locale.ROOT);
     }
 
-    public record ResolvedPlayer(UUID resolvedUuid, String resolvedName, AccountType accountType) {
+    public record ResolvedPlayer(
+            UUID resolvedUuid,
+            String resolvedName,
+            AccountType accountType,
+            boolean premiumNameDetected,
+            boolean premiumVerified
+    ) {
     }
 }
