@@ -110,6 +110,7 @@ public final class ProudAuthVelocityPlatform {
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
+                    () -> premiumVerifier,
                     () -> lang,
                     () -> settings.debugger(),
                     backendJoinProbeService,
