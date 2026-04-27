@@ -1,0 +1,37 @@
+[versions]
+shadow = "9.4.1"
+bstatsBukkit = "3.2.1"
+jetbrainsAnnotations = "26.1.0"
+paperApi = "1.21.1-R0.1-SNAPSHOT"
+velocityApi = "3.5.0-SNAPSHOT"
+hikari = "7.0.2"
+jbcrypt = "0.4"
+totp = "1.7.1"
+mysql = "9.7.0"
+snakeyaml = "2.6"
+byteBuddy = "1.18.8"
+commonsCodec = "1.13"
+zxing = "3.4.0"
+jcommander = "1.72"
+protobuf = "4.31.1"
+
+[libraries]
+bstatsBukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstatsBukkit" }
+jetbrainsAnnotations = { module = "org.jetbrains:annotations", version.ref = "jetbrainsAnnotations" }
+paperApi = { module = "io.papermc.paper:paper-api", version.ref = "paperApi" }
+velocityApi = { module = "com.velocitypowered:velocity-api", version.ref = "velocityApi" }
+hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+jbcrypt = { module = "org.mindrot:jbcrypt", version.ref = "jbcrypt" }
+totp = { module = "dev.samstevens.totp:totp", version.ref = "totp" }
+mysql = { module = "com.mysql:mysql-connector-j", version.ref = "mysql" }
+snakeyaml = { module = "org.yaml:snakeyaml", version.ref = "snakeyaml" }
+byteBuddy = { module = "net.bytebuddy:byte-buddy", version.ref = "byteBuddy" }
+byteBuddyAgent = { module = "net.bytebuddy:byte-buddy-agent", version.ref = "byteBuddy" }
+commonsCodec = { module = "commons-codec:commons-codec", version.ref = "commonsCodec" }
+zxingCore = { module = "com.google.zxing:core", version.ref = "zxing" }
+zxingJavase = { module = "com.google.zxing:javase", version.ref = "zxing" }
+jcommander = { module = "com.beust:jcommander", version.ref = "jcommander" }
+protobuf = { module = "com.google.protobuf:protobuf-java", version.ref = "protobuf" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
