@@ -17,8 +17,8 @@ import java.nio.file.Path;
 @Plugin(
         id = "proudauth",
         name = "ProudAuth",
-        version = "1.0.1",
-        authors = {"Monkey"},
+        version = "1.0.2",
+        authors = {"MonkeyMoon104"},
         description = "Proxy companion per ProudAuth"
 )
 public final class ProudAuthVelocityPlugin {

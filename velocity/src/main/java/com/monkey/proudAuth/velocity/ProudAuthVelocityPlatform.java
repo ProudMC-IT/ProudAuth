@@ -103,7 +103,7 @@ public final class ProudAuthVelocityPlatform {
             );
             lastAutoExportAt = Instant.EPOCH;
             platformLogger.banner(
-                    "ProudAuth v1.0.1",
+                    "ProudAuth v1.0.2",
                     "Platform: Velocity proxy",
                     "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),

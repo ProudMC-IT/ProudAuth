@@ -3,7 +3,7 @@ version: '${version}'
 main: com.monkey.proudAuth.ProudAuth
 api-version: '1.21'
 load: STARTUP
-authors: [Monkey]
+authors: [MonkeyMoon104]
 description: Plugin di autenticazione premium/cracked per Paper 1.21.1
 libraries:
   - com.zaxxer:HikariCP:7.0.2
