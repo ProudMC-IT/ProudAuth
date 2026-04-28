@@ -2,8 +2,8 @@ package com.monkey.proudAuth.velocity.instrumentation;
 
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
-import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.agent.builder.ResettableClassFileTransformer;

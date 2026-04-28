@@ -1,11 +1,11 @@
 package com.monkey.proudAuth.velocity;
 
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
-import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
 import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
@@ -20,9 +20,9 @@ import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
-import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
 import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
+import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;

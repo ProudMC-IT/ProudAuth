@@ -6,8 +6,6 @@ import com.monkey.proudAuth.commands.admin.support.AdminSubcommand;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.command.CommandSender;
 
-import java.util.List;
-
 public final class ResetPasswordAdminSubcommand implements AdminSubcommand {
 
     private final AdminCommandContext context;

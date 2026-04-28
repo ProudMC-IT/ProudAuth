@@ -1,8 +1,8 @@
 package com.monkey.proudAuth.velocity.instrumentation;
 
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
-import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import net.bytebuddy.asm.Advice;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.TranslatableComponent;
