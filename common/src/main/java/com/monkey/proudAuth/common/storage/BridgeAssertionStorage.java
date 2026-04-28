@@ -11,6 +11,8 @@ public interface BridgeAssertionStorage {
 
     CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip);
 
+    CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username);
+
     CompletableFuture<Void> deleteProxyAssertion(String nonce);
 
     CompletableFuture<Integer> deleteExpiredProxyAssertions();

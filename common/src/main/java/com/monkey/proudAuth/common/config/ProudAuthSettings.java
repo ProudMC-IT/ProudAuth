@@ -23,7 +23,17 @@ public record ProudAuthSettings(
     public record Database(String host, int port, String name, String user, String password, int poolSize) {
     }
 
-    public record Premium(boolean enabled, boolean autoLogin, int apiTimeoutMs, boolean requireUuidProof) {
+    public record Premium(
+            boolean enabled,
+            boolean autoLogin,
+            int apiTimeoutMs,
+            boolean requireUuidProof,
+            PremiumMode mode,
+            long claimPendingSeconds
+    ) {
+        public boolean isClaimOnFirstJoin() {
+            return mode == PremiumMode.CLAIM_ON_FIRST_JOIN;
+        }
     }
 
     public record Sessions(boolean enabled, long ttlMinutes, boolean bindToIp) {
@@ -158,6 +168,19 @@ public record ProudAuthSettings(
                 return BridgeTransport.valueOf(raw.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
                 return MYSQL;
+            }
+        }
+    }
+
+    public enum PremiumMode {
+        STRICT_GLOBAL,
+        CLAIM_ON_FIRST_JOIN;
+
+        public static PremiumMode from(String raw) {
+            try {
+                return PremiumMode.valueOf(raw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                return STRICT_GLOBAL;
             }
         }
     }

@@ -8,4 +8,6 @@ public interface TrustedIpStorage {
     CompletableFuture<Void> setTrustedIp(String username, String ipAddress);
 
     CompletableFuture<Optional<String>> findTrustedIp(String username);
+
+    CompletableFuture<Boolean> deleteTrustedIp(String username);
 }

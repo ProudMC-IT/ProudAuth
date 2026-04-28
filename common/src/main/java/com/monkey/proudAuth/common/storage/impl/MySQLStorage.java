@@ -5,7 +5,9 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.Session;
 import com.monkey.proudAuth.common.storage.AccountRecord;
+import com.monkey.proudAuth.common.storage.IdentityClaimRecord;
 import com.monkey.proudAuth.common.storage.IpBanRecord;
+import com.monkey.proudAuth.common.storage.PendingIdentityClaimRecord;
 import com.monkey.proudAuth.common.storage.StatsSnapshot;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.zaxxer.hikari.HikariConfig;
@@ -220,6 +222,180 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Optional<IdentityClaimRecord>> findIdentityClaim(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT username, claim_type, claimed_ip, claimed_at, updated_at
+                    FROM pa_identity_claims
+                    WHERE username = ?
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new IdentityClaimRecord(
+                            resultSet.getString("username"),
+                            AccountType.valueOf(resultSet.getString("claim_type")),
+                            resultSet.getString("claimed_ip"),
+                            resultSet.getTimestamp("claimed_at").toInstant(),
+                            resultSet.getTimestamp("updated_at").toInstant()
+                    ));
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> deleteIdentityClaim(String username) {
+        return runAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "DELETE FROM pa_identity_claims WHERE username = ?")) {
+                statement.setString(1, canonicalUsername(username));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> saveIdentityClaim(String username, AccountType claimType, String claimedIp, Instant claimedAt) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_identity_claims (username, claim_type, claimed_ip, claimed_at, updated_at)
+                    VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE
+                        claim_type = VALUES(claim_type),
+                        claimed_ip = VALUES(claimed_ip),
+                        claimed_at = VALUES(claimed_at),
+                        updated_at = CURRENT_TIMESTAMP
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, claimType.name());
+                setNullableString(statement, 3, claimedIp);
+                statement.setTimestamp(4, Timestamp.from(claimedAt));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<PendingIdentityClaimRecord>> findLatestPendingIdentityClaim(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT username, claim_type, ip, created_at, expires_at
+                    FROM pa_pending_identity_claims
+                    WHERE username = ? AND expires_at > CURRENT_TIMESTAMP
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new PendingIdentityClaimRecord(
+                            resultSet.getString("username"),
+                            AccountType.valueOf(resultSet.getString("claim_type")),
+                            resultSet.getString("ip"),
+                            resultSet.getTimestamp("created_at").toInstant(),
+                            resultSet.getTimestamp("expires_at").toInstant()
+                    ));
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<PendingIdentityClaimRecord>> findPendingIdentityClaim(String username, String ipAddress) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT username, claim_type, ip, created_at, expires_at
+                    FROM pa_pending_identity_claims
+                    WHERE username = ? AND ip = ? AND expires_at > CURRENT_TIMESTAMP
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, ipAddress);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(new PendingIdentityClaimRecord(
+                            resultSet.getString("username"),
+                            AccountType.valueOf(resultSet.getString("claim_type")),
+                            resultSet.getString("ip"),
+                            resultSet.getTimestamp("created_at").toInstant(),
+                            resultSet.getTimestamp("expires_at").toInstant()
+                    ));
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> savePendingIdentityClaim(
+            String username,
+            AccountType claimType,
+            String ipAddress,
+            Instant createdAt,
+            Instant expiresAt
+    ) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_pending_identity_claims (username, claim_type, ip, created_at, expires_at)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                        claim_type = VALUES(claim_type),
+                        ip = VALUES(ip),
+                        created_at = VALUES(created_at),
+                        expires_at = VALUES(expires_at)
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setString(2, claimType.name());
+                statement.setString(3, ipAddress);
+                statement.setTimestamp(4, Timestamp.from(createdAt));
+                statement.setTimestamp(5, Timestamp.from(expiresAt));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> deletePendingIdentityClaim(String username) {
+        return runAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "DELETE FROM pa_pending_identity_claims WHERE username = ?")) {
+                statement.setString(1, canonicalUsername(username));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> deleteExpiredPendingIdentityClaims() {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "DELETE FROM pa_pending_identity_claims WHERE expires_at < CURRENT_TIMESTAMP")) {
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> setTrustedIp(String username, String ipAddress) {
         return runAsync(() -> {
             String sql = """
@@ -261,6 +437,18 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Boolean> deleteTrustedIp(String username) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "DELETE FROM pa_trusted_ips WHERE username = ?")) {
+                statement.setString(1, canonicalUsername(username));
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> addPremiumIpWhitelist(String username, String ip) {
         return runAsync(() -> {
             String sql = """
@@ -272,6 +460,18 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(1, canonicalUsername(username));
                 statement.setString(2, ip);
                 statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> clearPremiumIpWhitelist(String username) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "DELETE FROM pa_premium_ip_whitelist WHERE username = ?")) {
+                statement.setString(1, canonicalUsername(username));
+                return statement.executeUpdate();
             }
         });
     }
@@ -420,6 +620,26 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<List<Session>> listSessions(UUID uuid, boolean onlyActive) {
+        return supplyAsync(() -> {
+            String sql = onlyActive
+                    ? "SELECT token, uuid, ip, account_type, expires_at FROM pa_sessions WHERE uuid = ? AND expires_at > CURRENT_TIMESTAMP ORDER BY expires_at DESC"
+                    : "SELECT token, uuid, ip, account_type, expires_at FROM pa_sessions WHERE uuid = ? ORDER BY expires_at DESC";
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, uuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<Session> sessions = new ArrayList<>();
+                    while (resultSet.next()) {
+                        sessions.add(mapSession(resultSet));
+                    }
+                    return sessions;
+                }
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> saveSession(Session session) {
         return runAsync(() -> {
             String sql = """
@@ -439,6 +659,17 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(4, session.accountType().name());
                 statement.setTimestamp(5, Timestamp.from(session.expiresAt()));
                 statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> deleteSessionsByIp(String ip) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_sessions WHERE ip = ?")) {
+                statement.setString(1, ip);
+                return statement.executeUpdate();
             }
         });
     }
@@ -656,6 +887,36 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<List<HistoryEntry>> listRecentHistoryByUsername(String username, int limit) {
+        return supplyAsync(() -> {
+            int boundedLimit = Math.max(1, limit);
+            String sql = """
+                    SELECT ip, account_type, observed_at
+                    FROM pa_ip_history
+                    WHERE username = ?
+                    ORDER BY observed_at DESC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, canonicalUsername(username));
+                statement.setInt(2, boundedLimit);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<HistoryEntry> rows = new ArrayList<>();
+                    while (resultSet.next()) {
+                        rows.add(new HistoryEntry(
+                                resultSet.getString("ip"),
+                                AccountType.valueOf(resultSet.getString("account_type")),
+                                resultSet.getTimestamp("observed_at").toInstant()
+                        ));
+                    }
+                    return rows;
+                }
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<List<IpSummary>> topIpsByDistinctUsernamesSince(Instant since, int limit) {
         return supplyAsync(() -> {
             int boundedLimit = Math.max(1, limit);
@@ -774,6 +1035,29 @@ public final class MySQLStorage implements StorageProvider {
                  PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, username);
                 statement.setString(2, ip);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(mapProxyAssertion(resultSet));
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT username, resolved_name, uuid, account_type, ip, issued_at, expires_at, nonce, signature
+                    FROM pa_proxy_assertions
+                    WHERE username = ?
+                    ORDER BY issued_at DESC
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, username);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
@@ -985,6 +1269,26 @@ public final class MySQLStorage implements StorageProvider {
                     )
                     """);
             statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_identity_claims (
+                        username VARCHAR(16) NOT NULL PRIMARY KEY,
+                        claim_type ENUM('PREMIUM','CRACKED') NOT NULL,
+                        claimed_ip VARCHAR(45),
+                        claimed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_identity_claim_type (claim_type)
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_pending_identity_claims (
+                        username VARCHAR(16) NOT NULL PRIMARY KEY,
+                        claim_type ENUM('PREMIUM','CRACKED') NOT NULL,
+                        ip VARCHAR(45) NOT NULL,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        expires_at DATETIME NOT NULL,
+                        INDEX idx_pending_claim_expires (expires_at)
+                    )
+                    """);
+            statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_trusted_ips (
                         username VARCHAR(16) NOT NULL PRIMARY KEY,
                         ip VARCHAR(45) NOT NULL,
@@ -1005,6 +1309,7 @@ public final class MySQLStorage implements StorageProvider {
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP");
+            statement.executeUpdate("DELETE FROM pa_pending_identity_claims WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_history WHERE observed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)");
         } catch (SQLException exception) {
             throw new IllegalStateException("Impossibile inizializzare lo schema MySQL.", exception);

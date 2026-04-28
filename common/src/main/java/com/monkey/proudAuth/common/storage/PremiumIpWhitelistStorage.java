@@ -11,6 +11,8 @@ public interface PremiumIpWhitelistStorage {
 
     CompletableFuture<List<String>> listPremiumIpWhitelist(String username);
 
+    CompletableFuture<Integer> clearPremiumIpWhitelist(String username);
+
     CompletableFuture<Boolean> isInPremiumIpWhitelist(String username);
 
     CompletableFuture<Boolean> isPremiumIpWhitelisted(String username, String ip);

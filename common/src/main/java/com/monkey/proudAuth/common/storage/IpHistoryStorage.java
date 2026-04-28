@@ -16,6 +16,8 @@ public interface IpHistoryStorage {
 
     CompletableFuture<Integer> deleteIpHistoryOlderThan(Instant cutoff);
 
+    CompletableFuture<List<HistoryEntry>> listRecentHistoryByUsername(String username, int limit);
+
     CompletableFuture<List<IpSummary>> topIpsByDistinctUsernamesSince(Instant since, int limit);
 
     CompletableFuture<List<UserSummary>> topUsersByDistinctIpsSince(Instant since, int limit);
@@ -24,5 +26,8 @@ public interface IpHistoryStorage {
     }
 
     record UserSummary(String username, int distinctIps, int totalHits) {
+    }
+
+    record HistoryEntry(String ipAddress, AccountType accountType, Instant observedAt) {
     }
 }
