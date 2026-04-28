@@ -271,6 +271,9 @@ public final class ProudAuth extends JavaPlugin {
                 playerProtection,
                 runtime.bruteForceGuard(),
                 runtime.storage(),
+                runtime.sessionManager(),
+                identityClaimService,
+                runtime.premiumVerifier(),
                 this::reloadPluginState
         );
         Objects.requireNonNull(getCommand("proudauth")).setExecutor(adminCommand);

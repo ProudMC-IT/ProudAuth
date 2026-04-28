@@ -43,7 +43,7 @@ commands:
     permission: proudauth.2fa
   proudauth:
     description: Comandi amministrativi ProudAuth
-    usage: /proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|whitelistip|stats|reload>
+    usage: /proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|whitelistip|claim|session|premiumcheck|authinfo|2fa|unlock|history|bridge|debug|stats|reload>
     permission: proudauth.admin
     aliases: [proudauthbackend]
 
@@ -78,6 +78,33 @@ permissions:
     default: op
   proudauth.admin.whitelistip:
     description: Gestisce la whitelist IP premium
+    default: op
+  proudauth.admin.claim:
+    description: Gestisce i claim locali premium/cracked
+    default: op
+  proudauth.admin.session:
+    description: Gestisce e ispeziona le sessioni
+    default: op
+  proudauth.admin.premiumcheck:
+    description: Esegue controlli premium Mojang
+    default: op
+  proudauth.admin.authinfo:
+    description: Mostra lo stato auth completo di un player
+    default: op
+  proudauth.admin.2fa:
+    description: Gestisce la 2FA degli account
+    default: op
+  proudauth.admin.unlock:
+    description: Sblocca lockout e pending state
+    default: op
+  proudauth.admin.history:
+    description: Consulta la history IP/account type
+    default: op
+  proudauth.admin.bridge:
+    description: Ispeziona lo stato del bridge proxy/backend
+    default: op
+  proudauth.admin.debug:
+    description: Strumenti debug runtime ProudAuth
     default: op
   proudauth.admin.stats:
     default: op
