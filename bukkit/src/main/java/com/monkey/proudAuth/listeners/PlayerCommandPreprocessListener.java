@@ -12,7 +12,8 @@ import java.util.Set;
 
 public final class PlayerCommandPreprocessListener implements Listener {
 
-    private static final Set<String> ALLOWED = Set.of("/login", "/register", "/2fa", "/proudauthbackend");
+    private static final Set<String> AUTH_ALLOWED = Set.of("/login", "/register", "/2fa", "/sp", "/cracked", "/premium", "/proudauthbackend");
+    private static final Set<String> CLAIM_CHOICE_ALLOWED = Set.of("/sp", "/cracked", "/premium", "/proudauthbackend");
 
     private final PlayerProtection playerProtection;
     private final LangConfig langConfig;
@@ -29,7 +30,16 @@ public final class PlayerCommandPreprocessListener implements Listener {
         }
 
         String command = event.getMessage().split(" ", 2)[0].toLowerCase(Locale.ROOT);
-        if (ALLOWED.contains(command)) {
+        if (playerProtection.isInClaimChoicePhase(event.getPlayer().getUniqueId())) {
+            if (CLAIM_CHOICE_ALLOWED.contains(command)) {
+                return;
+            }
+            event.setCancelled(true);
+            langConfig.send(event.getPlayer(), "claim-command-blocked");
+            return;
+        }
+
+        if (AUTH_ALLOWED.contains(command)) {
             return;
         }
 

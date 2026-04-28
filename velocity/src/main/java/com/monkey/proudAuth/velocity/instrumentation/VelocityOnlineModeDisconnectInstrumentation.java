@@ -1,6 +1,9 @@
 package com.monkey.proudAuth.velocity.instrumentation;
 
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
+import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
 import net.bytebuddy.agent.ByteBuddyAgent;
 import net.bytebuddy.agent.builder.AgentBuilder;
 import net.bytebuddy.agent.builder.ResettableClassFileTransformer;
@@ -23,11 +26,22 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
     private static final AtomicBoolean INSTALLED = new AtomicBoolean(false);
 
     private final ProudAuthConsoleLogger logger;
+    private final IdentityClaimService identityClaimService;
+    private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore;
+    private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private ResettableClassFileTransformer transformer;
     private Instrumentation instrumentation;
 
-    public VelocityOnlineModeDisconnectInstrumentation(ProudAuthConsoleLogger logger) {
+    public VelocityOnlineModeDisconnectInstrumentation(
+            ProudAuthConsoleLogger logger,
+            IdentityClaimService identityClaimService,
+            VelocityPendingPremiumAuthStore pendingPremiumAuthStore,
+            VelocityPremiumClaimFailureStore premiumClaimFailureStore
+    ) {
         this.logger = logger;
+        this.identityClaimService = identityClaimService;
+        this.pendingPremiumAuthStore = pendingPremiumAuthStore;
+        this.premiumClaimFailureStore = premiumClaimFailureStore;
     }
 
     public void install() {
@@ -38,6 +52,11 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
 
         try {
             instrumentation = ByteBuddyAgent.install();
+            VelocityOnlineModeDisconnectAdvice.configure(
+                    identityClaimService,
+                    pendingPremiumAuthStore,
+                    premiumClaimFailureStore
+            );
             transformer = new AgentBuilder.Default()
                     .ignore(
                             ElementMatchers.nameStartsWith("net.bytebuddy.")
@@ -62,7 +81,7 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
                                 JavaModule module,
                                 ProtectionDomain protectionDomain
                         ) {
-                            return builder.visit(
+                            DynamicType.Builder<?> disconnectBuilder = builder.visit(
                                     Advice.to(VelocityOnlineModeDisconnectAdvice.class)
                                             .on(
                                                     ElementMatchers.named("disconnect")
@@ -73,6 +92,16 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
                                                             ))
                                             )
                             );
+                            if (typeDescription.getName().equals(LOGIN_INBOUND_CONNECTION)) {
+                                return disconnectBuilder.visit(
+                                        Advice.to(VelocityOnlineModeDisconnectAdvice.class)
+                                                .on(
+                                                        ElementMatchers.named("cleanup")
+                                                                .and(ElementMatchers.takesArguments(0))
+                                                )
+                                );
+                            }
+                            return disconnectBuilder;
                         }
                     })
                     .installOn(instrumentation);
@@ -85,8 +114,8 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
         }
     }
 
-    public void updateMessage(String miniMessage) {
-        VelocityOnlineModeDisconnectAdvice.updateMessage(miniMessage);
+    public void updateMessages(String onlineModeDeniedMiniMessage, String claimFailedMiniMessage) {
+        VelocityOnlineModeDisconnectAdvice.updateMessages(onlineModeDeniedMiniMessage, claimFailedMiniMessage);
     }
 
     public void shutdown() {
@@ -100,6 +129,7 @@ public final class VelocityOnlineModeDisconnectInstrumentation {
             logger.warn("Impossibile rimuovere l'instrumentation Velocity: "
                     + throwable.getClass().getSimpleName() + ": " + throwable.getMessage());
         } finally {
+            VelocityOnlineModeDisconnectAdvice.reset();
             transformer = null;
             instrumentation = null;
             INSTALLED.set(false);

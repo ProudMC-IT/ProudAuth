@@ -44,8 +44,12 @@ public final class VelocityConfigLoader {
                 new VelocityPluginSettings.Premium(
                         bool(root, "premium.enabled", true),
                         Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
+                        ProudAuthSettings.PremiumMode.from(string(root, "premium.mode", "STRICT_GLOBAL")),
+                        Math.max(30, integer(root, "premium.claim-pending-seconds", 300)),
                         string(root, "premium.online-mode-denied-message",
-                                "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>")
+                                "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"),
+                        string(root, "premium.claim-failed-denied-message",
+                                "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Verifica premium fallita</red><newline><gray>Non e stato possibile confermare questo nickname come premium.</gray><newline><yellow>Rientra e scegli di nuovo <white>/sp</white><yellow> oppure <white>/premium</white><yellow>.</yellow>")
                 ),
                 new VelocityPluginSettings.Bridge(
                         bool(root, "bridge.enabled", false),

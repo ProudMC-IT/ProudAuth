@@ -18,14 +18,16 @@ public final class VelocityResolvedPlayerStore {
             String accountName,
             AccountType accountType,
             boolean premiumNameDetected,
-            boolean premiumVerified
+            boolean premiumVerified,
+            boolean premiumEnforced
     ) {
         resolvedPlayers.put(key(username), new ResolvedPlayer(
                 accountUuid,
                 accountName,
                 accountType,
                 premiumNameDetected,
-                premiumVerified
+                premiumVerified,
+                premiumEnforced
         ));
     }
 
@@ -46,7 +48,8 @@ public final class VelocityResolvedPlayerStore {
             String accountName,
             AccountType accountType,
             boolean premiumNameDetected,
-            boolean premiumVerified
+            boolean premiumVerified,
+            boolean premiumEnforced
     ) {
     }
 }

@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -19,11 +20,20 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
     private final JavaPlugin plugin;
     private final LangConfig langConfig;
     private final AuthService authService;
+    private final IdentityClaimService identityClaimService;
+    private static final Object CLAIM_REQUIRED = new Object();
+    private static final Object PREMIUM_RECONNECT_REQUIRED = new Object();
 
-    public RegisterCommand(JavaPlugin plugin, LangConfig langConfig, AuthService authService) {
+    public RegisterCommand(
+            JavaPlugin plugin,
+            LangConfig langConfig,
+            AuthService authService,
+            IdentityClaimService identityClaimService
+    ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
+        this.identityClaimService = identityClaimService;
     }
 
     @Override
@@ -43,7 +53,26 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
 
         String ipAddress = player.getAddress() == null ? "unknown" : player.getAddress().getAddress().getHostAddress();
         AccountType accountType = authService.player(player.getUniqueId()).map(authPlayer -> authPlayer.accountType()).orElse(AccountType.CRACKED);
-        authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1]).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        identityClaimService.snapshot(player.getName(), ipAddress)
+                .thenCompose(snapshot -> {
+                    if (identityClaimService.isClaimOnFirstJoinEnabled() && snapshot.finalClaim().isEmpty()) {
+                        if (snapshot.pendingClaim().orElse(null) == AccountType.CRACKED) {
+                            return authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1])
+                                    .thenCompose(result -> result.status() == AuthService.RegisterStatus.SUCCESS
+                                            ? identityClaimService.finalizeClaim(player.getName(), AccountType.CRACKED, ipAddress)
+                                            .thenApply(ignored -> (Object) result)
+                                            : java.util.concurrent.CompletableFuture.completedFuture((Object) result));
+                        }
+                        return java.util.concurrent.CompletableFuture.completedFuture(
+                                snapshot.pendingClaim().orElse(null) == AccountType.PREMIUM
+                                        ? PREMIUM_RECONNECT_REQUIRED
+                                        : CLAIM_REQUIRED
+                        );
+                    }
+                    return authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1])
+                            .thenApply(result -> (Object) result);
+                })
+                .whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -51,8 +80,18 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
                 langConfig.send(player, "error-generic");
                 return;
             }
+            if (result == CLAIM_REQUIRED) {
+                langConfig.send(player, "claim-choice-required");
+                return;
+            }
+            if (result == PREMIUM_RECONNECT_REQUIRED) {
+                langConfig.send(player, "claim-premium-reconnect-required");
+                return;
+            }
 
-            switch (result.status()) {
+            AuthService.RegisterResult registerResult = (AuthService.RegisterResult) result;
+
+            switch (registerResult.status()) {
                 case SUCCESS -> langConfig.send(player, "register-success");
                 case ALREADY_REGISTERED -> langConfig.send(player, "register-already-exists");
                 case PREMIUM_ACCOUNT -> langConfig.send(player, "register-premium-account");

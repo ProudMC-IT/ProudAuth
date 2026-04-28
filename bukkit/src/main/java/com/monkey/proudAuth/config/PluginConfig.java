@@ -37,7 +37,9 @@ public final class PluginConfig {
                         config.getBoolean("premium.enabled", true),
                         config.getBoolean("premium.auto-login", true),
                         Math.max(500, config.getInt("premium.api-timeout-ms", 3000)),
-                        config.getBoolean("premium.require-uuid-proof", true)
+                        config.getBoolean("premium.require-uuid-proof", true),
+                        ProudAuthSettings.PremiumMode.from(config.getString("premium.mode", "STRICT_GLOBAL")),
+                        Math.max(30L, config.getLong("premium.claim-pending-seconds", 300L))
                 ),
                 new ProudAuthSettings.Sessions(
                         config.getBoolean("sessions.enabled", true),

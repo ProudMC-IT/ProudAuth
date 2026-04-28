@@ -142,19 +142,25 @@ public final class AuthServiceImpl implements AuthService {
                 return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
             }
 
-            return premiumVerifier.verify(username)
-                    .handle((premiumCheck, exception) -> {
-                        if (exception != null) {
-                            return new RegisterResult(RegisterStatus.MOJANG_UNAVAILABLE);
+            return allowsCrackedClaimRegistration(username, ipAddress, optionalAccount)
+                    .thenCompose(claimAllowsCracked -> {
+                        if (claimAllowsCracked) {
+                            return proceedWithRegistration(uuid, username, accountType, ipAddress, password, optionalAccount);
                         }
-                        if (premiumCheck.premium()) {
-                            return new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT);
-                        }
-                        return null;
-                    })
-                    .thenCompose(blockingResult -> blockingResult != null
-                            ? CompletableFuture.completedFuture(blockingResult)
-                            : proceedWithRegistration(uuid, username, accountType, ipAddress, password, optionalAccount));
+                        return premiumVerifier.verify(username)
+                                .handle((premiumCheck, exception) -> {
+                                    if (exception != null) {
+                                        return new RegisterResult(RegisterStatus.MOJANG_UNAVAILABLE);
+                                    }
+                                    if (premiumCheck.premium()) {
+                                        return new RegisterResult(RegisterStatus.PREMIUM_ACCOUNT);
+                                    }
+                                    return null;
+                                })
+                                .thenCompose(blockingResult -> blockingResult != null
+                                        ? CompletableFuture.completedFuture(blockingResult)
+                                        : proceedWithRegistration(uuid, username, accountType, ipAddress, password, optionalAccount));
+                    });
         });
     }
 
@@ -179,16 +185,19 @@ public final class AuthServiceImpl implements AuthService {
                 return CompletableFuture.completedFuture(new ChangePasswordResult(ChangePasswordStatus.PREMIUM_ACCOUNT));
             }
 
-            return premiumVerifier.verify(username)
-                    .handle((premiumCheck, exception) -> {
-                        if (exception != null) {
-                            return new ChangePasswordResult(ChangePasswordStatus.MOJANG_UNAVAILABLE);
-                        }
-                        if (premiumCheck.premium()) {
-                            return new ChangePasswordResult(ChangePasswordStatus.PREMIUM_ACCOUNT);
-                        }
-                        return null;
-                    })
+            return allowsCrackedClaimPasswordFlow(username, optionalAccount)
+                    .thenCompose(claimAllowsCracked -> claimAllowsCracked
+                            ? CompletableFuture.completedFuture(null)
+                            : premiumVerifier.verify(username)
+                                    .handle((premiumCheck, exception) -> {
+                                        if (exception != null) {
+                                            return new ChangePasswordResult(ChangePasswordStatus.MOJANG_UNAVAILABLE);
+                                        }
+                                        if (premiumCheck.premium()) {
+                                            return new ChangePasswordResult(ChangePasswordStatus.PREMIUM_ACCOUNT);
+                                        }
+                                        return null;
+                                    }))
                     .thenCompose(blockingResult -> {
                         if (blockingResult != null) {
                             return CompletableFuture.completedFuture(blockingResult);
@@ -617,6 +626,45 @@ public final class AuthServiceImpl implements AuthService {
                 .thenApply(ignored -> new RegisterResult(RegisterStatus.SUCCESS));
     }
 
+    private CompletableFuture<Boolean> allowsCrackedClaimRegistration(
+            String username,
+            String ipAddress,
+            Optional<AccountRecord> optionalAccount
+    ) {
+        if (!usesClaimOnFirstJoin()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        if (optionalAccount.map(AccountRecord::accountType).filter(type -> type == AccountType.CRACKED).isPresent()) {
+            return CompletableFuture.completedFuture(true);
+        }
+        return storage.findIdentityClaim(username)
+                .thenCompose(optionalClaim -> {
+                    if (optionalClaim.isPresent()) {
+                        return CompletableFuture.completedFuture(optionalClaim.get().claimType() == AccountType.CRACKED);
+                    }
+                    return storage.findPendingIdentityClaim(username, ipAddress)
+                            .thenApply(optionalPending -> optionalPending
+                                    .map(pending -> pending.claimType() == AccountType.CRACKED)
+                                    .orElse(false));
+                });
+    }
+
+    private CompletableFuture<Boolean> allowsCrackedClaimPasswordFlow(
+            String username,
+            Optional<AccountRecord> optionalAccount
+    ) {
+        if (!usesClaimOnFirstJoin()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        if (optionalAccount.map(AccountRecord::accountType).filter(type -> type == AccountType.CRACKED).isPresent()) {
+            return CompletableFuture.completedFuture(true);
+        }
+        return storage.findIdentityClaim(username)
+                .thenApply(optionalClaim -> optionalClaim
+                        .map(claim -> claim.claimType() == AccountType.CRACKED)
+                        .orElse(false));
+    }
+
     private RegisterStatus validateNewPassword(String password, String confirmation) {
         if (!password.equals(confirmation)) {
             return RegisterStatus.PASSWORD_MISMATCH;
@@ -722,6 +770,11 @@ public final class AuthServiceImpl implements AuthService {
 
     private String canonicalUsername(String username) {
         return username.toLowerCase(Locale.ROOT);
+    }
+
+    private boolean usesClaimOnFirstJoin() {
+        return settings.premium().isClaimOnFirstJoin()
+                && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
     }
 
     private String buildQrCodeUrl(String otpAuthUri) {

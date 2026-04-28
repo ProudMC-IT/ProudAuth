@@ -9,6 +9,7 @@ import com.monkey.proudAuth.bridge.BackendJoinProbeResponder;
 import com.monkey.proudAuth.commands.*;
 import com.monkey.proudAuth.commands.admin.ProudAuthAdminCommand;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.config.LangConfig;
@@ -37,6 +38,7 @@ public final class ProudAuth extends JavaPlugin {
     private PluginConfig pluginConfig;
     private LangConfig langConfig;
     private ProudAuthRuntime runtime;
+    private IdentityClaimService identityClaimService;
     private PlayerProtection playerProtection;
     private PlayerPreLoginListener playerPreLoginListener;
     private BukkitTask cleanupTask;
@@ -63,6 +65,7 @@ public final class ProudAuth extends JavaPlugin {
             pluginConfig = new PluginConfig(this);
             langConfig = new LangConfig(this, pluginConfig);
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
+            identityClaimService = new IdentityClaimService(runtime.storage(), pluginConfig.settings());
             playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
             spigotUpdateChecker = new SpigotUpdateChecker(task -> Bukkit.getScheduler().runTaskAsynchronously(this, task));
             latestUpdateCheckResult = UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId());
@@ -115,6 +118,7 @@ public final class ProudAuth extends JavaPlugin {
         pluginConfig.reload();
         langConfig.reload();
         runtime = bootstrap.reload(runtime, pluginConfig.settings());
+        identityClaimService.reload(pluginConfig.settings());
         playerProtection.reload(pluginConfig, langConfig);
         HandlerList.unregisterAll(this);
         registerListeners();
@@ -144,6 +148,7 @@ public final class ProudAuth extends JavaPlugin {
                     runtime.sessionManager().cleanupExpired().exceptionally(exception -> 0).join();
                     runtime.storage().deleteExpiredProxyAssertions().exceptionally(exception -> 0).join();
                     runtime.storage().deleteExpiredBackendJoinProbes().exceptionally(exception -> 0).join();
+                    runtime.storage().deleteExpiredPendingIdentityClaims().exceptionally(exception -> 0).join();
                 },
                 intervalTicks,
                 intervalTicks
@@ -183,6 +188,7 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.bridgeService(),
                 runtime.bruteForceGuard(),
                 runtime.storage(),
+                identityClaimService,
                 logger
         );
         playerPreLoginListener = new PlayerPreLoginListener(preLoginService);
@@ -194,6 +200,7 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.authService(),
                 runtime.sessionManager(),
                 playerProtection,
+                identityClaimService,
                 logger
         );
 
@@ -204,7 +211,11 @@ public final class ProudAuth extends JavaPlugin {
                 joinFlowService,
                 logger
         ), this);
-        getServer().getPluginManager().registerEvents(new PlayerQuitListener(runtime.authService(), playerProtection), this);
+        getServer().getPluginManager().registerEvents(new PlayerQuitListener(
+                runtime.authService(),
+                playerProtection,
+                identityClaimService
+        ), this);
         getServer().getPluginManager().registerEvents(new PlayerMoveListener(pluginConfig, playerProtection, langConfig, logger), this);
         if (pluginConfig.settings().debugger().isEnabled(DebugChannel.TELEPORT_AUDIT)) {
             getServer().getPluginManager().registerEvents(new PlayerTeleportDebugListener(pluginConfig, playerProtection, logger), this);
@@ -223,16 +234,28 @@ public final class ProudAuth extends JavaPlugin {
     }
 
     private void registerCommands() {
-        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection);
-        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService());
+        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection, identityClaimService);
+        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService(), identityClaimService);
         ChangePasswordCommand changePasswordCommand = new ChangePasswordCommand(this, langConfig, runtime.authService());
         LogoutCommand logoutCommand = new LogoutCommand(this, langConfig, runtime.authService(), playerProtection);
         TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection);
+        SpCommand spCommand = new SpCommand(this, langConfig, identityClaimService, playerProtection);
+        PremiumClaimCommand premiumClaimCommand = new PremiumClaimCommand(
+                this,
+                pluginConfig,
+                langConfig,
+                identityClaimService,
+                runtime.premiumVerifier()
+        );
 
         Objects.requireNonNull(getCommand("login")).setExecutor(loginCommand);
         Objects.requireNonNull(getCommand("login")).setTabCompleter(loginCommand);
         Objects.requireNonNull(getCommand("register")).setExecutor(registerCommand);
         Objects.requireNonNull(getCommand("register")).setTabCompleter(registerCommand);
+        Objects.requireNonNull(getCommand("sp")).setExecutor(spCommand);
+        Objects.requireNonNull(getCommand("sp")).setTabCompleter(spCommand);
+        Objects.requireNonNull(getCommand("premium")).setExecutor(premiumClaimCommand);
+        Objects.requireNonNull(getCommand("premium")).setTabCompleter(premiumClaimCommand);
         Objects.requireNonNull(getCommand("changepassword")).setExecutor(changePasswordCommand);
         Objects.requireNonNull(getCommand("changepassword")).setTabCompleter(changePasswordCommand);
         Objects.requireNonNull(getCommand("logout")).setExecutor(logoutCommand);

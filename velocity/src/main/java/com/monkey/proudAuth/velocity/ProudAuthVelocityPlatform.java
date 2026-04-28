@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
 import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
@@ -20,6 +21,8 @@ import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -42,6 +45,7 @@ public final class ProudAuthVelocityPlatform {
     private VelocityPluginSettings settings;
     private StorageProvider storage;
     private PremiumVerifier premiumVerifier;
+    private IdentityClaimService identityClaimService;
     private ProxyBridgeService bridgeService;
     private VelocityNetworkGuardService networkGuardService;
     private VelocitySecurityInspectorService securityInspectorService;
@@ -51,6 +55,8 @@ public final class ProudAuthVelocityPlatform {
     private ScheduledTask maintenanceTask;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore = new VelocityWhitelistEnforcementStore();
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
+    private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore = new VelocityPendingPremiumAuthStore();
+    private final VelocityPremiumClaimFailureStore premiumClaimFailureStore = new VelocityPremiumClaimFailureStore();
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
         this.pluginOwner = pluginOwner;
@@ -79,6 +85,7 @@ public final class ProudAuthVelocityPlatform {
             storage = new MySQLStorage(settings.toCommonSettings());
             storage.init();
             premiumVerifier = new MojangPremiumVerifier(settings.toCommonSettings());
+            identityClaimService = new IdentityClaimService(storage, settings.toCommonSettings());
             bridgeService = new ProxyBridgeService(storage, settings.toCommonSettings());
             networkGuardService = new VelocityNetworkGuardService(
                     () -> storage,
@@ -88,7 +95,12 @@ public final class ProudAuthVelocityPlatform {
             );
             securityInspectorService = new VelocitySecurityInspectorService(() -> storage);
             riskCsvExporter = new VelocityRiskCsvExporter(securityInspectorService, dataDirectory.resolve("reports"));
-            disconnectInstrumentation = new VelocityOnlineModeDisconnectInstrumentation(platformLogger);
+            disconnectInstrumentation = new VelocityOnlineModeDisconnectInstrumentation(
+                    platformLogger,
+                    identityClaimService,
+                    pendingPremiumAuthStore,
+                    premiumClaimFailureStore
+            );
             lastAutoExportAt = Instant.EPOCH;
             platformLogger.banner(
                     "ProudAuth v1.0.1",
@@ -103,7 +115,10 @@ public final class ProudAuthVelocityPlatform {
                     "bridge_mode", settings.bridge().mode(),
                     "premium_enabled", settings.premium().enabled(),
                     "premium_api_timeout_ms", settings.premium().apiTimeoutMs());
-            disconnectInstrumentation.updateMessage(settings.premium().onlineModeDeniedMessage());
+            disconnectInstrumentation.updateMessages(
+                    settings.premium().onlineModeDeniedMessage(),
+                    settings.premium().claimFailedDeniedMessage()
+            );
             disconnectInstrumentation.install();
 
             VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
@@ -116,20 +131,25 @@ public final class ProudAuthVelocityPlatform {
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
                     () -> premiumVerifier,
+                    identityClaimService,
                     () -> lang,
                     () -> settings.debugger(),
                     backendJoinProbeService,
                     networkGuardService,
                     whitelistEnforcementStore,
+                    pendingPremiumAuthStore,
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
                     () -> premiumVerifier,
+                    identityClaimService,
                     () -> bridgeService,
                     () -> lang,
                     () -> settings.debugger(),
                     networkGuardService,
                     whitelistEnforcementStore,
+                    pendingPremiumAuthStore,
+                    premiumClaimFailureStore,
                     resolvedPlayerStore,
                     platformLogger
             ));
@@ -179,10 +199,14 @@ public final class ProudAuthVelocityPlatform {
             lang.reload(settings.language());
             storage.reload(settings.toCommonSettings());
             premiumVerifier.reload(settings.toCommonSettings());
+            identityClaimService.reload(settings.toCommonSettings());
             bridgeService.reload(settings.toCommonSettings());
             lastAutoExportAt = Instant.EPOCH;
             if (disconnectInstrumentation != null) {
-                disconnectInstrumentation.updateMessage(settings.premium().onlineModeDeniedMessage());
+                disconnectInstrumentation.updateMessages(
+                        settings.premium().onlineModeDeniedMessage(),
+                        settings.premium().claimFailedDeniedMessage()
+                );
             }
             if (maintenanceTask != null) {
                 maintenanceTask.cancel();
@@ -230,6 +254,7 @@ public final class ProudAuthVelocityPlatform {
             try {
                 storage.deleteExpiredProxyAssertions().join();
                 storage.deleteExpiredBackendJoinProbes().join();
+                storage.deleteExpiredPendingIdentityClaims().join();
                 if (networkGuardService != null) {
                     networkGuardService.cleanupHistory();
                 }

@@ -1,6 +1,8 @@
 package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
+import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -16,16 +18,27 @@ import java.util.List;
 
 public final class LoginCommand implements CommandExecutor, TabCompleter {
 
+    private static final Object CLAIM_REQUIRED = new Object();
+    private static final Object PREMIUM_RECONNECT_REQUIRED = new Object();
+
     private final JavaPlugin plugin;
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
+    private final IdentityClaimService identityClaimService;
 
-    public LoginCommand(JavaPlugin plugin, LangConfig langConfig, AuthService authService, PlayerProtection playerProtection) {
+    public LoginCommand(
+            JavaPlugin plugin,
+            LangConfig langConfig,
+            AuthService authService,
+            PlayerProtection playerProtection,
+            IdentityClaimService identityClaimService
+    ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
+        this.identityClaimService = identityClaimService;
     }
 
     @Override
@@ -44,7 +57,27 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
         }
 
         String ipAddress = player.getAddress() == null ? "unknown" : player.getAddress().getAddress().getHostAddress();
-        authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0]).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        identityClaimService.snapshot(player.getName(), ipAddress)
+                .thenCompose(snapshot -> {
+                    if (identityClaimService.isClaimOnFirstJoinEnabled() && snapshot.finalClaim().isEmpty()) {
+                        if (snapshot.pendingClaim().orElse(null) == AccountType.CRACKED) {
+                            return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
+                                    .thenCompose(result -> (result.status() == AuthService.LoginStatus.SUCCESS
+                                            || result.status() == AuthService.LoginStatus.TOTP_REQUIRED)
+                                            ? identityClaimService.finalizeClaim(player.getName(), AccountType.CRACKED, ipAddress)
+                                            .thenApply(ignored -> (Object) result)
+                                            : java.util.concurrent.CompletableFuture.completedFuture((Object) result));
+                        }
+                        return java.util.concurrent.CompletableFuture.completedFuture(
+                                snapshot.pendingClaim().orElse(null) == AccountType.PREMIUM
+                                        ? PREMIUM_RECONNECT_REQUIRED
+                                        : CLAIM_REQUIRED
+                        );
+                    }
+                    return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
+                            .thenApply(result -> (Object) result);
+                })
+                .whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -52,8 +85,18 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                 langConfig.send(player, "error-generic");
                 return;
             }
+            if (result == CLAIM_REQUIRED) {
+                langConfig.send(player, "claim-choice-required");
+                return;
+            }
+            if (result == PREMIUM_RECONNECT_REQUIRED) {
+                langConfig.send(player, "claim-premium-reconnect-required");
+                return;
+            }
 
-            switch (result.status()) {
+            AuthService.LoginResult loginResult = (AuthService.LoginResult) result;
+
+            switch (loginResult.status()) {
                 case SUCCESS -> {
                     playerProtection.removeProtection(player);
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
@@ -66,15 +109,15 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                     langConfig.send(
                             player,
                             "bruteforce-warning",
-                            Placeholder.unparsed("attempts", String.valueOf(result.attempts())),
-                            Placeholder.unparsed("max", String.valueOf(result.maxAttempts()))
+                            Placeholder.unparsed("attempts", String.valueOf(loginResult.attempts())),
+                            Placeholder.unparsed("max", String.valueOf(loginResult.maxAttempts()))
                     );
                 }
                 case LOCKED -> {
                     langConfig.send(
                             player,
                             "bruteforce-locked",
-                            Placeholder.unparsed("seconds", String.valueOf(result.remainingSeconds()))
+                            Placeholder.unparsed("seconds", String.valueOf(loginResult.remainingSeconds()))
                     );
                     player.kick(langConfig.message("kick-ip-banned"));
                 }

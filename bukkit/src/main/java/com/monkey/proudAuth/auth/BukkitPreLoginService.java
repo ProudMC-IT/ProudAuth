@@ -3,6 +3,7 @@ package com.monkey.proudAuth.auth;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
@@ -25,6 +26,7 @@ public final class BukkitPreLoginService {
     private final ProxyBridgeService bridgeService;
     private final BruteForceGuard bruteForceGuard;
     private final StorageProvider storage;
+    private final IdentityClaimService identityClaimService;
     private final ProudAuthConsoleLogger logger;
 
     public BukkitPreLoginService(
@@ -34,6 +36,7 @@ public final class BukkitPreLoginService {
             ProxyBridgeService bridgeService,
             BruteForceGuard bruteForceGuard,
             StorageProvider storage,
+            IdentityClaimService identityClaimService,
             ProudAuthConsoleLogger logger
     ) {
         this.pluginConfig = pluginConfig;
@@ -42,6 +45,7 @@ public final class BukkitPreLoginService {
         this.bridgeService = bridgeService;
         this.bruteForceGuard = bruteForceGuard;
         this.storage = storage;
+        this.identityClaimService = identityClaimService;
         this.logger = logger;
     }
 
@@ -202,6 +206,16 @@ public final class BukkitPreLoginService {
                 "player", event.getName(),
                 "current_uuid", currentUuid);
 
+        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+            Optional<AccountType> effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getName()).join();
+            if (effectiveClaim.isEmpty()) {
+                return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
+            }
+            if (effectiveClaim.get() == AccountType.CRACKED) {
+                return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
+            }
+        }
+
         PremiumVerifier.PremiumCheckResult premiumCheck = premiumVerifier.verify(event.getName()).join();
         debugEvent(DebugChannel.PREMIUM_FLOW, "velocity_fallback_premium_check",
                 "player", event.getName(),
@@ -234,6 +248,12 @@ public final class BukkitPreLoginService {
             ));
         }
 
+        if (identityClaimService.isClaimOnFirstJoinEnabled()
+                && identityClaimService.resolveEffectiveClaim(event.getName()).join().orElse(AccountType.CRACKED) == AccountType.PREMIUM) {
+            event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
+            return Optional.empty();
+        }
+
         return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
     }
 
@@ -254,6 +274,13 @@ public final class BukkitPreLoginService {
     private boolean shouldDenyPremiumImpersonation(String username, UUID currentUuid, String ipAddress) {
         if (!pluginConfig.settings().premium().enabled()) {
             return false;
+        }
+        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+            Optional<AccountType> effectiveClaim = identityClaimService.resolveEffectiveClaim(username).join();
+            if (effectiveClaim.isEmpty()) {
+                return false;
+            }
+            return effectiveClaim.get() == AccountType.PREMIUM;
         }
         if (hasTrustedIpMatch(username, ipAddress)) {
             return false;

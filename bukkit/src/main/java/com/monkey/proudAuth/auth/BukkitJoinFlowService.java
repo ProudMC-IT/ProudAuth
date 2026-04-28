@@ -6,6 +6,7 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.session.SessionManager;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -22,6 +23,7 @@ public final class BukkitJoinFlowService {
     private final AuthService authService;
     private final SessionManager sessionManager;
     private final PlayerProtection playerProtection;
+    private final IdentityClaimService identityClaimService;
     private final ProudAuthConsoleLogger logger;
 
     public BukkitJoinFlowService(
@@ -31,6 +33,7 @@ public final class BukkitJoinFlowService {
             AuthService authService,
             SessionManager sessionManager,
             PlayerProtection playerProtection,
+            IdentityClaimService identityClaimService,
             ProudAuthConsoleLogger logger
     ) {
         this.plugin = plugin;
@@ -39,6 +42,7 @@ public final class BukkitJoinFlowService {
         this.authService = authService;
         this.sessionManager = sessionManager;
         this.playerProtection = playerProtection;
+        this.identityClaimService = identityClaimService;
         this.logger = logger;
     }
 
@@ -59,6 +63,35 @@ public final class BukkitJoinFlowService {
             return;
         }
 
+        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+            identityClaimService.snapshot(player.getName(), resolvedLogin.ipAddress())
+                    .whenComplete((claimSnapshot, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (!player.isOnline()) {
+                            return;
+                        }
+                        if (exception != null) {
+                            langConfig.send(player, "error-generic");
+                            return;
+                        }
+                        if (claimSnapshot.finalClaim().isEmpty()) {
+                            AccountType pendingClaimType = claimSnapshot.pendingClaim().orElse(null);
+                            if (pendingClaimType == AccountType.CRACKED) {
+                                continueJoinAfterClaimResolution(player, resolvedLogin);
+                                return;
+                            }
+                            handleClaimChoiceJoin(player, pendingClaimType);
+                            return;
+                        }
+                        continueJoinAfterClaimResolution(player, resolvedLogin);
+                    }));
+            return;
+        }
+
+        continueJoinAfterClaimResolution(player, resolvedLogin);
+    }
+
+    private void continueJoinAfterClaimResolution(Player player, ResolvedLogin resolvedLogin) {
+        playerProtection.exitClaimChoicePhase(player);
         if (resolvedLogin.accountType() == AccountType.PREMIUM && pluginConfig.settings().premium().autoLogin()) {
             handlePremiumAutoLogin(player, resolvedLogin);
             return;
@@ -68,6 +101,7 @@ public final class BukkitJoinFlowService {
     }
 
     private void handleBypassJoin(Player player, ResolvedLogin resolvedLogin) {
+        playerProtection.exitClaimChoicePhase(player);
         debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_start",
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
@@ -92,6 +126,7 @@ public final class BukkitJoinFlowService {
     }
 
     private void handlePremiumAutoLogin(Player player, ResolvedLogin resolvedLogin) {
+        playerProtection.exitClaimChoicePhase(player);
         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_start",
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
@@ -142,6 +177,7 @@ public final class BukkitJoinFlowService {
     }
 
     private void handleProtectedJoin(Player player, ResolvedLogin resolvedLogin) {
+        playerProtection.exitClaimChoicePhase(player);
         playerProtection.applyProtection(player);
         debugEvent(DebugChannel.PROTECTION_FLOW, "join_protection_applied",
                 "player", player.getName(),
@@ -175,6 +211,22 @@ public final class BukkitJoinFlowService {
                     return java.util.concurrent.CompletableFuture.completedFuture(JoinOutcome.REQUIRES_AUTH);
                 })
                 .whenComplete((outcome, exception) -> Bukkit.getScheduler().runTask(plugin, () -> completeProtectedJoin(player, outcome, exception)));
+    }
+
+    private void handleClaimChoiceJoin(Player player, AccountType pendingClaimType) {
+        playerProtection.applyProtection(player);
+        playerProtection.enterClaimChoicePhase(player);
+        debugEvent(DebugChannel.PROTECTION_FLOW, "join_claim_choice_protection_applied",
+                "player", player.getName(),
+                "uuid", player.getUniqueId(),
+                "pending_claim", pendingClaimType);
+
+        if (pendingClaimType == AccountType.PREMIUM) {
+            langConfig.send(player, "claim-premium-reconnect-required");
+            return;
+        }
+
+        langConfig.send(player, "claim-choice-required");
     }
 
     private void completeProtectedJoin(Player player, JoinOutcome outcome, Throwable exception) {

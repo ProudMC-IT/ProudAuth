@@ -20,6 +20,15 @@ commands:
     description: Registra un account
     usage: /register <password> <conferma>
     permission: proudauth.register
+  sp:
+    description: Imposta il primo claim cracked/sp per questo nickname
+    usage: /sp
+    permission: proudauth.sp
+    aliases: [cracked]
+  premium:
+    description: Avvia il claim premium del nickname corrente
+    usage: /premium
+    permission: proudauth.premium
   changepassword:
     description: Cambia la tua password
     usage: /changepassword <vecchia> <nuova> <conferma>
@@ -42,6 +51,10 @@ permissions:
   proudauth.login:
     default: true
   proudauth.register:
+    default: true
+  proudauth.sp:
+    default: true
+  proudauth.premium:
     default: true
   proudauth.changepassword:
     default: true

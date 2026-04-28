@@ -2,12 +2,16 @@ package com.monkey.proudAuth.velocity.listeners;
 
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
+import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectAdvice;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
+import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.event.PostOrder;
@@ -26,30 +30,39 @@ import java.util.function.Supplier;
 public final class VelocityGameProfileListener {
 
     private final Supplier<PremiumVerifier> premiumVerifierSupplier;
+    private final IdentityClaimService identityClaimService;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final VelocityNetworkGuardService networkGuardService;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore;
+    private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore;
+    private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityGameProfileListener(
             Supplier<PremiumVerifier> premiumVerifierSupplier,
+            IdentityClaimService identityClaimService,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             VelocityNetworkGuardService networkGuardService,
             VelocityWhitelistEnforcementStore whitelistEnforcementStore,
+            VelocityPendingPremiumAuthStore pendingPremiumAuthStore,
+            VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             ProudAuthConsoleLogger logger
     ) {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
+        this.identityClaimService = identityClaimService;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
         this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.networkGuardService = networkGuardService;
         this.whitelistEnforcementStore = whitelistEnforcementStore;
+        this.pendingPremiumAuthStore = pendingPremiumAuthStore;
+        this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.logger = logger;
     }
@@ -70,9 +83,45 @@ public final class VelocityGameProfileListener {
         String accountName;
         boolean premiumNameDetected = premiumCheck.premium();
         boolean premiumVerified = false;
+        boolean premiumEnforced = false;
+        boolean authenticatedByProxy = event.isOnlineMode() || !currentProfile.getId().equals(offlineUuid);
+        String connectionKey = connectionKey(event.getConnection());
 
-        if (premiumCheck.premium()) {
-            boolean authenticatedByProxy = event.isOnlineMode() || !currentProfile.getId().equals(offlineUuid);
+        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+            AccountType effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getUsername()).join().orElse(null);
+            boolean pendingPremiumAttempt = pendingPremiumAuthStore.contains(connectionKey);
+            premiumEnforced = premiumRequiredByWhitelist
+                    || effectiveClaim == AccountType.PREMIUM
+                    || pendingPremiumAttempt;
+
+            if (premiumEnforced && authenticatedByProxy) {
+                accountType = AccountType.PREMIUM;
+                accountUuid = currentProfile.getId();
+                accountName = currentProfile.getName();
+                premiumVerified = true;
+                if (pendingPremiumAttempt) {
+                    identityClaimService.finalizeClaim(event.getUsername(), AccountType.PREMIUM, ipAddress).join();
+                }
+                pendingPremiumAuthStore.forget(connectionKey);
+                if (premiumRequiredByWhitelist) {
+                    whitelistEnforcementStore.forget(event.getUsername(), ipAddress);
+                }
+            } else {
+                accountType = AccountType.CRACKED;
+                accountUuid = currentProfile.getId();
+                accountName = currentProfile.getName();
+                if (premiumEnforced) {
+                    debugEvent(DebugChannel.PREMIUM_FLOW, "premium_unverified_after_prelogin",
+                            "player", event.getUsername(),
+                            "ip", ipAddress,
+                            "event_online_mode", event.isOnlineMode(),
+                            "current_profile_uuid", currentProfile.getId(),
+                            "offline_uuid", offlineUuid,
+                            "premium_uuid", premiumCheck.resolvedUuid());
+                }
+            }
+        } else if (premiumCheck.premium()) {
+            premiumEnforced = true;
             if (authenticatedByProxy) {
                 accountType = AccountType.PREMIUM;
                 accountUuid = currentProfile.getId();
@@ -112,7 +161,8 @@ public final class VelocityGameProfileListener {
                 accountName,
                 accountType,
                 premiumNameDetected,
-                premiumVerified
+                premiumVerified,
+                premiumEnforced
         );
 
         publishResolvedProfile(
@@ -153,7 +203,11 @@ public final class VelocityGameProfileListener {
             return;
         }
 
-        if (resolvedPlayer.premiumNameDetected() && !resolvedPlayer.premiumVerified()) {
+        boolean premiumClaimFailedNotice = resolvedPlayer.accountType() == AccountType.CRACKED
+                && premiumClaimFailureStore.consume(username, ipAddress);
+
+        if (resolvedPlayer.premiumEnforced() && !resolvedPlayer.premiumVerified()) {
+            pendingPremiumAuthStore.forget(connectionKey(event.getPlayer()));
             debugEvent(DebugChannel.PREMIUM_FLOW, "premium_login_denied_unverified",
                     "player", username,
                     "ip", ipAddress,
@@ -162,16 +216,21 @@ public final class VelocityGameProfileListener {
                     premiumRequiredByWhitelist
                             ? langSupplier.get().message("kick-whitelist-premium-required")
                             : langSupplier.get().message("kick-premium-impersonation")));
+            return;
         }
 
         if (premiumRequiredByWhitelist) {
             whitelistEnforcementStore.forget(username, ipAddress);
+        }
+        if (premiumClaimFailedNotice) {
+            event.getPlayer().sendMessage(langSupplier.get().message("claim-premium-failed-choose-again"));
         }
     }
 
     @Subscribe
     public void onDisconnect(DisconnectEvent event) {
         whitelistEnforcementStore.forget(event.getPlayer().getUsername(), resolveIp(event.getPlayer()));
+        pendingPremiumAuthStore.forget(connectionKey(event.getPlayer()));
     }
 
     private void publishResolvedProfile(
@@ -209,5 +268,9 @@ public final class VelocityGameProfileListener {
             return socketAddress.getAddress().getHostAddress();
         }
         return "unknown";
+    }
+
+    private String connectionKey(InboundConnection connection) {
+        return VelocityOnlineModeDisconnectAdvice.connectionKey(connection.getRemoteAddress());
     }
 }

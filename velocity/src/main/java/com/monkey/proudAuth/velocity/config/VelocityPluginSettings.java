@@ -26,7 +26,9 @@ public record VelocityPluginSettings(
                         premium.enabled(),
                         false,
                         premium.apiTimeoutMs(),
-                        false
+                        false,
+                        premium.mode(),
+                        premium.claimPendingSeconds()
                 ),
                 new ProudAuthSettings.Sessions(false, 0, false),
                 new ProudAuthSettings.Security(
@@ -75,7 +77,10 @@ public record VelocityPluginSettings(
     public record Premium(
             boolean enabled,
             int apiTimeoutMs,
-            String onlineModeDeniedMessage
+            ProudAuthSettings.PremiumMode mode,
+            long claimPendingSeconds,
+            String onlineModeDeniedMessage,
+            String claimFailedDeniedMessage
     ) {
     }
 

@@ -18,6 +18,7 @@ public final class PlayerProtection {
 
     private final JavaPlugin plugin;
     private final Set<UUID> protectedPlayers;
+    private final Set<UUID> claimChoicePlayers;
     private final Map<UUID, BukkitTask> timeoutTasks;
     private final Map<UUID, MovementStateSnapshot> movementStateSnapshots;
     private volatile PluginConfig pluginConfig;
@@ -30,6 +31,7 @@ public final class PlayerProtection {
         this.langConfig = langConfig;
         this.logger = logger;
         this.protectedPlayers = ConcurrentHashMap.newKeySet();
+        this.claimChoicePlayers = ConcurrentHashMap.newKeySet();
         this.timeoutTasks = new ConcurrentHashMap<>();
         this.movementStateSnapshots = new ConcurrentHashMap<>();
     }
@@ -71,6 +73,7 @@ public final class PlayerProtection {
 
     public void removeProtection(Player player) {
         boolean wasProtected = protectedPlayers.remove(player.getUniqueId());
+        claimChoicePlayers.remove(player.getUniqueId());
         BukkitTask timeoutTask = timeoutTasks.remove(player.getUniqueId());
         MovementStateSnapshot movementStateSnapshot = movementStateSnapshots.remove(player.getUniqueId());
         if (timeoutTask != null) {
@@ -92,6 +95,18 @@ public final class PlayerProtection {
 
     public boolean isProtected(UUID uuid) {
         return protectedPlayers.contains(uuid);
+    }
+
+    public void enterClaimChoicePhase(Player player) {
+        claimChoicePlayers.add(player.getUniqueId());
+    }
+
+    public void exitClaimChoicePhase(Player player) {
+        claimChoicePlayers.remove(player.getUniqueId());
+    }
+
+    public boolean isInClaimChoicePhase(UUID uuid) {
+        return claimChoicePlayers.contains(uuid);
     }
 
     public boolean blockMovement() {
