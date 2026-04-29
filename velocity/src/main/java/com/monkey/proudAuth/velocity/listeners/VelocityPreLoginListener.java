@@ -8,10 +8,12 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
+import com.monkey.proudAuth.velocity.compat.ProudXPreLoginResults;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectAdvice;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.event.EventTask;
 import com.velocitypowered.api.event.PostOrder;
@@ -19,6 +21,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
 
 import java.net.InetSocketAddress;
+import java.util.UUID;
 import java.util.function.Supplier;
 
 public final class VelocityPreLoginListener {
@@ -32,6 +35,7 @@ public final class VelocityPreLoginListener {
     private final VelocityNetworkGuardService networkGuardService;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore;
     private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore;
+    private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityPreLoginListener(
@@ -44,6 +48,7 @@ public final class VelocityPreLoginListener {
             VelocityNetworkGuardService networkGuardService,
             VelocityWhitelistEnforcementStore whitelistEnforcementStore,
             VelocityPendingPremiumAuthStore pendingPremiumAuthStore,
+            VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             ProudAuthConsoleLogger logger
     ) {
         this.storageSupplier = storageSupplier;
@@ -55,6 +60,7 @@ public final class VelocityPreLoginListener {
         this.networkGuardService = networkGuardService;
         this.whitelistEnforcementStore = whitelistEnforcementStore;
         this.pendingPremiumAuthStore = pendingPremiumAuthStore;
+        this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.logger = logger;
     }
 
@@ -73,7 +79,10 @@ public final class VelocityPreLoginListener {
         VelocityLang lang = langSupplier.get();
         StorageProvider storage = storageSupplier.get();
         boolean requirePremiumOnlineMode = false;
-        boolean claimMode = identityClaimService.isClaimOnFirstJoinEnabled();
+        boolean requirePremiumKeyAuthentication = false;
+        UUID expectedPremiumUuid = null;
+        boolean claimMode = identityClaimService.isLocalClaimModeEnabled();
+        boolean proxyCustomMode = identityClaimService.isProxyCustomEnabled();
         PremiumVerifier.PremiumCheckResult premiumCheck = null;
 
         var activeBan = storage.findActiveBan(ipAddress).join();
@@ -114,20 +123,47 @@ public final class VelocityPreLoginListener {
         if (claimMode) {
             var effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getUsername()).join();
             if (effectiveClaim.orElse(null) == AccountType.PREMIUM) {
-                requirePremiumOnlineMode = true;
-                debugEvent("prelogin_claimed_premium_force_online_mode",
-                        "player", event.getUsername(),
-                        "ip", ipAddress);
+                if (proxyCustomMode) {
+                    premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
+                    if (premiumCheck.premium()) {
+                        expectedPremiumUuid = premiumCheck.resolvedUuid();
+                    }
+                    requirePremiumKeyAuthentication = true;
+                    pendingPremiumAuthStore.remember(connectionKey(event), event.getUsername());
+                    debugEvent("prelogin_claimed_premium_key_authentication",
+                            "player", event.getUsername(),
+                            "ip", ipAddress,
+                            "expected_uuid", expectedPremiumUuid);
+                } else {
+                    requirePremiumOnlineMode = true;
+                    debugEvent("prelogin_claimed_premium_force_online_mode",
+                            "player", event.getUsername(),
+                            "ip", ipAddress);
+                }
             } else if (effectiveClaim.isEmpty()) {
                 var pendingClaim = identityClaimService.findPendingClaim(event.getUsername(), ipAddress).join();
                 if (pendingClaim.map(claim -> claim.claimType() == AccountType.PREMIUM).orElse(false)) {
                     identityClaimService.clearPendingClaim(event.getUsername()).join();
-                    requirePremiumOnlineMode = true;
                     pendingPremiumAuthStore.remember(connectionKey(event), event.getUsername());
-                    debugEvent("prelogin_pending_premium_force_online_mode",
-                            "player", event.getUsername(),
-                            "ip", ipAddress,
-                            "expires_at", pendingClaim.get().expiresAt());
+                    if (proxyCustomMode) {
+                        premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
+                        if (premiumCheck.premium()) {
+                            expectedPremiumUuid = premiumCheck.resolvedUuid();
+                        }
+                        requirePremiumKeyAuthentication = true;
+                        premiumClaimFailureStore.remember(event.getUsername(), ipAddress);
+                        debugEvent("prelogin_pending_premium_key_authentication",
+                                "player", event.getUsername(),
+                                "ip", ipAddress,
+                                "expected_uuid", expectedPremiumUuid,
+                                "expires_at", pendingClaim.get().expiresAt());
+                    } else {
+                        requirePremiumOnlineMode = true;
+                        debugEvent("prelogin_pending_premium_force_online_mode",
+                                "player", event.getUsername(),
+                                "ip", ipAddress,
+                                "expires_at", pendingClaim.get().expiresAt());
+                    }
                 }
             }
             if (inWhitelist || requirePremiumOnlineMode) {
@@ -136,8 +172,8 @@ public final class VelocityPreLoginListener {
             if (inWhitelist) {
                 if (premiumCheck == null || !premiumCheck.premium()) {
                     debugEvent("prelogin_whitelist_requires_premium",
-                            "player", event.getUsername(),
-                            "ip", ipAddress);
+                        "player", event.getUsername(),
+                        "ip", ipAddress);
                     event.setResult(PreLoginEvent.PreLoginComponentResult.denied(
                             lang.message("kick-whitelist-premium-required")));
                     return;
@@ -187,6 +223,9 @@ public final class VelocityPreLoginListener {
 
         if (requirePremiumOnlineMode) {
             event.setResult(PreLoginEvent.PreLoginComponentResult.forceOnlineMode());
+        } else if (requirePremiumKeyAuthentication) {
+            event.setResult(ProudXPreLoginResults.tryKeyAuthentication(expectedPremiumUuid)
+                    .orElseGet(PreLoginEvent.PreLoginComponentResult::forceOfflineMode));
         }
     }
 

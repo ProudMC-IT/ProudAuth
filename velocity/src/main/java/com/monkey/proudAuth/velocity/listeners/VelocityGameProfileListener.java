@@ -87,9 +87,13 @@ public final class VelocityGameProfileListener {
         boolean authenticatedByProxy = event.isOnlineMode() || !currentProfile.getId().equals(offlineUuid);
         String connectionKey = connectionKey(event.getConnection());
 
-        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (identityClaimService.isLocalClaimModeEnabled()) {
             AccountType effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getUsername()).join().orElse(null);
             boolean pendingPremiumAttempt = pendingPremiumAuthStore.contains(connectionKey);
+            boolean proxyCustomPendingFallback = identityClaimService.isProxyCustomEnabled()
+                    && pendingPremiumAttempt
+                    && effectiveClaim != AccountType.PREMIUM
+                    && !premiumRequiredByWhitelist;
             premiumEnforced = premiumRequiredByWhitelist
                     || effectiveClaim == AccountType.PREMIUM
                     || pendingPremiumAttempt;
@@ -101,6 +105,7 @@ public final class VelocityGameProfileListener {
                 premiumVerified = true;
                 if (pendingPremiumAttempt) {
                     identityClaimService.finalizeClaim(event.getUsername(), AccountType.PREMIUM, ipAddress).join();
+                    premiumClaimFailureStore.consume(event.getUsername(), ipAddress);
                 }
                 pendingPremiumAuthStore.forget(connectionKey);
                 if (premiumRequiredByWhitelist) {
@@ -110,7 +115,17 @@ public final class VelocityGameProfileListener {
                 accountType = AccountType.CRACKED;
                 accountUuid = currentProfile.getId();
                 accountName = currentProfile.getName();
-                if (premiumEnforced) {
+                if (proxyCustomPendingFallback) {
+                    pendingPremiumAuthStore.forget(connectionKey);
+                    premiumEnforced = false;
+                    debugEvent(DebugChannel.PREMIUM_FLOW, "premium_key_authentication_fallback_offline",
+                            "player", event.getUsername(),
+                            "ip", ipAddress,
+                            "event_online_mode", event.isOnlineMode(),
+                            "current_profile_uuid", currentProfile.getId(),
+                            "offline_uuid", offlineUuid,
+                            "premium_uuid", premiumCheck.resolvedUuid());
+                } else if (premiumEnforced) {
                     debugEvent(DebugChannel.PREMIUM_FLOW, "premium_unverified_after_prelogin",
                             "player", event.getUsername(),
                             "ip", ipAddress,
@@ -203,9 +218,6 @@ public final class VelocityGameProfileListener {
             return;
         }
 
-        boolean premiumClaimFailedNotice = resolvedPlayer.accountType() == AccountType.CRACKED
-                && premiumClaimFailureStore.consume(username, ipAddress);
-
         if (resolvedPlayer.premiumEnforced() && !resolvedPlayer.premiumVerified()) {
             pendingPremiumAuthStore.forget(connectionKey(event.getPlayer()));
             debugEvent(DebugChannel.PREMIUM_FLOW, "premium_login_denied_unverified",
@@ -221,9 +233,6 @@ public final class VelocityGameProfileListener {
 
         if (premiumRequiredByWhitelist) {
             whitelistEnforcementStore.forget(username, ipAddress);
-        }
-        if (premiumClaimFailedNotice) {
-            event.getPlayer().sendMessage(langSupplier.get().message("claim-premium-failed-choose-again"));
         }
     }
 

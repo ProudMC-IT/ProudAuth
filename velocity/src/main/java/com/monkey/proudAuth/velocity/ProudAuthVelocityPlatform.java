@@ -138,6 +138,7 @@ public final class ProudAuthVelocityPlatform {
                     networkGuardService,
                     whitelistEnforcementStore,
                     pendingPremiumAuthStore,
+                    premiumClaimFailureStore,
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityGameProfileListener(
@@ -155,7 +156,9 @@ public final class ProudAuthVelocityPlatform {
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityServerTransitionListener(
                     resolvedPlayerStore,
+                    premiumClaimFailureStore,
                     () -> bridgeService,
+                    () -> lang,
                     () -> settings.debugger(),
                     platformLogger
             ));

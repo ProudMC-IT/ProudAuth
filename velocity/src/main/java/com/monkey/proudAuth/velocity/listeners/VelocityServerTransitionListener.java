@@ -2,12 +2,16 @@ package com.monkey.proudAuth.velocity.listeners;
 
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.velocity.config.VelocityLang;
+import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.event.player.ServerConnectedEvent;
 import com.velocitypowered.api.event.player.ServerPreConnectEvent;
 
 import java.net.InetSocketAddress;
@@ -16,18 +20,24 @@ import java.util.function.Supplier;
 public final class VelocityServerTransitionListener {
 
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
+    private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
+    private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityServerTransitionListener(
             VelocityResolvedPlayerStore resolvedPlayerStore,
+            VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
+            Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
         this.resolvedPlayerStore = resolvedPlayerStore;
+        this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
+        this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
     }
@@ -82,6 +92,22 @@ public final class VelocityServerTransitionListener {
                 "target", targetServer,
                 "resolved_uuid", profile.accountUuid(),
                 "account_type", profile.accountType());
+    }
+
+    @Subscribe
+    public void onServerConnected(ServerConnectedEvent event) {
+        String username = event.getPlayer().getUsername();
+        String ipAddress = ipAddress(event.getPlayer());
+        var resolvedPlayer = resolvedPlayerStore.find(username);
+        if (resolvedPlayer.isPresent()
+                && resolvedPlayer.get().accountType() == AccountType.CRACKED
+                && premiumClaimFailureStore.consume(username, ipAddress)) {
+            event.getPlayer().sendMessage(langSupplier.get().message("claim-premium-failed-choose-again"));
+            debugEvent("premium_claim_failed_notice_sent",
+                    "player", username,
+                    "server", event.getServer().getServerInfo().getName(),
+                    "ip", ipAddress);
+        }
     }
 
     @Subscribe
