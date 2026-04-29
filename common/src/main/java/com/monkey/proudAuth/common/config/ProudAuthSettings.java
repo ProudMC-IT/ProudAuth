@@ -34,6 +34,14 @@ public record ProudAuthSettings(
         public boolean isClaimOnFirstJoin() {
             return mode == PremiumMode.CLAIM_ON_FIRST_JOIN;
         }
+
+        public boolean isProxyCustom() {
+            return mode == PremiumMode.PROXY_CUSTOM;
+        }
+
+        public boolean usesLocalClaims() {
+            return mode == PremiumMode.CLAIM_ON_FIRST_JOIN || mode == PremiumMode.PROXY_CUSTOM;
+        }
     }
 
     public record Sessions(boolean enabled, long ttlMinutes, boolean bindToIp) {
@@ -174,7 +182,8 @@ public record ProudAuthSettings(
 
     public enum PremiumMode {
         STRICT_GLOBAL,
-        CLAIM_ON_FIRST_JOIN;
+        CLAIM_ON_FIRST_JOIN,
+        PROXY_CUSTOM;
 
         public static PremiumMode from(String raw) {
             try {

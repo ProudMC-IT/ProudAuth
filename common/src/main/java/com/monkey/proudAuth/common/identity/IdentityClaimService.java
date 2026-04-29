@@ -24,9 +24,21 @@ public final class IdentityClaimService {
         this.settings = settings;
     }
 
+    public boolean isLocalClaimModeEnabled() {
+        return settings.premium().enabled()
+                && settings.premium().usesLocalClaims()
+                && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
+    }
+
     public boolean isClaimOnFirstJoinEnabled() {
         return settings.premium().enabled()
                 && settings.premium().isClaimOnFirstJoin()
+                && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
+    }
+
+    public boolean isProxyCustomEnabled() {
+        return settings.premium().enabled()
+                && settings.premium().isProxyCustom()
                 && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
     }
 

@@ -30,6 +30,8 @@ premium:
   #   premium authentication and cracked clients using that nickname are denied.
   # - CLAIM_ON_FIRST_JOIN: on the first join of an unclaimed nickname, the player must choose
   #   /sp or /premium. That first completed claim becomes the permanent local rule for the nickname.
+  # - PROXY_CUSTOM: like CLAIM_ON_FIRST_JOIN, but /premium never forces Mojang online-mode.
+  #   The player reconnects offline and receives the verification result in chat, avoiding Invalid session screens.
   mode: STRICT_GLOBAL
   claim-pending-seconds: 300
   online-mode-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"

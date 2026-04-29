@@ -773,7 +773,7 @@ public final class AuthServiceImpl implements AuthService {
     }
 
     private boolean usesClaimOnFirstJoin() {
-        return settings.premium().isClaimOnFirstJoin()
+        return settings.premium().usesLocalClaims()
                 && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
     }
 
