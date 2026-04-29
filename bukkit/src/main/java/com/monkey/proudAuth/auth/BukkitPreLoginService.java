@@ -206,7 +206,7 @@ public final class BukkitPreLoginService {
                 "player", event.getName(),
                 "current_uuid", currentUuid);
 
-        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (identityClaimService.isLocalClaimModeEnabled()) {
             Optional<AccountType> effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getName()).join();
             if (effectiveClaim.isEmpty()) {
                 return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
@@ -248,7 +248,7 @@ public final class BukkitPreLoginService {
             ));
         }
 
-        if (identityClaimService.isClaimOnFirstJoinEnabled()
+        if (identityClaimService.isLocalClaimModeEnabled()
                 && identityClaimService.resolveEffectiveClaim(event.getName()).join().orElse(AccountType.CRACKED) == AccountType.PREMIUM) {
             event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
             return Optional.empty();
@@ -275,7 +275,7 @@ public final class BukkitPreLoginService {
         if (!pluginConfig.settings().premium().enabled()) {
             return false;
         }
-        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (identityClaimService.isLocalClaimModeEnabled()) {
             Optional<AccountType> effectiveClaim = identityClaimService.resolveEffectiveClaim(username).join();
             if (effectiveClaim.isEmpty()) {
                 return false;

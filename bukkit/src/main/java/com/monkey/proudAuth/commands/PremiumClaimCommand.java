@@ -47,7 +47,7 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
             langConfig.send(player, "no-permission");
             return true;
         }
-        if (!identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (!identityClaimService.isLocalClaimModeEnabled()) {
             langConfig.send(player, "claim-mode-disabled");
             return true;
         }
@@ -81,7 +81,9 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
                         case "CRACKED" -> langConfig.send(player, "claim-already-cracked");
                         case "NOT_PREMIUM" -> langConfig.send(player, "claim-premium-name-not-eligible");
                         case "ERROR" -> langConfig.send(player, "claim-premium-check-unavailable");
-                        case "PENDING" -> player.kick(langConfig.message("claim-premium-reconnect-kick"));
+                        case "PENDING" -> player.kick(langConfig.message(pluginConfig.settings().premium().isProxyCustom()
+                                ? "claim-premium-proxy-custom-reconnect-kick"
+                                : "claim-premium-reconnect-kick"));
                         default -> langConfig.send(player, "error-generic");
                     }
                 }));

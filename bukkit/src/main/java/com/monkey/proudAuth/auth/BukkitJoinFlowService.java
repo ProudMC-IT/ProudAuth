@@ -63,7 +63,7 @@ public final class BukkitJoinFlowService {
             return;
         }
 
-        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (identityClaimService.isLocalClaimModeEnabled()) {
             identityClaimService.snapshot(player.getName(), resolvedLogin.ipAddress())
                     .whenComplete((claimSnapshot, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
                         if (!player.isOnline()) {

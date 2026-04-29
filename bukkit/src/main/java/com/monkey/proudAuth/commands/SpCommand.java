@@ -43,7 +43,7 @@ public final class SpCommand implements CommandExecutor, TabCompleter {
             langConfig.send(player, "no-permission");
             return true;
         }
-        if (!identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (!identityClaimService.isLocalClaimModeEnabled()) {
             langConfig.send(player, "claim-mode-disabled");
             return true;
         }

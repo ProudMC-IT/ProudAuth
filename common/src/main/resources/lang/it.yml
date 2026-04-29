@@ -10,6 +10,7 @@ claim-premium-name-not-eligible: "<red>Questo nickname non risulta premium su Mo
 claim-premium-check-unavailable: "<red>La verifica premium non e temporaneamente disponibile. Riprova tra poco."
 claim-premium-reconnect-required: "<yellow>Verifica premium in attesa.</yellow> <gray>Rientra con un client premium autenticato per completare il claim.</gray> <gray>Se la verifica fallisce vedrai una schermata</gray> <white>Invalid session</white><gray>: in quel caso riconnettiti ancora e scegli di nuovo.</gray>"
 claim-premium-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <yellow>Rientra adesso con un client premium autenticato per completare il claim premium di questo nickname.</yellow> <gray>Se la verifica fallisce vedrai</gray> <white>Invalid session</white><gray>, poi dovrai riconnetterti ancora.</gray>"
+claim-premium-proxy-custom-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <yellow>Rientra adesso per completare il controllo premium.</yellow> <gray>In questa modalita non vedrai Invalid session: il risultato verra mostrato in chat dopo il reconnect.</gray>"
 claim-premium-failed-choose-again: "<red>La verifica premium per questo nickname e fallita.</red> <yellow>Ora puoi scegliere di nuovo con <white>/sp</white><yellow> oppure <white>/premium</white><yellow>.</yellow>"
 claim-premium-unsupported: "<red>Il claim premium richiede l'integrazione Velocity."
 already-authenticated: "<yellow>Sei gia autenticato."

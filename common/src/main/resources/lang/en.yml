@@ -10,6 +10,7 @@ claim-premium-name-not-eligible: "<red>This nickname is not a Mojang premium nic
 claim-premium-check-unavailable: "<red>Premium verification is temporarily unavailable. Please try again shortly."
 claim-premium-reconnect-required: "<yellow>Premium verification is pending.</yellow> <gray>Reconnect with an authenticated premium client to finish the claim.</gray> <gray>If the verification fails you will see an</gray> <white>Invalid session</white><gray> screen: if that happens, reconnect once more and choose again.</gray>"
 claim-premium-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <yellow>Reconnect now with an authenticated premium client to complete the premium claim for this nickname.</yellow> <gray>If the verification fails you will see</gray> <white>Invalid session</white><gray>, then you will need to reconnect once more.</gray>"
+claim-premium-proxy-custom-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <yellow>Reconnect now to complete the premium check.</yellow> <gray>In this mode you will not see Invalid session: the result will be shown in chat after reconnect.</gray>"
 claim-premium-failed-choose-again: "<red>Premium verification failed for this nickname.</red> <yellow>You can now choose again with <white>/sp</white><yellow> or <white>/premium</white><yellow>.</yellow>"
 claim-premium-unsupported: "<red>Premium claim mode requires the Velocity proxy integration."
 already-authenticated: "<yellow>You are already authenticated."

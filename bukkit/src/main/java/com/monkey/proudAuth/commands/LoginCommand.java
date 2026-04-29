@@ -59,7 +59,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
         String ipAddress = player.getAddress() == null ? "unknown" : player.getAddress().getAddress().getHostAddress();
         identityClaimService.snapshot(player.getName(), ipAddress)
                 .thenCompose(snapshot -> {
-                    if (identityClaimService.isClaimOnFirstJoinEnabled() && snapshot.finalClaim().isEmpty()) {
+                    if (identityClaimService.isLocalClaimModeEnabled() && snapshot.finalClaim().isEmpty()) {
                         if (snapshot.pendingClaim().orElse(null) == AccountType.CRACKED) {
                             return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
                                     .thenCompose(result -> (result.status() == AuthService.LoginStatus.SUCCESS

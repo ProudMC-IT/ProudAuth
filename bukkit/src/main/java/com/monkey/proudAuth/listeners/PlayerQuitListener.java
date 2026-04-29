@@ -30,7 +30,7 @@ public final class PlayerQuitListener implements Listener {
         String ipAddress = event.getPlayer().getAddress() == null
                 ? "unknown"
                 : event.getPlayer().getAddress().getAddress().getHostAddress();
-        if (identityClaimService.isClaimOnFirstJoinEnabled()) {
+        if (identityClaimService.isLocalClaimModeEnabled()) {
             identityClaimService.snapshot(event.getPlayer().getName(), ipAddress)
                     .thenCompose(snapshot -> snapshot.finalClaim().isEmpty() && snapshot.pendingClaim().orElse(null) == AccountType.CRACKED
                             ? identityClaimService.clearPendingClaim(event.getPlayer().getName())
