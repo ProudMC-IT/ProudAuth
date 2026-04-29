@@ -28,7 +28,8 @@ public record VelocityPluginSettings(
                         premium.apiTimeoutMs(),
                         false,
                         premium.mode(),
-                        premium.claimPendingSeconds()
+                        premium.claimPendingSeconds(),
+                        premium.legacyUnsupportedAction()
                 ),
                 new ProudAuthSettings.Sessions(false, 0, false),
                 new ProudAuthSettings.Security(
@@ -79,6 +80,7 @@ public record VelocityPluginSettings(
             int apiTimeoutMs,
             ProudAuthSettings.PremiumMode mode,
             long claimPendingSeconds,
+            ProudAuthSettings.LegacyUnsupportedAction legacyUnsupportedAction,
             String onlineModeDeniedMessage,
             String claimFailedDeniedMessage
     ) {

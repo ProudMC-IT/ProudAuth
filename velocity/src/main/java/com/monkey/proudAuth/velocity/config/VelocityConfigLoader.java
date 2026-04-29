@@ -46,6 +46,11 @@ public final class VelocityConfigLoader {
                         Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
                         ProudAuthSettings.PremiumMode.from(string(root, "premium.mode", "STRICT_GLOBAL")),
                         Math.max(30, integer(root, "premium.claim-pending-seconds", 300)),
+                        ProudAuthSettings.LegacyUnsupportedAction.from(string(
+                                root,
+                                "premium.proxy-custom.legacy-unsupported-action",
+                                "FORCE_ONLINE"
+                        )),
                         string(root, "premium.online-mode-denied-message",
                                 "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"),
                         string(root, "premium.claim-failed-denied-message",

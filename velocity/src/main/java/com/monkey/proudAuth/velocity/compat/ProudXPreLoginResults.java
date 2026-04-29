@@ -11,6 +11,15 @@ public final class ProudXPreLoginResults {
     private ProudXPreLoginResults() {
     }
 
+    public static boolean isTryKeyAuthenticationAvailable() {
+        try {
+            PreLoginEvent.PreLoginComponentResult.class.getMethod("tryKeyAuthentication", UUID.class);
+            return true;
+        } catch (NoSuchMethodException exception) {
+            return false;
+        }
+    }
+
     public static Optional<PreLoginEvent.PreLoginComponentResult> tryKeyAuthentication() {
         try {
             Method method = PreLoginEvent.PreLoginComponentResult.class.getMethod("tryKeyAuthentication");

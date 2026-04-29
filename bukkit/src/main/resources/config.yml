@@ -36,6 +36,12 @@ premium:
   #   The player reconnects offline and receives the verification result in chat, avoiding Invalid session screens.
   mode: STRICT_GLOBAL
   claim-pending-seconds: 300
+  proxy-custom:
+    # Mirrors the Velocity setting for documentation/reload consistency.
+    # - FORCE_ONLINE (default): fallback to Mojang online-mode for legacy clients.
+    # - DENY_PREMIUM_CLAIM: deny premium claim on unsupported clients.
+    # - FORCE_SP: pending /premium claims fall back to cracked/SP selection.
+    legacy-unsupported-action: FORCE_ONLINE
 
 sessions:
   enabled: true

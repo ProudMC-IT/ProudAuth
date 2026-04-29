@@ -13,6 +13,7 @@ claim-premium-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <
 claim-premium-proxy-custom-reconnect-kick: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> <yellow>Reconnect now to complete the premium check.</yellow> <gray>In this mode you will not see Invalid session: the result will be shown in chat after reconnect.</gray>"
 claim-premium-failed-choose-again: "<red>Premium verification failed for this nickname.</red> <yellow>You can now choose again with <white>/sp</white><yellow> or <white>/premium</white><yellow>.</yellow>"
 claim-premium-unsupported: "<red>Premium claim mode requires the Velocity proxy integration."
+kick-premium-custom-legacy-unsupported: "<red>This client does not support ProudX secure premium verification.</red> <yellow>Join with a modern client or choose <white>/sp</white><yellow> on your next login.</yellow>"
 already-authenticated: "<yellow>You are already authenticated."
 login-success: "<green>Login successful. Welcome, <white><player></white>!"
 login-wrong-password: "<red>Wrong password."

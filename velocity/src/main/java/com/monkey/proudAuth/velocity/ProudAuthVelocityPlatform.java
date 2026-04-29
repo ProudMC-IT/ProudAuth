@@ -133,6 +133,7 @@ public final class ProudAuthVelocityPlatform {
                     () -> premiumVerifier,
                     identityClaimService,
                     () -> lang,
+                    () -> settings.toCommonSettings(),
                     () -> settings.debugger(),
                     backendJoinProbeService,
                     networkGuardService,

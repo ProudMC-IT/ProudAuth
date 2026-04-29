@@ -29,7 +29,8 @@ public record ProudAuthSettings(
             int apiTimeoutMs,
             boolean requireUuidProof,
             PremiumMode mode,
-            long claimPendingSeconds
+            long claimPendingSeconds,
+            LegacyUnsupportedAction legacyUnsupportedAction
     ) {
         public boolean isClaimOnFirstJoin() {
             return mode == PremiumMode.CLAIM_ON_FIRST_JOIN;
@@ -190,6 +191,20 @@ public record ProudAuthSettings(
                 return PremiumMode.valueOf(raw.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
                 return STRICT_GLOBAL;
+            }
+        }
+    }
+
+    public enum LegacyUnsupportedAction {
+        FORCE_ONLINE,
+        DENY_PREMIUM_CLAIM,
+        FORCE_SP;
+
+        public static LegacyUnsupportedAction from(String raw) {
+            try {
+                return LegacyUnsupportedAction.valueOf(raw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                return FORCE_ONLINE;
             }
         }
     }
