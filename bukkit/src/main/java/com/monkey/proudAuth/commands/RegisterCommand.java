@@ -56,6 +56,13 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
         identityClaimService.snapshot(player.getName(), ipAddress)
                 .thenCompose(snapshot -> {
                     if (identityClaimService.isLocalClaimModeEnabled() && snapshot.finalClaim().isEmpty()) {
+                        if (identityClaimService.isAutomaticClaimOnFirstJoinEnabled()) {
+                            return authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1])
+                                    .thenCompose(result -> result.status() == AuthService.RegisterStatus.SUCCESS
+                                            ? identityClaimService.finalizeClaim(player.getName(), AccountType.CRACKED, ipAddress)
+                                            .thenApply(ignored -> (Object) result)
+                                            : java.util.concurrent.CompletableFuture.completedFuture((Object) result));
+                        }
                         if (snapshot.pendingClaim().orElse(null) == AccountType.CRACKED) {
                             return authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1])
                                     .thenCompose(result -> result.status() == AuthService.RegisterStatus.SUCCESS

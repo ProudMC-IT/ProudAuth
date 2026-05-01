@@ -7,6 +7,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 
 public final class UnlockAdminSubcommand implements AdminSubcommand {
@@ -68,5 +69,10 @@ public final class UnlockAdminSubcommand implements AdminSubcommand {
                 }
         );
         return true;
+    }
+
+    @Override
+    public List<String> tabComplete(CommandSender sender, String[] args) {
+        return args.length == 1 ? AdminCommandSupport.playerNameSuggestions(context.storage(), args[0]) : List.of();
     }
 }

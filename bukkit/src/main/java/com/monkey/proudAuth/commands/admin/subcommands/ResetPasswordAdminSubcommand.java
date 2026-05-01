@@ -6,6 +6,8 @@ import com.monkey.proudAuth.commands.admin.support.AdminSubcommand;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.command.CommandSender;
 
+import java.util.List;
+
 public final class ResetPasswordAdminSubcommand implements AdminSubcommand {
 
     private final AdminCommandContext context;
@@ -51,5 +53,10 @@ public final class ResetPasswordAdminSubcommand implements AdminSubcommand {
                 }
         );
         return true;
+    }
+
+    @Override
+    public List<String> tabComplete(CommandSender sender, String[] args) {
+        return args.length == 1 ? AdminCommandSupport.playerNameSuggestions(context.storage(), args[0]) : List.of();
     }
 }

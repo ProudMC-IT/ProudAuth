@@ -134,7 +134,7 @@ public final class SessionAdminSubcommand implements AdminSubcommand {
             return AdminCommandSupport.filter(List.of("list", "clear", "clearip"), args[0]);
         }
         if (args.length == 2 && ("list".equalsIgnoreCase(args[0]) || "clear".equalsIgnoreCase(args[0]))) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         if (args.length == 2 && "clearip".equalsIgnoreCase(args[0])) {
             return AdminCommandSupport.filter(AdminCommandSupport.onlineIps(), args[1]);

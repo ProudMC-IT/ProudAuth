@@ -40,8 +40,20 @@ public record ProudAuthSettings(
             return mode == PremiumMode.PROXY_CUSTOM;
         }
 
-        public boolean usesLocalClaims() {
+        public boolean isAutomaticClaimOnFirstJoin() {
+            return mode == PremiumMode.AUTO_CLAIM_ON_FIRST_JOIN;
+        }
+
+        public boolean usesInteractiveClaims() {
             return mode == PremiumMode.CLAIM_ON_FIRST_JOIN || mode == PremiumMode.PROXY_CUSTOM;
+        }
+
+        public boolean usesProudXKeyAuthentication() {
+            return mode == PremiumMode.PROXY_CUSTOM || mode == PremiumMode.AUTO_CLAIM_ON_FIRST_JOIN;
+        }
+
+        public boolean usesLocalClaims() {
+            return usesInteractiveClaims() || mode == PremiumMode.AUTO_CLAIM_ON_FIRST_JOIN;
         }
     }
 
@@ -184,7 +196,8 @@ public record ProudAuthSettings(
     public enum PremiumMode {
         STRICT_GLOBAL,
         CLAIM_ON_FIRST_JOIN,
-        PROXY_CUSTOM;
+        PROXY_CUSTOM,
+        AUTO_CLAIM_ON_FIRST_JOIN;
 
         public static PremiumMode from(String raw) {
             try {

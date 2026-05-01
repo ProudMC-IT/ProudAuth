@@ -56,6 +56,6 @@ public final class UnbanIpAdminSubcommand implements AdminSubcommand {
 
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
-        return args.length == 1 ? AdminCommandSupport.filter(AdminCommandSupport.onlineIps(), args[0]) : List.of();
+        return args.length == 1 ? AdminCommandSupport.activeBannedIpSuggestions(context.storage(), args[0]) : List.of();
     }
 }

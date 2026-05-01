@@ -6,6 +6,8 @@ import com.monkey.proudAuth.commands.admin.support.AdminSubcommand;
 import com.monkey.proudAuth.common.storage.IpHistoryStorage;
 import org.bukkit.command.CommandSender;
 
+import java.util.List;
+
 public final class HistoryAdminSubcommand implements AdminSubcommand {
 
     private final AdminCommandContext context;
@@ -60,5 +62,16 @@ public final class HistoryAdminSubcommand implements AdminSubcommand {
                 }
         );
         return true;
+    }
+
+    @Override
+    public List<String> tabComplete(CommandSender sender, String[] args) {
+        if (args.length == 1) {
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[0]);
+        }
+        if (args.length == 2) {
+            return AdminCommandSupport.filter(List.of("5", "10", "20", "50"), args[1]);
+        }
+        return List.of();
     }
 }

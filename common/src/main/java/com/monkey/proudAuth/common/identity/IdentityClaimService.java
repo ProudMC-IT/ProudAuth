@@ -36,6 +36,18 @@ public final class IdentityClaimService {
                 && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
     }
 
+    public boolean isInteractiveClaimModeEnabled() {
+        return settings.premium().enabled()
+                && settings.premium().usesInteractiveClaims()
+                && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
+    }
+
+    public boolean isAutomaticClaimOnFirstJoinEnabled() {
+        return settings.premium().enabled()
+                && settings.premium().isAutomaticClaimOnFirstJoin()
+                && settings.proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
+    }
+
     public boolean isProxyCustomEnabled() {
         return settings.premium().enabled()
                 && settings.premium().isProxyCustom()

@@ -109,7 +109,7 @@ public final class TwoFactorAdminSubcommand implements AdminSubcommand {
             return AdminCommandSupport.filter(List.of("status", "reset"), args[0]);
         }
         if (args.length == 2) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         return List.of();
     }

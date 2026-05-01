@@ -61,6 +61,6 @@ public final class ForceLogoutAdminSubcommand implements AdminSubcommand {
 
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
-        return args.length == 1 ? AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[0]) : List.of();
+        return args.length == 1 ? AdminCommandSupport.playerNameSuggestions(context.storage(), args[0]) : List.of();
     }
 }

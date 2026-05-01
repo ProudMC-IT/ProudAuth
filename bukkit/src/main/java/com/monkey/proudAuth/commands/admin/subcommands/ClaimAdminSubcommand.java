@@ -208,13 +208,13 @@ public final class ClaimAdminSubcommand implements AdminSubcommand {
             return AdminCommandSupport.filter(List.of("status", "set", "clear", "pending"), args[0]);
         }
         if (args.length == 2 && ("status".equalsIgnoreCase(args[0]) || "set".equalsIgnoreCase(args[0]) || "clear".equalsIgnoreCase(args[0]))) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         if (args.length == 2 && "pending".equalsIgnoreCase(args[0])) {
             return AdminCommandSupport.filter(List.of("clear"), args[1]);
         }
         if (args.length == 3 && "pending".equalsIgnoreCase(args[0]) && "clear".equalsIgnoreCase(args[1])) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[2]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[2]);
         }
         if (args.length == 3 && "set".equalsIgnoreCase(args[0])) {
             return AdminCommandSupport.filter(List.of("premium", "cracked"), args[2]);

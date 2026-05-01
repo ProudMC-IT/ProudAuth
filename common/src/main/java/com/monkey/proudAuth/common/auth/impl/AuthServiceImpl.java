@@ -142,7 +142,7 @@ public final class AuthServiceImpl implements AuthService {
                 return CompletableFuture.completedFuture(new RegisterResult(RegisterStatus.ALREADY_REGISTERED));
             }
 
-            return allowsCrackedClaimRegistration(username, ipAddress, optionalAccount)
+            return allowsCrackedClaimRegistration(username, ipAddress, optionalAccount, accountType)
                     .thenCompose(claimAllowsCracked -> {
                         if (claimAllowsCracked) {
                             return proceedWithRegistration(uuid, username, accountType, ipAddress, password, optionalAccount);
@@ -629,13 +629,20 @@ public final class AuthServiceImpl implements AuthService {
     private CompletableFuture<Boolean> allowsCrackedClaimRegistration(
             String username,
             String ipAddress,
-            Optional<AccountRecord> optionalAccount
+            Optional<AccountRecord> optionalAccount,
+            AccountType runtimeAccountType
     ) {
         if (!usesClaimOnFirstJoin()) {
             return CompletableFuture.completedFuture(false);
         }
         if (optionalAccount.map(AccountRecord::accountType).filter(type -> type == AccountType.CRACKED).isPresent()) {
             return CompletableFuture.completedFuture(true);
+        }
+        if (settings.premium().isAutomaticClaimOnFirstJoin() && runtimeAccountType == AccountType.CRACKED) {
+            return storage.findIdentityClaim(username)
+                    .thenApply(optionalClaim -> optionalClaim
+                            .map(claim -> claim.claimType() == AccountType.CRACKED)
+                            .orElse(true));
         }
         return storage.findIdentityClaim(username)
                 .thenCompose(optionalClaim -> {

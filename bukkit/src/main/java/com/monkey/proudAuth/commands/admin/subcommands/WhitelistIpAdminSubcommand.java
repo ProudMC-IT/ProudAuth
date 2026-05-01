@@ -160,10 +160,13 @@ public final class WhitelistIpAdminSubcommand implements AdminSubcommand {
             return AdminCommandSupport.filter(List.of("add", "remove", "list", "clear"), args[0]);
         }
         if (args.length == 2) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
-        if (args.length == 3 && ("add".equalsIgnoreCase(args[0]) || "remove".equalsIgnoreCase(args[0]))) {
+        if (args.length == 3 && "add".equalsIgnoreCase(args[0])) {
             return AdminCommandSupport.filter(AdminCommandSupport.onlineIps(), args[2]);
+        }
+        if (args.length == 3 && "remove".equalsIgnoreCase(args[0])) {
+            return AdminCommandSupport.premiumWhitelistIpSuggestions(context.storage(), args[1], args[2]);
         }
         return List.of();
     }

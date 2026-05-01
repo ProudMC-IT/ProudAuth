@@ -1,6 +1,7 @@
 prefix: "<dark_gray>[<aqua>ProudAuth</aqua>]</dark_gray> "
 
-not-authenticated: "<red>You must authenticate first. Use /login <password> or /register <password> <confirm>."
+not-authenticated: "<red>You must authenticate first."
+login-required: "<red>You must log in. Use /login <password>."
 claim-choice-required: "<yellow>This nickname is not configured yet. Use <white>/premium</white> if you own the Mojang account, or <white>/sp</white> if you want to use it as cracked.</yellow> <gray>Until you choose,</gray> <white>/login</white> <gray>and</gray> <white>/register</white> <gray>stay blocked.</gray>"
 claim-sp-selected: "<green>Cracked/SP mode selected for this nickname.</green> <gray>Now use</gray> <white>/login</white> <gray>or</gray> <white>/register</white> <gray>to complete the setup.</gray>"
 claim-already-premium: "<yellow>This nickname is already locked as premium on this network."

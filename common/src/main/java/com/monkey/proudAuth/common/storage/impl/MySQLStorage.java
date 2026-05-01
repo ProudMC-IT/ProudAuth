@@ -91,6 +91,36 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<List<String>> listAccountUsernames(String prefix, int limit) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT username
+                    FROM pa_accounts
+                    WHERE LOWER(username) LIKE LOWER(?)
+                    GROUP BY username
+                    ORDER BY
+                        MAX(last_login_at) IS NULL,
+                        MAX(last_login_at) DESC,
+                        MIN(registered_at) ASC,
+                        username ASC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, (prefix == null ? "" : prefix) + "%");
+                statement.setInt(2, Math.max(1, Math.min(100, limit)));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<String> usernames = new ArrayList<>();
+                    while (resultSet.next()) {
+                        usernames.add(resultSet.getString("username"));
+                    }
+                    return usernames;
+                }
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> saveAccount(AccountRecord accountRecord) {
         return runAsync(() -> {
             String sql = """
@@ -1111,6 +1141,32 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<List<String>> listActiveBannedIps(String prefix, int limit) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT ip
+                    FROM pa_ip_bans
+                    WHERE expires_at > CURRENT_TIMESTAMP
+                      AND ip LIKE ?
+                    ORDER BY banned_at DESC, ip ASC
+                    LIMIT ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, (prefix == null ? "" : prefix) + "%");
+                statement.setInt(2, Math.max(1, Math.min(100, limit)));
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<String> ips = new ArrayList<>();
+                    while (resultSet.next()) {
+                        ips.add(resultSet.getString("ip"));
+                    }
+                    return ips;
+                }
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> banIp(String ip, Instant expiresAt, @Nullable String reason) {
         return runAsync(() -> {
             String sql = """
@@ -1300,6 +1356,9 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_whitelist_username (username)
                     )
                     """);
+            ensureIndex(connection, "pa_accounts", "idx_accounts_username", "CREATE INDEX idx_accounts_username ON pa_accounts (username)");
+            ensureIndex(connection, "pa_accounts", "idx_accounts_last_login", "CREATE INDEX idx_accounts_last_login ON pa_accounts (last_login_at)");
+            ensureIndex(connection, "pa_ip_bans", "idx_ip_bans_active", "CREATE INDEX idx_ip_bans_active ON pa_ip_bans (expires_at, banned_at, ip)");
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
@@ -1308,6 +1367,20 @@ public final class MySQLStorage implements StorageProvider {
             statement.executeUpdate("DELETE FROM pa_ip_history WHERE observed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)");
         } catch (SQLException exception) {
             throw new IllegalStateException("Impossibile inizializzare lo schema MySQL.", exception);
+        }
+    }
+
+    private void ensureIndex(Connection connection, String tableName, String indexName, String createIndexSql) throws SQLException {
+        DatabaseMetaData metaData = connection.getMetaData();
+        try (ResultSet resultSet = metaData.getIndexInfo(connection.getCatalog(), null, tableName, false, false)) {
+            while (resultSet.next()) {
+                if (indexName.equalsIgnoreCase(resultSet.getString("INDEX_NAME"))) {
+                    return;
+                }
+            }
+        }
+        try (Statement statement = connection.createStatement()) {
+            statement.executeUpdate(createIndexSql);
         }
     }
 

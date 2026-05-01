@@ -60,6 +60,14 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
         identityClaimService.snapshot(player.getName(), ipAddress)
                 .thenCompose(snapshot -> {
                     if (identityClaimService.isLocalClaimModeEnabled() && snapshot.finalClaim().isEmpty()) {
+                        if (identityClaimService.isAutomaticClaimOnFirstJoinEnabled()) {
+                            return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
+                                    .thenCompose(result -> (result.status() == AuthService.LoginStatus.SUCCESS
+                                            || result.status() == AuthService.LoginStatus.TOTP_REQUIRED)
+                                            ? identityClaimService.finalizeClaim(player.getName(), AccountType.CRACKED, ipAddress)
+                                            .thenApply(ignored -> (Object) result)
+                                            : java.util.concurrent.CompletableFuture.completedFuture((Object) result));
+                        }
                         if (snapshot.pendingClaim().orElse(null) == AccountType.CRACKED) {
                             return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
                                     .thenCompose(result -> (result.status() == AuthService.LoginStatus.SUCCESS

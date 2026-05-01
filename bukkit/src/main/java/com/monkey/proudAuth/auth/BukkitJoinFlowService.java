@@ -15,6 +15,8 @@ import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.concurrent.CompletableFuture;
+
 public final class BukkitJoinFlowService {
 
     private final JavaPlugin plugin;
@@ -79,6 +81,10 @@ public final class BukkitJoinFlowService {
                                 continueJoinAfterClaimResolution(player, resolvedLogin);
                                 return;
                             }
+                            if (identityClaimService.isAutomaticClaimOnFirstJoinEnabled()) {
+                                beginAutomaticCrackedClaim(player, resolvedLogin);
+                                return;
+                            }
                             handleClaimChoiceJoin(player, pendingClaimType);
                             return;
                         }
@@ -98,6 +104,28 @@ public final class BukkitJoinFlowService {
         }
 
         handleProtectedJoin(player, resolvedLogin);
+    }
+
+    private void beginAutomaticCrackedClaim(Player player, ResolvedLogin resolvedLogin) {
+        identityClaimService.beginPendingClaim(player.getName(), AccountType.CRACKED, resolvedLogin.ipAddress())
+                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    if (exception != null) {
+                        debugEvent(DebugChannel.PROTECTION_FLOW, "join_auto_claim_cracked_pending_error",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId(),
+                                "error", exception.getMessage());
+                        langConfig.send(player, "error-generic");
+                        return;
+                    }
+                    debugEvent(DebugChannel.PROTECTION_FLOW, "join_auto_claim_cracked_pending_created",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId(),
+                            "ip", resolvedLogin.ipAddress());
+                    continueJoinAfterClaimResolution(player, resolvedLogin);
+                }));
     }
 
     private void handleBypassJoin(Player player, ResolvedLogin resolvedLogin) {
@@ -130,7 +158,6 @@ public final class BukkitJoinFlowService {
         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_start",
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
-        playerProtection.applyProtectionTransient(player);
         authService.authenticateWithTotpGate(
                         player.getUniqueId(),
                         player.getName(),
@@ -140,7 +167,6 @@ public final class BukkitJoinFlowService {
                 )
                 .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
                     if (!player.isOnline()) {
-                        playerProtection.removeProtection(player);
                         return;
                     }
                     if (exception != null) {
@@ -148,13 +174,16 @@ public final class BukkitJoinFlowService {
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId(),
                                 "error", exception.getMessage());
-                        playerProtection.removeProtection(player);
                         langConfig.send(player, "error-generic");
                         return;
                     }
 
                     if (ignored.status() == com.monkey.proudAuth.common.auth.AuthService.TotpChallengeStatus.TOTP_REQUIRED) {
-                        playerProtection.upgradeToFullProtection(player);
+                        if (playerProtection.isProtected(player.getUniqueId())) {
+                            playerProtection.upgradeToFullProtection(player);
+                        } else {
+                            playerProtection.applyProtection(player);
+                        }
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_totp_required",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId(),
@@ -167,7 +196,9 @@ public final class BukkitJoinFlowService {
                         if (!player.isOnline()) {
                             return;
                         }
-                        playerProtection.removeProtection(player);
+                        if (playerProtection.isProtected(player.getUniqueId())) {
+                            playerProtection.removeProtection(player);
+                        }
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId());
@@ -203,14 +234,27 @@ public final class BukkitJoinFlowService {
                                         : JoinOutcome.SESSION_RESTORED);
                     }
 
-                    debugEvent(DebugChannel.SESSION_FLOW, "join_manual_auth_required",
-                            "player", player.getName(),
-                            "uuid", player.getUniqueId(),
-                            "account_type", resolvedLogin.accountType(),
-                            "premium_auto_login", pluginConfig.settings().premium().autoLogin());
-                    return java.util.concurrent.CompletableFuture.completedFuture(JoinOutcome.REQUIRES_AUTH);
+                    return resolveManualAuthOutcome(player.getName())
+                            .thenApply(outcome -> {
+                                debugEvent(DebugChannel.SESSION_FLOW, "join_manual_auth_required",
+                                        "player", player.getName(),
+                                        "uuid", player.getUniqueId(),
+                                        "account_type", resolvedLogin.accountType(),
+                                        "premium_auto_login", pluginConfig.settings().premium().autoLogin(),
+                                        "manual_outcome", outcome);
+                                return outcome;
+                            });
                 })
                 .whenComplete((outcome, exception) -> Bukkit.getScheduler().runTask(plugin, () -> completeProtectedJoin(player, outcome, exception)));
+    }
+
+    private CompletableFuture<JoinOutcome> resolveManualAuthOutcome(String username) {
+        return authService.findAccountByUsername(username)
+                .thenApply(optionalAccount -> optionalAccount
+                        .filter(account -> account.passwordHash() != null && !account.passwordHash().isBlank())
+                        .isPresent()
+                        ? JoinOutcome.REQUIRES_LOGIN
+                        : JoinOutcome.REQUIRES_REGISTER);
     }
 
     private void handleClaimChoiceJoin(Player player, AccountType pendingClaimType) {
@@ -256,7 +300,8 @@ public final class BukkitJoinFlowService {
                 langConfig.send(player, "session-restored", Placeholder.unparsed("player", player.getName()));
             }
             case TOTP_REQUIRED -> langConfig.send(player, "totp-required");
-            case REQUIRES_AUTH -> langConfig.send(player, "not-authenticated");
+            case REQUIRES_LOGIN -> langConfig.send(player, "login-required");
+            case REQUIRES_REGISTER -> langConfig.send(player, "register-required-first");
         }
     }
 
@@ -271,6 +316,7 @@ public final class BukkitJoinFlowService {
     private enum JoinOutcome {
         SESSION_RESTORED,
         TOTP_REQUIRED,
-        REQUIRES_AUTH
+        REQUIRES_LOGIN,
+        REQUIRES_REGISTER
     }
 }

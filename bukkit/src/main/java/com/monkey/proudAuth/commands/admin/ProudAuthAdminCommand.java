@@ -101,16 +101,22 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!sender.hasPermission("proudauth.admin")) {
+            return List.of();
+        }
         if (args.length == 1) {
             List<String> names = new ArrayList<>();
             for (AdminSubcommand subcommand : primarySubcommands) {
+                if (!sender.hasPermission(subcommand.permission())) {
+                    continue;
+                }
                 names.add(subcommand.name());
                 names.addAll(subcommand.aliases());
             }
             return AdminCommandSupport.filter(names, args[0]);
         }
         AdminSubcommand subcommand = subcommandsByName.get(args[0].toLowerCase(Locale.ROOT));
-        if (subcommand == null) {
+        if (subcommand == null || !sender.hasPermission(subcommand.permission())) {
             return List.of();
         }
         return subcommand.tabComplete(sender, Arrays.copyOfRange(args, 1, args.length));

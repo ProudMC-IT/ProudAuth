@@ -146,7 +146,7 @@ public final class DebugAdminSubcommand implements AdminSubcommand {
             return AdminCommandSupport.filter(List.of("player", "toggle"), args[0]);
         }
         if (args.length == 2 && "player".equalsIgnoreCase(args[0])) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         if (args.length == 2 && "toggle".equalsIgnoreCase(args[0])) {
             return AdminCommandSupport.filter(DEBUG_PATHS.keySet(), args[1]);

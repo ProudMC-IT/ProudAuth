@@ -126,10 +126,12 @@ public final class VelocityPreLoginListener {
             whitelistEnforcementStore.remember(event.getUsername(), ipAddress);
         }
 
+        boolean automaticClaimMode = identityClaimService.isAutomaticClaimOnFirstJoinEnabled();
+        boolean proudXKeyAuthMode = proxyCustomMode || automaticClaimMode;
         if (claimMode) {
             var effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getUsername()).join();
             if (effectiveClaim.orElse(null) == AccountType.PREMIUM) {
-                if (proxyCustomMode) {
+                if (proudXKeyAuthMode) {
                     premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
                     if (premiumCheck.premium()) {
                         expectedPremiumUuid = premiumCheck.resolvedUuid();
@@ -168,7 +170,7 @@ public final class VelocityPreLoginListener {
                 if (pendingClaim.map(claim -> claim.claimType() == AccountType.PREMIUM).orElse(false)) {
                     identityClaimService.clearPendingClaim(event.getUsername()).join();
                     pendingPremiumAuthStore.remember(connectionKey(event), event.getUsername());
-                    if (proxyCustomMode) {
+                    if (proudXKeyAuthMode) {
                         premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
                         if (premiumCheck.premium()) {
                             expectedPremiumUuid = premiumCheck.resolvedUuid();
@@ -213,6 +215,58 @@ public final class VelocityPreLoginListener {
                                 "player", event.getUsername(),
                                 "ip", ipAddress,
                                 "expires_at", pendingClaim.get().expiresAt());
+                    }
+                } else if (automaticClaimMode) {
+                    if (pendingClaim.map(claim -> claim.claimType() == AccountType.CRACKED).orElse(false)) {
+                        premiumClaimFailedOffline = true;
+                        debugEvent("prelogin_auto_claim_existing_cracked_pending",
+                                "player", event.getUsername(),
+                                "ip", ipAddress,
+                                "expires_at", pendingClaim.get().expiresAt());
+                    } else {
+                        premiumCheck = premiumVerifierSupplier.get().verify(event.getUsername()).join();
+                        if (premiumCheck.premium()) {
+                            expectedPremiumUuid = premiumCheck.resolvedUuid();
+                            pendingPremiumAuthStore.remember(connectionKey(event), event.getUsername());
+                            ProudAuthSettings.LegacyUnsupportedAction legacyAction = legacyUnsupportedAction(event);
+                            if (legacyAction == null) {
+                                requirePremiumKeyAuthentication = true;
+                                debugEvent("prelogin_auto_claim_premium_key_authentication",
+                                        "player", event.getUsername(),
+                                        "ip", ipAddress,
+                                        "expected_uuid", expectedPremiumUuid);
+                            } else if (legacyAction == ProudAuthSettings.LegacyUnsupportedAction.FORCE_ONLINE) {
+                                requirePremiumOnlineMode = true;
+                                debugEvent("prelogin_auto_claim_premium_legacy_force_online",
+                                        "player", event.getUsername(),
+                                        "ip", ipAddress,
+                                        "protocol", event.getConnection().getProtocolVersion().getMostRecentSupportedVersion(),
+                                        "premium_uuid", expectedPremiumUuid);
+                            } else if (legacyAction == ProudAuthSettings.LegacyUnsupportedAction.FORCE_SP) {
+                                pendingPremiumAuthStore.forget(connectionKey(event));
+                                identityClaimService.beginPendingClaim(event.getUsername(), AccountType.CRACKED, ipAddress).join();
+                                premiumClaimFailedOffline = true;
+                                debugEvent("prelogin_auto_claim_premium_legacy_force_sp",
+                                        "player", event.getUsername(),
+                                        "ip", ipAddress,
+                                        "protocol", event.getConnection().getProtocolVersion().getMostRecentSupportedVersion(),
+                                        "premium_uuid", expectedPremiumUuid);
+                            } else {
+                                pendingPremiumAuthStore.forget(connectionKey(event));
+                                denyPremiumClaim = true;
+                                debugEvent("prelogin_auto_claim_premium_legacy_denied",
+                                        "player", event.getUsername(),
+                                        "ip", ipAddress,
+                                        "protocol", event.getConnection().getProtocolVersion().getMostRecentSupportedVersion(),
+                                        "premium_uuid", expectedPremiumUuid);
+                            }
+                        } else {
+                            identityClaimService.beginPendingClaim(event.getUsername(), AccountType.CRACKED, ipAddress).join();
+                            premiumClaimFailedOffline = true;
+                            debugEvent("prelogin_auto_claim_non_premium_cracked_pending",
+                                    "player", event.getUsername(),
+                                    "ip", ipAddress);
+                        }
                     }
                 }
             }

@@ -47,7 +47,7 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
             langConfig.send(player, "no-permission");
             return true;
         }
-        if (!identityClaimService.isLocalClaimModeEnabled()) {
+        if (!identityClaimService.isInteractiveClaimModeEnabled()) {
             langConfig.send(player, "claim-mode-disabled");
             return true;
         }

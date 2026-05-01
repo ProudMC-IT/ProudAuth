@@ -90,7 +90,12 @@ public final class VelocityGameProfileListener {
         if (identityClaimService.isLocalClaimModeEnabled()) {
             AccountType effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getUsername()).join().orElse(null);
             boolean pendingPremiumAttempt = pendingPremiumAuthStore.contains(connectionKey);
+            boolean automaticClaimMode = identityClaimService.isAutomaticClaimOnFirstJoinEnabled();
             boolean proxyCustomPendingFallback = identityClaimService.isProxyCustomEnabled()
+                    && pendingPremiumAttempt
+                    && effectiveClaim != AccountType.PREMIUM
+                    && !premiumRequiredByWhitelist;
+            boolean automaticPendingFallback = automaticClaimMode
                     && pendingPremiumAttempt
                     && effectiveClaim != AccountType.PREMIUM
                     && !premiumRequiredByWhitelist;
@@ -119,6 +124,17 @@ public final class VelocityGameProfileListener {
                     pendingPremiumAuthStore.forget(connectionKey);
                     premiumEnforced = false;
                     debugEvent(DebugChannel.PREMIUM_FLOW, "premium_key_authentication_fallback_offline",
+                            "player", event.getUsername(),
+                            "ip", ipAddress,
+                            "event_online_mode", event.isOnlineMode(),
+                            "current_profile_uuid", currentProfile.getId(),
+                            "offline_uuid", offlineUuid,
+                            "premium_uuid", premiumCheck.resolvedUuid());
+                } else if (automaticPendingFallback) {
+                    pendingPremiumAuthStore.forget(connectionKey);
+                    premiumEnforced = false;
+                    identityClaimService.beginPendingClaim(event.getUsername(), AccountType.CRACKED, ipAddress).join();
+                    debugEvent(DebugChannel.PREMIUM_FLOW, "auto_claim_premium_probe_failed_cracked_pending",
                             "player", event.getUsername(),
                             "ip", ipAddress,
                             "event_online_mode", event.isOnlineMode(),

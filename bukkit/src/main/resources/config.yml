@@ -34,6 +34,10 @@ premium:
   #   /sp or /premium. That first completed claim becomes the permanent local rule for the nickname.
   # - PROXY_CUSTOM: like CLAIM_ON_FIRST_JOIN, but /premium never forces Mojang online-mode.
   #   The player reconnects offline and receives the verification result in chat, avoiding Invalid session screens.
+  # - AUTO_CLAIM_ON_FIRST_JOIN: no /sp or /premium choice. On first join, ProudAuth automatically
+  #   claims the nickname as PREMIUM only if ProudX/Mojang proves the client is authenticated.
+  #   Otherwise it creates a cracked/SP pending claim; after /login or /register the nickname
+  #   stays cracked forever, even if the real Mojang owner joins later.
   mode: STRICT_GLOBAL
   claim-pending-seconds: 300
   proxy-custom:

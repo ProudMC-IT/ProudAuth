@@ -94,15 +94,13 @@ public final class TrustIpAdminSubcommand implements AdminSubcommand {
     @Override
     public List<String> tabComplete(CommandSender sender, String[] args) {
         if (args.length == 1) {
-            List<String> base = new java.util.ArrayList<>(AdminCommandSupport.onlineIps());
-            base.add("clear");
-            return AdminCommandSupport.filter(base, args[0]);
+            return AdminCommandSupport.onlineIpsWithKeyword("clear", args[0]);
         }
         if (args.length == 2 && "clear".equalsIgnoreCase(args[0])) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         if (args.length == 2 && !"clear".equalsIgnoreCase(args[0].toLowerCase(Locale.ROOT))) {
-            return AdminCommandSupport.filter(AdminCommandSupport.onlinePlayerNames(), args[1]);
+            return AdminCommandSupport.playerNameSuggestions(context.storage(), args[1]);
         }
         return List.of();
     }
