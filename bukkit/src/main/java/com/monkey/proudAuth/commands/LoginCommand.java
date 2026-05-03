@@ -4,6 +4,7 @@ import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
@@ -26,19 +27,22 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
     private final AuthService authService;
     private final PlayerProtection playerProtection;
     private final IdentityClaimService identityClaimService;
+    private final BackendNetworkSyncService networkSyncService;
 
     public LoginCommand(
             JavaPlugin plugin,
             LangConfig langConfig,
             AuthService authService,
             PlayerProtection playerProtection,
-            IdentityClaimService identityClaimService
+            IdentityClaimService identityClaimService,
+            BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
         this.identityClaimService = identityClaimService;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -53,6 +57,10 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length != 1) {
             langConfig.send(player, "error-usage", Placeholder.unparsed("usage", "/login <password>"));
+            return true;
+        }
+        if (!networkSyncService.allowsManualAuthentication(player)) {
+            langConfig.send(player, "auth-server-required");
             return true;
         }
 
@@ -107,6 +115,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
             switch (loginResult.status()) {
                 case SUCCESS -> {
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyAuthCompleted(player);
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
                 }
                 case ALREADY_AUTHENTICATED -> langConfig.send(player, "already-authenticated");

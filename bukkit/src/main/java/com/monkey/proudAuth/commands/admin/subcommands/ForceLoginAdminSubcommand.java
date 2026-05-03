@@ -60,6 +60,7 @@ public final class ForceLoginAdminSubcommand implements AdminSubcommand {
                         return;
                     }
                     context.playerProtection().removeProtection(target);
+                    context.networkSyncService().notifyAuthCompleted(target);
                     context.langConfig().send(sender, "admin-force-login",
                             net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", target.getName()));
                 }

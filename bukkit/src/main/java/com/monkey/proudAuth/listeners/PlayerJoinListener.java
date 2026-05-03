@@ -37,11 +37,12 @@ public final class PlayerJoinListener implements Listener {
             Player player = event.getPlayer();
             java.util.Optional<ResolvedLogin> consumed = playerPreLoginListener.consume(player.getUniqueId());
             ResolvedLogin resolvedLogin = consumed
-                    .orElseGet(() -> new ResolvedLogin(
+                    .orElseGet(() -> ResolvedLogin.standalone(
                             player.getUniqueId(),
                             player.getName(),
                             player.getUniqueId().equals(PremiumVerifier.offlineUuid(player.getName())) ? AccountType.CRACKED : AccountType.PREMIUM,
-                            ipAddress(player)
+                            ipAddress(player),
+                            pluginConfig.serverId()
                     ));
             debugEvent(DebugChannel.PLAYER_RESOLUTION, "join_listener_resolved",
                     "player", player.getName(),
@@ -51,6 +52,7 @@ public final class PlayerJoinListener implements Listener {
                     "account_type", resolvedLogin.accountType(),
                     "ip", resolvedLogin.ipAddress());
             joinFlowService.handleJoin(player, resolvedLogin);
+            joinFlowService.refreshVisibility();
         } catch (Exception exception) {
             logger.error("Join hard failure.", exception);
         }

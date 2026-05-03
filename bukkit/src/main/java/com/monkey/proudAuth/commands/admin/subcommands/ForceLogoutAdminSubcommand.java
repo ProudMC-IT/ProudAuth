@@ -53,6 +53,7 @@ public final class ForceLogoutAdminSubcommand implements AdminSubcommand {
                         return;
                     }
                     context.playerProtection().applyProtection(target);
+                    context.networkSyncService().notifyAuthInvalidated(target);
                     context.langConfig().send(sender, "admin-force-logout", Placeholder.unparsed("player", target.getName()));
                 }
         );

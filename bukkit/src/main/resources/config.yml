@@ -1,5 +1,22 @@
+# ProudAuth Bukkit backend configuration
+#
+# This file is used on every backend server where the Bukkit/Paper plugin is installed.
+# In a networked setup with Velocity, the same plugin should be present on:
+# - the dedicated auth backend, if you use one
+# - any normal backend that players can join or switch to
+#
+# Main responsibilities of the Bukkit side:
+# - apply auth protection on the backend that currently handles authentication
+# - restore sessions from shared storage
+# - consume bridge assertions coming from the proxy
+# - keep authentication state aligned across the network
+
+# Language file loaded from the plugin lang folder.
+# Examples: "it", "en", "it.yml", "en.yml"
 language: "it"
 
+# Shared MySQL storage used by all proxy/backend instances of ProudAuth.
+# In a real network, every ProudAuth instance should point to the same database.
 database:
   host: "localhost"
   port: 3306
@@ -8,6 +25,8 @@ database:
   password: "password"
   pool-size: 10
 
+# Internal debug channels.
+# Keep enabled=false in production unless you are investigating a problem.
 debugger:
   enabled: false
   player-resolution: true
@@ -23,10 +42,19 @@ debugger:
   command-flow: true
 
 premium:
+  # Enables premium/cracked resolution features.
   enabled: true
+
+  # When a player is resolved as premium on the backend auth flow,
+  # ProudAuth can automatically authenticate them without /login.
   auto-login: true
+
+  # Timeout in milliseconds for Mojang/Premium verification requests.
   api-timeout-ms: 3000
+
+  # Reserved for profile-proof related logic on standalone/backend flows.
   require-uuid-proof: true
+
   # Premium nickname policy:
   # - STRICT_GLOBAL (default): if Mojang says the nickname is premium, the proxy/backend
   #   always require real premium authentication and cracked clients using that nickname are denied.
@@ -39,44 +67,151 @@ premium:
   #   Otherwise it creates a cracked/SP pending claim; after /login or /register the nickname
   #   stays cracked forever, even if the real Mojang owner joins later.
   mode: STRICT_GLOBAL
+
+  # Lifetime in seconds for pending premium/cracked claim decisions.
   claim-pending-seconds: 300
+
   proxy-custom:
     # Mirrors the Velocity setting for documentation/reload consistency.
+    # Used when premium.mode = PROXY_CUSTOM.
+    #
     # - FORCE_ONLINE (default): fallback to Mojang online-mode for legacy clients.
     # - DENY_PREMIUM_CLAIM: deny premium claim on unsupported clients.
     # - FORCE_SP: pending /premium claims fall back to cracked/SP selection.
     legacy-unsupported-action: FORCE_ONLINE
 
 sessions:
+  # Enables session restore.
+  # If true, a player who already authenticated can be restored automatically.
   enabled: true
+
+  # Session time-to-live in minutes.
   ttl-minutes: 1440
+
+  # If true, sessions are valid only from the same IP.
   bind-to-ip: true
 
 security:
+  # Max wrong password attempts before temporary lock.
   max-attempts: 5
+
+  # Lock duration in seconds after too many wrong passwords.
   lockout-seconds: 300
+
+  # Enables TOTP / authenticator app support.
   totp-enabled: false
+
+  # Setup timeout in seconds for /2fa init -> /2fa setup flow.
   totp-setup-timeout-seconds: 180
+
+  # Max invalid setup codes during TOTP setup.
   totp-setup-max-attempts: 3
+
+  # If true, once TOTP is enabled on the account, it is always required.
+  # If false, TOTP is required only when suspicious access is detected,
+  # unless the player explicitly enables always-required mode.
   totp-default-flow-always: false
+
   totp-suspicious:
+    # If more than this number of usernames are seen from one IP in the last hour,
+    # access is treated as suspicious and TOTP may be required.
     max-usernames-per-ip-1h: 2
+
+    # If more than this number of IPs are used by the same username in the last 24h,
+    # access is treated as suspicious and TOTP may be required.
     max-ips-per-username-24h: 3
+
+    # If true, an IP already banned by ProudAuth is always treated as suspicious.
     deny-when-ip-banned: true
 
 updates:
+  # Enables update check against the published resource.
   check-enabled: true
+
+  # If true, admins are notified in-game when they join.
   notify-admin-on-join: true
 
 protection:
+  # Global protection toggles applied while the player is not authenticated.
   block-movement: true
   block-chat: true
   block-interactions: true
+
+  # Legacy visibility shortcut.
+  # If true, protected players are hidden from others and others are hidden from them,
+  # unless you override the detailed visibility options below.
   invisible-until-auth: true
+
+  # If true, protected players do not drop items on death.
   no-drop-on-death: true
+
+  # Time in seconds before an unauthenticated player is kicked.
   auth-timeout-seconds: 60
+
+  commands:
+    # If true, commands are restricted while the player is protected.
+    block-commands: true
+
+    # Commands allowed during normal protected state.
+    # Values are normalized, so "/login" and "login" are treated the same.
+    allowed-while-protected:
+      - "/login"
+      - "/register"
+      - "/2fa"
+      - "/sp"
+      - "/cracked"
+      - "/premium"
+      - "/proudauthbackend"
+
+    # Commands allowed while the player is forced to choose cracked/premium claim.
+    allowed-during-claim-choice:
+      - "/sp"
+      - "/cracked"
+      - "/premium"
+      - "/proudauthbackend"
+
+  restrictions:
+    # Fine-grained restrictions while the player is protected.
+    # These work alongside the main booleans above.
+    block-block-break: true
+    block-block-place: true
+    block-pvp-attack: true
+    block-pvp-take-damage: true
+    block-item-pickup: true
+    block-food-level-change: true
+    block-item-consume: true
+    block-swap-hand-items: true
+    block-book-edit: true
+    block-inventory: true
+    block-item-drop: true
+    block-entity-interact: true
+    block-world-interact: true
+
+  visibility:
+    # If true, a protected player is hidden from all other online players.
+    hide-protected-player-from-others: true
+
+    # If true, the protected player cannot see other online players.
+    hide-other-players-from-protected-player: true
+
+  effects:
+    # Visual effect applied while the player is protected on the auth backend.
+    # Supported values:
+    # - NONE: no visual effect
+    # - BLINDNESS: classic blindness effect, heavily limits nearby vision
+    # - DARKNESS: darkness effect, different visual style from blindness
+    visual-effect: "NONE"
+
   auth-spawn:
+    # If true, ProudAuth teleports the player to the spawn of the primary world.
+    # This has priority over the custom auth-spawn coordinates below.
+    use-world-spawn: false
+
+    # Used only when use-world-spawn is false.
+    # If enabled, ProudAuth teleports the player to the custom auth location below.
     enabled: false
+
+    # Custom auth coordinates used when enabled=true and use-world-spawn=false.
     world: "world"
     x: 0.5
     y: 64.0
@@ -85,19 +220,46 @@ protection:
     pitch: 0.0
 
 password:
+  # Minimum accepted password length for cracked accounts.
   min-length: 6
+
+  # Maximum accepted password length for cracked accounts.
   max-length: 32
+
+  # Optional regex for password complexity.
+  # Leave empty to disable complexity rules.
   complexity-regex: ""
 
 bridge:
+  # Enables trusted proxy/backend bridge verification.
+  # In a Velocity network this should normally be enabled on all backends
+  # if you want strict network-wide control.
   enabled: false
+
+  # - FALLBACK: if bridge data is missing, backend may still fall back to local resolution
+  # - STRICT: if bridge data is missing/invalid, backend denies access
   mode: FALLBACK
+
+  # Transport currently supported by ProudAuth.
   transport: MYSQL
+
+  # Shared secret used to sign bridge assertions.
+  # Must be identical on proxy and all backends.
   shared-secret: "change-me"
+
+  # Assertion lifetime in seconds.
   assertion-ttl-seconds: 10
 
 proxy:
-  # NONE
-  # BUNGEE
-  # VELOCITY
+  # Backend integration mode.
+  # - NONE: standalone backend, no proxy-specific resolution
+  # - BUNGEE: reserved for future/compat use
+  # - VELOCITY: backend expects to cooperate with ProudAuth Velocity
   mode: NONE
+
+network:
+  # Logical server id used by ProudAuth on this backend.
+  # In a Velocity network, set this to the exact server name registered in velocity.toml
+  # or in your proxy server list.
+  # Leave empty to use Bukkit's server name.
+  server-id: ""

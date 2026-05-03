@@ -4,6 +4,7 @@ import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -21,6 +22,7 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
     private final LangConfig langConfig;
     private final AuthService authService;
     private final IdentityClaimService identityClaimService;
+    private final BackendNetworkSyncService networkSyncService;
     private static final Object CLAIM_REQUIRED = new Object();
     private static final Object PREMIUM_RECONNECT_REQUIRED = new Object();
 
@@ -28,12 +30,14 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
             JavaPlugin plugin,
             LangConfig langConfig,
             AuthService authService,
-            IdentityClaimService identityClaimService
+            IdentityClaimService identityClaimService,
+            BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
         this.identityClaimService = identityClaimService;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -48,6 +52,10 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length != 2) {
             langConfig.send(player, "error-usage", Placeholder.unparsed("usage", "/register <password> <conferma>"));
+            return true;
+        }
+        if (!networkSyncService.allowsManualAuthentication(player)) {
+            langConfig.send(player, "auth-server-required");
             return true;
         }
 

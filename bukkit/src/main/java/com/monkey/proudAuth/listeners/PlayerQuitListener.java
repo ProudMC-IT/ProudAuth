@@ -3,6 +3,7 @@ package com.monkey.proudAuth.listeners;
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -13,15 +14,18 @@ public final class PlayerQuitListener implements Listener {
     private final AuthService authService;
     private final PlayerProtection playerProtection;
     private final IdentityClaimService identityClaimService;
+    private final BackendNetworkSyncService networkSyncService;
 
     public PlayerQuitListener(
             AuthService authService,
             PlayerProtection playerProtection,
-            IdentityClaimService identityClaimService
+            IdentityClaimService identityClaimService,
+            BackendNetworkSyncService networkSyncService
     ) {
         this.authService = authService;
         this.playerProtection = playerProtection;
         this.identityClaimService = identityClaimService;
+        this.networkSyncService = networkSyncService;
     }
 
     @EventHandler
@@ -39,5 +43,6 @@ public final class PlayerQuitListener implements Listener {
                     .join();
         }
         authService.untrackPlayer(event.getPlayer().getUniqueId());
+        networkSyncService.forget(event.getPlayer().getUniqueId());
     }
 }

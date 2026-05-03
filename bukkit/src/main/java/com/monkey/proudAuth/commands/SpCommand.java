@@ -3,6 +3,7 @@ package com.monkey.proudAuth.commands;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -20,17 +21,20 @@ public final class SpCommand implements CommandExecutor, TabCompleter {
     private final LangConfig langConfig;
     private final IdentityClaimService identityClaimService;
     private final PlayerProtection playerProtection;
+    private final BackendNetworkSyncService networkSyncService;
 
     public SpCommand(
             JavaPlugin plugin,
             LangConfig langConfig,
             IdentityClaimService identityClaimService,
-            PlayerProtection playerProtection
+            PlayerProtection playerProtection,
+            BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.identityClaimService = identityClaimService;
         this.playerProtection = playerProtection;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -45,6 +49,10 @@ public final class SpCommand implements CommandExecutor, TabCompleter {
         }
         if (!identityClaimService.isInteractiveClaimModeEnabled()) {
             langConfig.send(player, "claim-mode-disabled");
+            return true;
+        }
+        if (!networkSyncService.allowsManualAuthentication(player)) {
+            langConfig.send(player, "auth-server-required");
             return true;
         }
 

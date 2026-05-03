@@ -27,7 +27,19 @@ public final class ProxyBridgeService {
         this.settings = settings;
     }
 
-    public CompletableFuture<Void> publish(String username, String resolvedName, UUID uuid, AccountType accountType, String ipAddress) {
+    public CompletableFuture<Void> publish(
+            String username,
+            String resolvedName,
+            UUID uuid,
+            AccountType accountType,
+            String ipAddress,
+            BridgeJoinMode joinMode,
+            String targetServer,
+            String authEntryServer,
+            boolean authEntryEnforced,
+            String postAuthServer,
+            boolean networkAuthenticated
+    ) {
         if (!isOperational()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -40,6 +52,12 @@ public final class ProxyBridgeService {
                 uuid,
                 accountType,
                 ipAddress,
+                joinMode,
+                normalizeServerName(targetServer),
+                normalizeServerName(authEntryServer),
+                authEntryEnforced,
+                normalizeServerName(postAuthServer),
+                networkAuthenticated,
                 issuedAt,
                 expiresAt,
                 UUID.randomUUID().toString().replace("-", ""),
@@ -49,7 +67,12 @@ public final class ProxyBridgeService {
         return storage.saveProxyAssertion(signedAssertion);
     }
 
-    public CompletableFuture<VerificationResult> consumeAndVerify(String username, UUID currentUuid, String ipAddress) {
+    public CompletableFuture<VerificationResult> consumeAndVerify(
+            String username,
+            UUID currentUuid,
+            String ipAddress,
+            String currentServerId
+    ) {
         if (!settings.bridge().enabled()) {
             return CompletableFuture.completedFuture(new VerificationResult(VerificationStatus.DISABLED, Optional.empty()));
         }
@@ -70,7 +93,14 @@ public final class ProxyBridgeService {
                     ProxyBridgeAssertion assertion = optionalAssertion.get();
                     return storage.deleteProxyAssertion(assertion.nonce())
                             .exceptionally(exception -> null)
-                            .thenApply(ignored -> validateAssertion(username, canonicalUsername, currentUuid, ipAddress, assertion));
+                            .thenApply(ignored -> validateAssertion(
+                                    username,
+                                    canonicalUsername,
+                                    currentUuid,
+                                    ipAddress,
+                                    normalizeServerName(currentServerId),
+                                    assertion
+                            ));
                 });
     }
 
@@ -90,6 +120,7 @@ public final class ProxyBridgeService {
             String canonicalUsername,
             UUID currentUuid,
             String ipAddress,
+            String currentServerId,
             ProxyBridgeAssertion assertion
     ) {
         Instant now = Instant.now();
@@ -98,6 +129,12 @@ public final class ProxyBridgeService {
         }
         if (!assertion.ipAddress().equals(ipAddress)) {
             return new VerificationResult(VerificationStatus.INVALID_IP, Optional.empty());
+        }
+        if (!assertion.targetServer().isBlank()
+                && currentServerId != null
+                && !currentServerId.isBlank()
+                && !assertion.targetServer().equalsIgnoreCase(currentServerId)) {
+            return new VerificationResult(VerificationStatus.INVALID_TARGET_SERVER, Optional.empty());
         }
         if (!assertion.expiresAt().isAfter(now) || assertion.issuedAt().isAfter(assertion.expiresAt())) {
             return new VerificationResult(VerificationStatus.EXPIRED, Optional.empty());
@@ -137,10 +174,24 @@ public final class ProxyBridgeService {
                 assertion.uuid().toString(),
                 assertion.accountType().name(),
                 assertion.ipAddress(),
+                assertion.joinMode().name(),
+                assertion.targetServer(),
+                assertion.authEntryServer(),
+                Boolean.toString(assertion.authEntryEnforced()),
+                assertion.postAuthServer(),
+                Boolean.toString(assertion.networkAuthenticated()),
                 Long.toString(assertion.issuedAt().toEpochMilli()),
                 Long.toString(assertion.expiresAt().toEpochMilli()),
                 assertion.nonce()
         );
+    }
+
+    private static String normalizeServerName(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
     }
 
     public enum VerificationStatus {
@@ -151,6 +202,7 @@ public final class ProxyBridgeService {
         EXPIRED,
         INVALID_USERNAME,
         INVALID_IP,
+        INVALID_TARGET_SERVER,
         INVALID_UUID,
         INVALID_SIGNATURE,
         ACCEPTED

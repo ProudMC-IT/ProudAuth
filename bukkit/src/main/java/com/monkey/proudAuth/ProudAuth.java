@@ -15,6 +15,7 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.listeners.*;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import com.monkey.proudAuth.update.SpigotUpdateChecker;
 import com.monkey.proudAuth.update.UpdateCheckResult;
@@ -44,6 +45,7 @@ public final class ProudAuth extends JavaPlugin {
     private BukkitTask cleanupTask;
     private BukkitTask backendJoinProbeTask;
     private ProudAuthConsoleLogger logger;
+    private BackendNetworkSyncService networkSyncService;
     private SpigotUpdateChecker spigotUpdateChecker;
     private volatile UpdateCheckResult latestUpdateCheckResult;
 
@@ -67,6 +69,8 @@ public final class ProudAuth extends JavaPlugin {
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
             identityClaimService = new IdentityClaimService(runtime.storage(), pluginConfig.settings());
             playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
+            networkSyncService = new BackendNetworkSyncService(this, pluginConfig, logger);
+            networkSyncService.registerChannels();
             spigotUpdateChecker = new SpigotUpdateChecker(task -> Bukkit.getScheduler().runTaskAsynchronously(this, task));
             latestUpdateCheckResult = UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId());
 
@@ -108,6 +112,9 @@ public final class ProudAuth extends JavaPlugin {
         }
         if (runtime != null) {
             bootstrap.close(runtime);
+        }
+        if (networkSyncService != null) {
+            networkSyncService.unregisterChannels();
         }
         if (logger != null) {
             logger.info("Bukkit backend disabled.");
@@ -169,7 +176,8 @@ public final class ProudAuth extends JavaPlugin {
                 () -> runtime.storage(),
                 () -> pluginConfig.settings().debugger(),
                 logger,
-                getServer().getName()
+                pluginConfig.serverId(),
+                pluginConfig.serverId()
         );
 
         backendJoinProbeTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
@@ -189,7 +197,8 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.bruteForceGuard(),
                 runtime.storage(),
                 identityClaimService,
-                logger
+                logger,
+                pluginConfig.serverId()
         );
         playerPreLoginListener = new PlayerPreLoginListener(preLoginService);
 
@@ -201,6 +210,7 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.sessionManager(),
                 playerProtection,
                 identityClaimService,
+                networkSyncService,
                 logger
         );
 
@@ -214,7 +224,8 @@ public final class ProudAuth extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new PlayerQuitListener(
                 runtime.authService(),
                 playerProtection,
-                identityClaimService
+                identityClaimService,
+                networkSyncService
         ), this);
         getServer().getPluginManager().registerEvents(new PlayerMoveListener(pluginConfig, playerProtection, langConfig, logger), this);
         if (pluginConfig.settings().debugger().isEnabled(DebugChannel.TELEPORT_AUDIT)) {
@@ -234,18 +245,19 @@ public final class ProudAuth extends JavaPlugin {
     }
 
     private void registerCommands() {
-        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection, identityClaimService);
-        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService(), identityClaimService);
+        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection, identityClaimService, networkSyncService);
+        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService(), identityClaimService, networkSyncService);
         ChangePasswordCommand changePasswordCommand = new ChangePasswordCommand(this, langConfig, runtime.authService());
-        LogoutCommand logoutCommand = new LogoutCommand(this, langConfig, runtime.authService(), playerProtection);
-        TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection);
-        SpCommand spCommand = new SpCommand(this, langConfig, identityClaimService, playerProtection);
+        LogoutCommand logoutCommand = new LogoutCommand(this, langConfig, runtime.authService(), playerProtection, networkSyncService);
+        TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection, networkSyncService);
+        SpCommand spCommand = new SpCommand(this, langConfig, identityClaimService, playerProtection, networkSyncService);
         PremiumClaimCommand premiumClaimCommand = new PremiumClaimCommand(
                 this,
                 pluginConfig,
                 langConfig,
                 identityClaimService,
-                runtime.premiumVerifier()
+                runtime.premiumVerifier(),
+                networkSyncService
         );
 
         Objects.requireNonNull(getCommand("login")).setExecutor(loginCommand);
@@ -274,6 +286,7 @@ public final class ProudAuth extends JavaPlugin {
                 runtime.sessionManager(),
                 identityClaimService,
                 runtime.premiumVerifier(),
+                networkSyncService,
                 this::reloadPluginState
         );
         Objects.requireNonNull(getCommand("proudauth")).setExecutor(adminCommand);

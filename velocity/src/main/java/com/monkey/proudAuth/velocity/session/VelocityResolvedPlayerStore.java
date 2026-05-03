@@ -21,18 +21,28 @@ public final class VelocityResolvedPlayerStore {
             boolean premiumVerified,
             boolean premiumEnforced
     ) {
-        resolvedPlayers.put(key(username), new ResolvedPlayer(
+        resolvedPlayers.compute(key(username), (ignored, current) -> new ResolvedPlayer(
                 accountUuid,
                 accountName,
                 accountType,
                 premiumNameDetected,
                 premiumVerified,
-                premiumEnforced
+                premiumEnforced,
+                current != null && current.networkAuthenticated(),
+                current == null ? "" : current.authEntryServer()
         ));
     }
 
     public Optional<ResolvedPlayer> find(String username) {
         return Optional.ofNullable(resolvedPlayers.get(key(username)));
+    }
+
+    public void rememberAuthEntryServer(String username, String authEntryServer) {
+        resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> current.withAuthEntryServer(authEntryServer));
+    }
+
+    public void markNetworkAuthenticated(String username, boolean authenticated) {
+        resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> current.withNetworkAuthenticated(authenticated));
     }
 
     public void forget(String username) {
@@ -49,7 +59,34 @@ public final class VelocityResolvedPlayerStore {
             AccountType accountType,
             boolean premiumNameDetected,
             boolean premiumVerified,
-            boolean premiumEnforced
+            boolean premiumEnforced,
+            boolean networkAuthenticated,
+            String authEntryServer
     ) {
+        public ResolvedPlayer withNetworkAuthenticated(boolean authenticated) {
+            return new ResolvedPlayer(
+                    accountUuid,
+                    accountName,
+                    accountType,
+                    premiumNameDetected,
+                    premiumVerified,
+                    premiumEnforced,
+                    authenticated,
+                    authEntryServer
+            );
+        }
+
+        public ResolvedPlayer withAuthEntryServer(String updatedAuthEntryServer) {
+            return new ResolvedPlayer(
+                    accountUuid,
+                    accountName,
+                    accountType,
+                    premiumNameDetected,
+                    premiumVerified,
+                    premiumEnforced,
+                    networkAuthenticated,
+                    updatedAuthEntryServer == null ? "" : updatedAuthEntryServer
+            );
+        }
     }
 }

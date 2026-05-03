@@ -12,6 +12,7 @@ import com.monkey.proudAuth.common.session.SessionManager;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.command.Command;
@@ -39,6 +40,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
             SessionManager sessionManager,
             IdentityClaimService identityClaimService,
             PremiumVerifier premiumVerifier,
+            BackendNetworkSyncService networkSyncService,
             Runnable reloadAction
     ) {
         this.langConfig = langConfig;
@@ -53,6 +55,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
                 sessionManager,
                 identityClaimService,
                 premiumVerifier,
+                networkSyncService,
                 reloadAction
         );
         this.primarySubcommands = List.of(

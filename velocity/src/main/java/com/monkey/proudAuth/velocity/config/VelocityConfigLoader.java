@@ -66,6 +66,12 @@ public final class VelocityConfigLoader {
                         Math.max(250, integer(root, "bridge.backend-check.timeout-ms", 2500)),
                         Math.max(25, integer(root, "bridge.backend-check.poll-interval-ms", 100))
                 ),
+                new VelocityPluginSettings.Routing(
+                        bool(root, "routing.auth-entry.enabled", false),
+                        string(root, "routing.auth-entry.server", ""),
+                        bool(root, "routing.post-auth.enabled", false),
+                        string(root, "routing.post-auth.server", "")
+                ),
                 new VelocityPluginSettings.Guards(
                         bool(root, "guards.enabled", true),
                         Math.max(1, integer(root, "guards.antibot.window-seconds", 12)),

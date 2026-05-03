@@ -33,6 +33,7 @@ public final class VelocityPreLoginListener {
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings> settingsSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
+    private final Supplier<com.monkey.proudAuth.velocity.config.VelocityPluginSettings.Routing> routingSupplier;
     private final VelocityBackendJoinProbeService backendJoinProbeService;
     private final VelocityNetworkGuardService networkGuardService;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore;
@@ -47,6 +48,7 @@ public final class VelocityPreLoginListener {
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings> settingsSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
+            Supplier<com.monkey.proudAuth.velocity.config.VelocityPluginSettings.Routing> routingSupplier,
             VelocityBackendJoinProbeService backendJoinProbeService,
             VelocityNetworkGuardService networkGuardService,
             VelocityWhitelistEnforcementStore whitelistEnforcementStore,
@@ -60,6 +62,7 @@ public final class VelocityPreLoginListener {
         this.langSupplier = langSupplier;
         this.settingsSupplier = settingsSupplier;
         this.debuggerSupplier = debuggerSupplier;
+        this.routingSupplier = routingSupplier;
         this.backendJoinProbeService = backendJoinProbeService;
         this.networkGuardService = networkGuardService;
         this.whitelistEnforcementStore = whitelistEnforcementStore;
@@ -314,10 +317,12 @@ public final class VelocityPreLoginListener {
             return;
         }
 
-        VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress);
+        String authEntryTarget = routingSupplier.get().hasAuthEntryServer() ? routingSupplier.get().authEntryServer() : "";
+        VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, authEntryTarget);
         debugEvent("prelogin_backend_probe",
                 "player", event.getUsername(),
                 "ip", ipAddress,
+                "target_server", authEntryTarget,
                 "status", probeStatus);
         if (probeStatus == VelocityBackendJoinProbeService.ProbeStatus.TIMEOUT
                 || probeStatus == VelocityBackendJoinProbeService.ProbeStatus.ERROR) {

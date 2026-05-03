@@ -4,6 +4,7 @@ import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
@@ -13,6 +14,7 @@ import com.monkey.proudAuth.velocity.commands.ProudAuthVelocityCommand;
 import com.monkey.proudAuth.velocity.config.VelocityConfigLoader;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
+import com.monkey.proudAuth.velocity.listeners.VelocityAuthSyncListener;
 import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectInstrumentation;
 import com.monkey.proudAuth.velocity.listeners.VelocityGameProfileListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityPreLoginListener;
@@ -26,6 +28,7 @@ import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.command.CommandMeta;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 import com.velocitypowered.api.scheduler.ScheduledTask;
 
 import java.nio.file.Path;
@@ -57,6 +60,7 @@ public final class ProudAuthVelocityPlatform {
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
     private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore = new VelocityPendingPremiumAuthStore();
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore = new VelocityPremiumClaimFailureStore();
+    private final MinecraftChannelIdentifier networkChannelIdentifier = MinecraftChannelIdentifier.from(ProudAuthNetworkChannel.CHANNEL_ID);
 
     public ProudAuthVelocityPlatform(Object pluginOwner, ProxyServer proxyServer, org.slf4j.Logger logger, Path dataDirectory) {
         this.pluginOwner = pluginOwner;
@@ -120,6 +124,7 @@ public final class ProudAuthVelocityPlatform {
                     settings.premium().claimFailedDeniedMessage()
             );
             disconnectInstrumentation.install();
+            proxyServer.getChannelRegistrar().register(networkChannelIdentifier);
 
             VelocityBackendJoinProbeService backendJoinProbeService = new VelocityBackendJoinProbeService(
                     () -> storage,
@@ -135,6 +140,7 @@ public final class ProudAuthVelocityPlatform {
                     () -> lang,
                     () -> settings.toCommonSettings(),
                     () -> settings.debugger(),
+                    () -> settings.routing(),
                     backendJoinProbeService,
                     networkGuardService,
                     whitelistEnforcementStore,
@@ -156,10 +162,19 @@ public final class ProudAuthVelocityPlatform {
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityServerTransitionListener(
+                    proxyServer,
                     resolvedPlayerStore,
                     premiumClaimFailureStore,
                     () -> bridgeService,
+                    () -> settings.routing(),
                     () -> lang,
+                    () -> settings.debugger(),
+                    platformLogger
+            ));
+            proxyServer.getEventManager().register(pluginOwner, new VelocityAuthSyncListener(
+                    proxyServer,
+                    resolvedPlayerStore,
+                    () -> settings.routing(),
                     () -> settings.debugger(),
                     platformLogger
             ));
@@ -189,6 +204,7 @@ public final class ProudAuthVelocityPlatform {
                 disconnectInstrumentation.shutdown();
                 disconnectInstrumentation = null;
             }
+            proxyServer.getChannelRegistrar().unregister(networkChannelIdentifier);
             if (storage != null) {
                 storage.close();
             }

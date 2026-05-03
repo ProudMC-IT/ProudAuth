@@ -266,22 +266,6 @@ public final class VelocityGameProfileListener {
             AccountType accountType
     ) {
         networkGuardService.recordResolvedProfile(username, ipAddress, accountType);
-
-        bridgeServiceSupplier.get()
-                .publish(
-                        username,
-                        accountName,
-                        accountUuid,
-                        accountType,
-                        ipAddress
-                )
-                .exceptionally(exception -> {
-                    debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_publish_error",
-                            "player", username,
-                            "error", exception.getMessage());
-                    return null;
-                })
-                .join();
     }
 
     private void debugEvent(DebugChannel channel, String eventName, Object... keyValues) {

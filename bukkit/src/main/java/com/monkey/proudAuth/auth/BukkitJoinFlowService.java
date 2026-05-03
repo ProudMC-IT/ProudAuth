@@ -9,6 +9,7 @@ import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.session.SessionManager;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
@@ -26,6 +27,7 @@ public final class BukkitJoinFlowService {
     private final SessionManager sessionManager;
     private final PlayerProtection playerProtection;
     private final IdentityClaimService identityClaimService;
+    private final BackendNetworkSyncService networkSyncService;
     private final ProudAuthConsoleLogger logger;
 
     public BukkitJoinFlowService(
@@ -36,6 +38,7 @@ public final class BukkitJoinFlowService {
             SessionManager sessionManager,
             PlayerProtection playerProtection,
             IdentityClaimService identityClaimService,
+            BackendNetworkSyncService networkSyncService,
             ProudAuthConsoleLogger logger
     ) {
         this.plugin = plugin;
@@ -45,11 +48,22 @@ public final class BukkitJoinFlowService {
         this.sessionManager = sessionManager;
         this.playerProtection = playerProtection;
         this.identityClaimService = identityClaimService;
+        this.networkSyncService = networkSyncService;
         this.logger = logger;
     }
 
     public void handleJoin(Player player, ResolvedLogin resolvedLogin) {
+        networkSyncService.remember(player, resolvedLogin);
         authService.trackPlayer(player.getUniqueId(), resolvedLogin.uuid(), player.getName(), resolvedLogin.accountType());
+
+        if (resolvedLogin.joinMode() == com.monkey.proudAuth.common.bridge.BridgeJoinMode.NETWORK_TRANSFER) {
+            if (!resolvedLogin.networkAuthenticated()) {
+                player.kick(langConfig.message("kick-bridge-required"));
+                return;
+            }
+            handleTrustedNetworkTransferJoin(player, resolvedLogin);
+            return;
+        }
 
         boolean rawBypassPermission = player.hasPermission("proudauth.bypass.auth");
         boolean bypassAuth = rawBypassPermission && resolvedLogin.accountType() != AccountType.PREMIUM;
@@ -96,6 +110,10 @@ public final class BukkitJoinFlowService {
         continueJoinAfterClaimResolution(player, resolvedLogin);
     }
 
+    public void refreshVisibility() {
+        playerProtection.refreshVisibility();
+    }
+
     private void continueJoinAfterClaimResolution(Player player, ResolvedLogin resolvedLogin) {
         playerProtection.exitClaimChoicePhase(player);
         if (resolvedLogin.accountType() == AccountType.PREMIUM && pluginConfig.settings().premium().autoLogin()) {
@@ -128,6 +146,37 @@ public final class BukkitJoinFlowService {
                 }));
     }
 
+    private void handleTrustedNetworkTransferJoin(Player player, ResolvedLogin resolvedLogin) {
+        playerProtection.exitClaimChoicePhase(player);
+        authService.autoAuthenticate(
+                        player.getUniqueId(),
+                        player.getName(),
+                        resolvedLogin.accountType(),
+                        AuthState.AUTHENTICATED,
+                        resolvedLogin.ipAddress()
+                )
+                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (!player.isOnline()) {
+                        return;
+                    }
+                    if (exception != null) {
+                        debugEvent(DebugChannel.BRIDGE_FLOW, "join_network_transfer_error",
+                                "player", player.getName(),
+                                "uuid", player.getUniqueId(),
+                                "error", exception.getMessage());
+                        player.kick(langConfig.message("kick-bridge-required"));
+                        return;
+                    }
+                    if (playerProtection.isProtected(player.getUniqueId())) {
+                        playerProtection.removeProtection(player);
+                    }
+                    debugEvent(DebugChannel.BRIDGE_FLOW, "join_network_transfer_complete",
+                            "player", player.getName(),
+                            "uuid", player.getUniqueId(),
+                            "account_type", resolvedLogin.accountType());
+                }));
+    }
+
     private void handleBypassJoin(Player player, ResolvedLogin resolvedLogin) {
         playerProtection.exitClaimChoicePhase(player);
         debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_start",
@@ -147,6 +196,7 @@ public final class BukkitJoinFlowService {
                         return;
                     }
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyAuthCompleted(player);
                     debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_complete",
                             "player", player.getName(),
                             "uuid", player.getUniqueId());
@@ -199,6 +249,7 @@ public final class BukkitJoinFlowService {
                         if (playerProtection.isProtected(player.getUniqueId())) {
                             playerProtection.removeProtection(player);
                         }
+                        networkSyncService.notifyAuthCompleted(player);
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId());
@@ -294,6 +345,7 @@ public final class BukkitJoinFlowService {
         switch (outcome) {
             case SESSION_RESTORED -> {
                 playerProtection.removeProtection(player);
+                networkSyncService.notifyAuthCompleted(player);
                 debugEvent(DebugChannel.PROTECTION_FLOW, "join_protection_removed",
                         "player", player.getName(),
                         "uuid", player.getUniqueId());

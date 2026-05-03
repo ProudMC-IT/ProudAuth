@@ -2,6 +2,7 @@ package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
@@ -19,12 +20,20 @@ public final class LogoutCommand implements CommandExecutor, TabCompleter {
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
+    private final BackendNetworkSyncService networkSyncService;
 
-    public LogoutCommand(JavaPlugin plugin, LangConfig langConfig, AuthService authService, PlayerProtection playerProtection) {
+    public LogoutCommand(
+            JavaPlugin plugin,
+            LangConfig langConfig,
+            AuthService authService,
+            PlayerProtection playerProtection,
+            BackendNetworkSyncService networkSyncService
+    ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -56,6 +65,7 @@ public final class LogoutCommand implements CommandExecutor, TabCompleter {
             }
 
             playerProtection.applyProtection(player);
+            networkSyncService.notifyAuthInvalidated(player);
             langConfig.send(player, "logout-success");
             langConfig.send(player, "not-authenticated");
         }));

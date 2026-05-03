@@ -1,5 +1,18 @@
+# ProudAuth Velocity proxy configuration
+#
+# This file is used only on the Velocity proxy plugin.
+# The proxy side is responsible for:
+# - premium/cracked resolution before backend join
+# - network guard / anti-abuse checks
+# - deciding the auth entry backend
+# - deciding the post-auth destination backend
+# - publishing trusted bridge assertions for all backend transfers
+
+# Language file loaded from the proxy data folder lang directory.
+# Examples: "it", "en", "it.yml", "en.yml"
 language: "it"
 
+# Shared MySQL storage used by proxy and all backend servers.
 database:
   host: "localhost"
   port: 3306
@@ -8,6 +21,8 @@ database:
   password: "password"
   pool-size: 10
 
+# Internal debug channels.
+# Keep enabled=false in production unless you are troubleshooting.
 debugger:
   enabled: false
   player-resolution: true
@@ -23,8 +38,12 @@ debugger:
   command-flow: true
 
 premium:
+  # Enables premium/cracked resolution on the proxy.
   enabled: true
+
+  # Timeout in milliseconds for Mojang/Premium verification requests.
   api-timeout-ms: 3000
+
   # Premium nickname policy:
   # - STRICT_GLOBAL (default): if Mojang says the nickname is premium, Velocity always forces
   #   premium authentication and cracked clients using that nickname are denied.
@@ -37,43 +56,115 @@ premium:
   #   Otherwise it creates a cracked/SP pending claim; after /login or /register the nickname
   #   stays cracked forever, even if the real Mojang owner joins later.
   mode: STRICT_GLOBAL
+
+  # Lifetime in seconds for pending premium/cracked claim decisions.
   claim-pending-seconds: 300
+
   proxy-custom:
     # What PROXY_CUSTOM should do when the client/proxy cannot use ProudX modern proof.
-    # - FORCE_ONLINE (default): fallback to Mojang online-mode, secure and legacy-compatible, but Invalid session can appear.
+    # - FORCE_ONLINE (default): fallback to Mojang online-mode, secure and legacy-compatible,
+    #   but Invalid session can appear.
     # - DENY_PREMIUM_CLAIM: deny the premium claim and ask for a modern client or /sp.
     # - FORCE_SP: only for pending /premium claims, enter offline again and let the player choose /sp.
     legacy-unsupported-action: FORCE_ONLINE
+
+  # Custom disconnect message used when a premium nickname requires real premium auth.
   online-mode-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"
+
+  # Custom disconnect/message used when a premium claim attempt failed and the player must retry.
   claim-failed-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Verifica premium fallita</red><newline><gray>Non e stato possibile confermare questo nickname come premium.</gray><newline><yellow>Rientra e scegli di nuovo <white>/sp</white><yellow> oppure <white>/premium</white><yellow>.</yellow>"
 
 bridge:
+  # Enables trusted proxy->backend bridge assertions.
   enabled: false
+
+  # - FALLBACK: if a backend cannot verify the bridge assertion, it may still fallback
+  #   to local checks depending on backend config
+  # - STRICT: the backend should deny access if the assertion is missing/invalid
   mode: FALLBACK
+
+  # Transport currently supported by ProudAuth.
   transport: MYSQL
+
+  # Shared secret used to sign bridge assertions.
+  # Must be identical on proxy and all backends.
   shared-secret: "change-me"
+
+  # Assertion lifetime in seconds.
   assertion-ttl-seconds: 10
+
   backend-check:
+    # If true, the proxy verifies that the target backend with ProudAuth is responsive
+    # before finishing the login flow.
     enabled: true
+
+    # Maximum wait time in milliseconds for backend probe acknowledgement.
     timeout-ms: 2500
+
+    # Poll interval in milliseconds while waiting for backend probe acknowledgement.
     poll-interval-ms: 100
 
+routing:
+  auth-entry:
+    # If true, all players first enter the configured auth backend.
+    # This includes:
+    # - players who must /login
+    # - players who must /register
+    # - players restored by session
+    # - premium players auto-authenticated
+    enabled: false
+
+    # Exact Velocity backend server name used as auth entry.
+    server: "auth"
+
+  post-auth:
+    # If true, once auth is completed on the auth entry backend,
+    # the proxy sends the player to the configured destination backend.
+    enabled: false
+
+    # Exact Velocity backend server name used after successful authentication.
+    server: "lobby"
+
 guards:
+  # Enables proxy-side network guards and heuristics.
   enabled: true
+
   antibot:
+    # Time window in seconds used to count rapid connections from one IP.
     window-seconds: 12
+
+    # Max connections allowed from one IP during the anti-bot window.
     max-connections-per-ip: 8
+
+    # Temporary ban duration in seconds after anti-bot threshold is exceeded.
     ban-seconds: 900
+
   identity:
+    # Time window in seconds used to correlate usernames and IPs.
     window-seconds: 3600
+
+    # Max distinct usernames seen from one IP inside the identity window.
     max-usernames-per-ip: 4
+
+    # Max distinct IPs seen for one username inside the identity window.
     max-ips-per-username: 5
+
+    # Temporary ban duration in seconds after identity guard threshold is exceeded.
     ban-seconds: 7200
+
+  # How many days of observed network history ProudAuth should retain.
   history-retention-days: 30
 
 reports:
   auto-export:
+    # If true, Velocity periodically exports security/risk CSV reports.
     enabled: true
+
+    # Export interval in minutes.
     interval-minutes: 60
+
+    # How many hours of history each export should include.
     window-hours: 24
+
+    # Max rows/items included in each export.
     limit: 50

@@ -6,6 +6,7 @@ public record VelocityPluginSettings(
         Database database,
         Premium premium,
         Bridge bridge,
+        Routing routing,
         Guards guards,
         Reports reports,
         String language,
@@ -50,7 +51,26 @@ public record VelocityPluginSettings(
                         false,
                         false,
                         60,
-                        new ProudAuthSettings.AuthSpawn(false, "world", 0.5D, 64D, 0.5D, 0F, 0F)
+                        new ProudAuthSettings.AuthSpawn(false, false, "world", 0.5D, 64D, 0.5D, 0F, 0F),
+                        false,
+                        java.util.List.of(),
+                        java.util.List.of(),
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        false,
+                        ProudAuthSettings.VisualEffect.NONE
                 ),
                 new ProudAuthSettings.PasswordPolicy(1, 72, ""),
                 new ProudAuthSettings.Proxy(ProudAuthSettings.ProxyMode.VELOCITY),
@@ -117,5 +137,20 @@ public record VelocityPluginSettings(
             int autoExportWindowHours,
             int autoExportLimit
     ) {
+    }
+
+    public record Routing(
+            boolean authEntryEnabled,
+            String authEntryServer,
+            boolean postAuthEnabled,
+            String postAuthServer
+    ) {
+        public boolean hasAuthEntryServer() {
+            return authEntryEnabled && authEntryServer != null && !authEntryServer.isBlank();
+        }
+
+        public boolean hasPostAuthServer() {
+            return postAuthEnabled && postAuthServer != null && !postAuthServer.isBlank();
+        }
     }
 }

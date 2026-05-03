@@ -3,6 +3,7 @@ package com.monkey.proudAuth.common.config;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -80,11 +81,39 @@ public record ProudAuthSettings(
             boolean invisibleUntilAuth,
             boolean noDropOnDeath,
             long authTimeoutSeconds,
-            AuthSpawn authSpawn
+            AuthSpawn authSpawn,
+            boolean blockCommands,
+            List<String> allowedCommandsWhileProtected,
+            List<String> allowedCommandsDuringClaimChoice,
+            boolean blockBlockBreak,
+            boolean blockBlockPlace,
+            boolean blockPvPAttack,
+            boolean blockPvPTakeDamage,
+            boolean blockItemPickup,
+            boolean blockFoodLevelChange,
+            boolean blockItemConsume,
+            boolean blockSwapHandItems,
+            boolean blockBookEdit,
+            boolean blockInventory,
+            boolean blockItemDrop,
+            boolean blockEntityInteract,
+            boolean blockWorldInteract,
+            boolean hideProtectedPlayerFromOthers,
+            boolean hideOtherPlayersFromProtectedPlayer,
+            VisualEffect visualEffect
     ) {
     }
 
-    public record AuthSpawn(boolean enabled, String world, double x, double y, double z, float yaw, float pitch) {
+    public record AuthSpawn(
+            boolean enabled,
+            boolean useWorldSpawn,
+            String world,
+            double x,
+            double y,
+            double z,
+            float yaw,
+            float pitch
+    ) {
     }
 
     public record PasswordPolicy(int minLength, int maxLength, String complexityRegex) {
@@ -218,6 +247,20 @@ public record ProudAuthSettings(
                 return LegacyUnsupportedAction.valueOf(raw.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException exception) {
                 return FORCE_ONLINE;
+            }
+        }
+    }
+
+    public enum VisualEffect {
+        NONE,
+        BLINDNESS,
+        DARKNESS;
+
+        public static VisualEffect from(String raw) {
+            try {
+                return VisualEffect.valueOf(raw.toUpperCase(Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                return NONE;
             }
         }
     }

@@ -2,6 +2,7 @@ package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
@@ -31,12 +32,20 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
+    private final BackendNetworkSyncService networkSyncService;
 
-    public TwoFactorCommand(JavaPlugin plugin, LangConfig langConfig, AuthService authService, PlayerProtection playerProtection) {
+    public TwoFactorCommand(
+            JavaPlugin plugin,
+            LangConfig langConfig,
+            AuthService authService,
+            PlayerProtection playerProtection,
+            BackendNetworkSyncService networkSyncService
+    ) {
         this.plugin = plugin;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -274,6 +283,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             switch (result.status()) {
                 case SUCCESS -> {
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyAuthCompleted(player);
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
                 }
                 case INVALID -> langConfig.send(player, "totp-invalid");

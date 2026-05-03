@@ -1,5 +1,6 @@
 package com.monkey.proudAuth.auth;
 
+import com.monkey.proudAuth.common.bridge.BridgeJoinMode;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
@@ -28,6 +29,7 @@ public final class BukkitPreLoginService {
     private final StorageProvider storage;
     private final IdentityClaimService identityClaimService;
     private final ProudAuthConsoleLogger logger;
+    private final String serverId;
 
     public BukkitPreLoginService(
             PluginConfig pluginConfig,
@@ -37,7 +39,8 @@ public final class BukkitPreLoginService {
             BruteForceGuard bruteForceGuard,
             StorageProvider storage,
             IdentityClaimService identityClaimService,
-            ProudAuthConsoleLogger logger
+            ProudAuthConsoleLogger logger,
+            String serverId
     ) {
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
@@ -47,6 +50,7 @@ public final class BukkitPreLoginService {
         this.storage = storage;
         this.identityClaimService = identityClaimService;
         this.logger = logger;
+        this.serverId = serverId;
     }
 
     public Optional<ResolvedLogin> resolve(AsyncPlayerPreLoginEvent event) {
@@ -117,7 +121,7 @@ public final class BukkitPreLoginService {
     }
 
     private Optional<ResolvedLogin> resolveForVelocity(AsyncPlayerPreLoginEvent event, String ip) {
-        ProxyBridgeService.VerificationResult bridgeResult = bridgeService.consumeAndVerify(event.getName(), event.getUniqueId(), ip).join();
+        ProxyBridgeService.VerificationResult bridgeResult = bridgeService.consumeAndVerify(event.getName(), event.getUniqueId(), ip, serverId).join();
         debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_verification",
                 "player", event.getName(),
                 "status", bridgeResult.status(),
@@ -166,7 +170,7 @@ public final class BukkitPreLoginService {
                         "stored_uuid", dbAccount.get().uuid(),
                         "stored_name", dbAccount.get().username());
             }
-            return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ip));
+            return Optional.of(ResolvedLogin.standalone(currentUuid, event.getName(), AccountType.CRACKED, ip, serverId));
         }
 
         UUID mojangUuid = premiumCheck.resolvedUuid();
@@ -183,7 +187,17 @@ public final class BukkitPreLoginService {
         }
 
         applyProfile(event, mojangUuid, premiumCheck.resolvedName());
-        return Optional.of(new ResolvedLogin(mojangUuid, premiumCheck.resolvedName(), AccountType.PREMIUM, ip));
+        return Optional.of(new ResolvedLogin(
+                mojangUuid,
+                premiumCheck.resolvedName(),
+                AccountType.PREMIUM,
+                ip,
+                BridgeJoinMode.AUTH_ENTRY,
+                serverId,
+                false,
+                "",
+                false
+        ));
     }
 
     private ResolvedLogin applyBridgeAssertion(AsyncPlayerPreLoginEvent event, ProxyBridgeAssertion assertion) {
@@ -197,7 +211,17 @@ public final class BukkitPreLoginService {
                 "player", event.getName(),
                 "current_uuid", event.getUniqueId(),
                 "asserted_uuid", assertion.uuid());
-        return new ResolvedLogin(assertion.uuid(), assertion.resolvedName(), assertion.accountType(), assertion.ipAddress());
+        return new ResolvedLogin(
+                assertion.uuid(),
+                assertion.resolvedName(),
+                assertion.accountType(),
+                assertion.ipAddress(),
+                assertion.joinMode(),
+                assertion.authEntryServer(),
+                assertion.authEntryEnforced(),
+                assertion.postAuthServer(),
+                assertion.networkAuthenticated()
+        );
     }
 
     private Optional<ResolvedLogin> resolveVelocityFallback(AsyncPlayerPreLoginEvent event, String ipAddress) {
@@ -209,10 +233,10 @@ public final class BukkitPreLoginService {
         if (identityClaimService.isLocalClaimModeEnabled()) {
             Optional<AccountType> effectiveClaim = identityClaimService.resolveEffectiveClaim(event.getName()).join();
             if (effectiveClaim.isEmpty()) {
-                return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
+                return Optional.of(ResolvedLogin.standalone(currentUuid, event.getName(), AccountType.CRACKED, ipAddress, serverId));
             }
             if (effectiveClaim.get() == AccountType.CRACKED) {
-                return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
+                return Optional.of(ResolvedLogin.standalone(currentUuid, event.getName(), AccountType.CRACKED, ipAddress, serverId));
             }
         }
 
@@ -244,7 +268,12 @@ public final class BukkitPreLoginService {
                     mojangUuid,
                     premiumCheck.resolvedName(),
                     AccountType.PREMIUM,
-                    ipAddress
+                    ipAddress,
+                    BridgeJoinMode.AUTH_ENTRY,
+                    serverId,
+                    false,
+                    "",
+                    false
             ));
         }
 
@@ -254,7 +283,7 @@ public final class BukkitPreLoginService {
             return Optional.empty();
         }
 
-        return Optional.of(new ResolvedLogin(currentUuid, event.getName(), AccountType.CRACKED, ipAddress));
+        return Optional.of(ResolvedLogin.standalone(currentUuid, event.getName(), AccountType.CRACKED, ipAddress, serverId));
     }
 
     private void applyProfile(AsyncPlayerPreLoginEvent event, UUID uuid, String name) {

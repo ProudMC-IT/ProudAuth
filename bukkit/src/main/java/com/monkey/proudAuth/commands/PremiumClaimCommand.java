@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -22,19 +23,22 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
     private final LangConfig langConfig;
     private final IdentityClaimService identityClaimService;
     private final PremiumVerifier premiumVerifier;
+    private final BackendNetworkSyncService networkSyncService;
 
     public PremiumClaimCommand(
             JavaPlugin plugin,
             PluginConfig pluginConfig,
             LangConfig langConfig,
             IdentityClaimService identityClaimService,
-            PremiumVerifier premiumVerifier
+            PremiumVerifier premiumVerifier,
+            BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
         this.identityClaimService = identityClaimService;
         this.premiumVerifier = premiumVerifier;
+        this.networkSyncService = networkSyncService;
     }
 
     @Override
@@ -53,6 +57,10 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
         }
         if (pluginConfig.settings().proxy().mode() != com.monkey.proudAuth.common.config.ProudAuthSettings.ProxyMode.VELOCITY) {
             langConfig.send(player, "claim-premium-unsupported");
+            return true;
+        }
+        if (!networkSyncService.allowsManualAuthentication(player)) {
+            langConfig.send(player, "auth-server-required");
             return true;
         }
 

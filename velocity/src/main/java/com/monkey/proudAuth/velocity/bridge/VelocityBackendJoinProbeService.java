@@ -34,9 +34,9 @@ public final class VelocityBackendJoinProbeService {
         this.logger = logger;
     }
 
-    public ProbeStatus probe(String username, String ipAddress) {
+    public ProbeStatus probe(String username, String ipAddress, String targetServer) {
         VelocityPluginSettings.Bridge bridge = bridgeSettingsSupplier.get();
-        if (!bridge.enabled() || !bridge.backendCheckEnabled()) {
+        if (!bridge.enabled() || !bridge.backendCheckEnabled() || targetServer == null || targetServer.isBlank()) {
             return ProbeStatus.SKIPPED;
         }
 
@@ -49,11 +49,12 @@ public final class VelocityBackendJoinProbeService {
 
         try {
             storageSupplier.get()
-                    .createBackendJoinProbe(probeId, canonicalUsername, ipAddress, issuedAt, expiresAt)
+                    .createBackendJoinProbe(probeId, canonicalUsername, ipAddress, targetServer, issuedAt, expiresAt)
                     .join();
             debugEvent("backend_probe_created",
                     "player", username,
                     "ip", ipAddress,
+                    "target_server", targetServer,
                     "probe_id", probeId,
                     "timeout_ms", timeoutMs,
                     "poll_ms", pollIntervalMs);
@@ -64,6 +65,7 @@ public final class VelocityBackendJoinProbeService {
                 if (acknowledged) {
                     debugEvent("backend_probe_acknowledged",
                             "player", username,
+                            "target_server", targetServer,
                             "probe_id", probeId);
                     return ProbeStatus.ACKNOWLEDGED;
                 }
@@ -72,6 +74,7 @@ public final class VelocityBackendJoinProbeService {
                 if (remainingNanos <= 0L) {
                     debugEvent("backend_probe_timeout",
                             "player", username,
+                            "target_server", targetServer,
                             "probe_id", probeId);
                     return ProbeStatus.TIMEOUT;
                 }
@@ -84,11 +87,13 @@ public final class VelocityBackendJoinProbeService {
             Thread.currentThread().interrupt();
             debugEvent("backend_probe_interrupted",
                     "player", username,
+                    "target_server", targetServer,
                     "probe_id", probeId);
             return ProbeStatus.ERROR;
         } catch (Exception exception) {
             debugEvent("backend_probe_error",
                     "player", username,
+                    "target_server", targetServer,
                     "probe_id", probeId,
                     "error", exception.getMessage());
             return ProbeStatus.ERROR;
@@ -97,10 +102,12 @@ public final class VelocityBackendJoinProbeService {
                 storageSupplier.get().deleteBackendJoinProbe(probeId).join();
                 debugEvent("backend_probe_cleaned",
                         "player", username,
+                        "target_server", targetServer,
                         "probe_id", probeId);
             } catch (Exception exception) {
                 debugEvent("backend_probe_cleanup_error",
                         "player", username,
+                        "target_server", targetServer,
                         "probe_id", probeId,
                         "error", exception.getMessage());
             }
