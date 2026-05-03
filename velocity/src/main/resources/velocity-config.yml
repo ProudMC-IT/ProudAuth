@@ -261,6 +261,17 @@ routing:
     # Exact Velocity backend name used as auth entry server.
     server: "auth"
 
+  authenticated-join:
+    # Decides what happens when the proxy has already verified the player as premium
+    # during the login pipeline.
+    #
+    # - ALWAYS_PASS_AUTH: current behavior, the player still enters auth first
+    # - DIRECT_TO_POST_AUTH: skip auth and enter the post-auth server directly
+    #
+    # This applies only to proxy-verified premium joins. Cracked/session-based flows
+    # still use the normal auth backend logic.
+    mode: ALWAYS_PASS_AUTH
+
   post-auth:
     # If true, after successful authentication the proxy sends the player
     # to the configured destination backend.
@@ -268,6 +279,14 @@ routing:
 
     # Exact Velocity backend name used after successful authentication.
     server: "lobby"
+
+    # Delay in milliseconds before the proxy executes the auth -> post-auth redirect.
+    # Useful if you want to slow down all redirects uniformly.
+    redirect-delay-ms: 0
+
+    # Extra-safe redirect delay for legacy clients (< 1.19.1).
+    # Older clients are more sensitive to immediate backend switches right after auth.
+    legacy-redirect-delay-ms: 150
 
 guards:
   # Enables proxy-side anti-abuse and suspicious-network checks.

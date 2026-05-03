@@ -10,6 +10,7 @@ import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.proxy.ServerConnection;
 import com.velocitypowered.api.proxy.messages.MinecraftChannelIdentifier;
 
@@ -17,6 +18,7 @@ import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public final class VelocityAuthSyncListener {
@@ -24,6 +26,7 @@ public final class VelocityAuthSyncListener {
     private static final MinecraftChannelIdentifier CHANNEL_IDENTIFIER =
             MinecraftChannelIdentifier.from(ProudAuthNetworkChannel.CHANNEL_ID);
 
+    private final Object pluginOwner;
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
@@ -31,12 +34,14 @@ public final class VelocityAuthSyncListener {
     private final ProudAuthConsoleLogger logger;
 
     public VelocityAuthSyncListener(
+            Object pluginOwner,
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
+        this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
@@ -92,6 +97,16 @@ public final class VelocityAuthSyncListener {
     }
 
     private void handleAuthCompleted(Player player, String sourceServer) {
+        boolean alreadyAuthenticated = resolvedPlayerStore.find(player.getUsername())
+                .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
+                .orElse(false);
+        if (alreadyAuthenticated) {
+            debugEvent("auth_sync_completed_duplicate_ignored",
+                    "player", player.getUsername(),
+                    "server", sourceServer);
+            return;
+        }
+
         resolvedPlayerStore.markNetworkAuthenticated(player.getUsername(), true);
         debugEvent("auth_sync_completed",
                 "player", player.getUsername(),
@@ -103,11 +118,29 @@ public final class VelocityAuthSyncListener {
         }
 
         proxyServer.getServer(routing.postAuthServer()).ifPresent(targetServer -> {
-            player.createConnectionRequest(targetServer).fireAndForget();
-            debugEvent("auth_sync_redirect_post_auth",
+            boolean legacyClient = isLegacyClient(player.getUsername());
+            int delayMs = redirectDelayMillis(player.getUsername(), routing);
+            if (delayMs <= 0) {
+                player.createConnectionRequest(targetServer).fireAndForget();
+                debugEvent("auth_sync_redirect_post_auth",
+                        "player", player.getUsername(),
+                        "from", sourceServer,
+                        "target", routing.postAuthServer(),
+                        "delay_ms", 0,
+                        "legacy_client", legacyClient);
+                return;
+            }
+
+            proxyServer.getScheduler()
+                    .buildTask(pluginOwner, () -> executePostAuthRedirect(player.getUsername(), sourceServer, targetServer, delayMs))
+                    .delay(delayMs, TimeUnit.MILLISECONDS)
+                    .schedule();
+            debugEvent("auth_sync_redirect_post_auth_scheduled",
                     "player", player.getUsername(),
                     "from", sourceServer,
-                    "target", routing.postAuthServer());
+                    "target", routing.postAuthServer(),
+                    "delay_ms", delayMs,
+                    "legacy_client", legacyClient);
         });
     }
 
@@ -136,5 +169,29 @@ public final class VelocityAuthSyncListener {
 
     private void debugEvent(String eventName, Object... keyValues) {
         logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
+    }
+
+    private void executePostAuthRedirect(String username, String sourceServer, RegisteredServer targetServer, int delayMs) {
+        proxyServer.getPlayer(username).ifPresent(player -> {
+            player.createConnectionRequest(targetServer).fireAndForget();
+            debugEvent("auth_sync_redirect_post_auth",
+                    "player", username,
+                    "from", sourceServer,
+                    "target", targetServer.getServerInfo().getName(),
+                    "delay_ms", delayMs,
+                    "legacy_client", isLegacyClient(username));
+        });
+    }
+
+    private int redirectDelayMillis(String username, ProudAuthNetworkConfig.Routing routing) {
+        return isLegacyClient(username)
+                ? routing.legacyPostAuthRedirectDelayMs()
+                : routing.postAuthRedirectDelayMs();
+    }
+
+    private boolean isLegacyClient(String username) {
+        return resolvedPlayerStore.find(username)
+                .map(VelocityResolvedPlayerStore.ResolvedPlayer::legacyClient)
+                .orElse(false);
     }
 }

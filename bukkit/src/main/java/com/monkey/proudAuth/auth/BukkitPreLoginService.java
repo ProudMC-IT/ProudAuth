@@ -196,6 +196,7 @@ public final class BukkitPreLoginService {
                 serverId,
                 false,
                 "",
+                false,
                 false
         ));
     }
@@ -220,7 +221,8 @@ public final class BukkitPreLoginService {
                 assertion.authEntryServer(),
                 assertion.authEntryEnforced(),
                 assertion.postAuthServer(),
-                assertion.networkAuthenticated()
+                assertion.networkAuthenticated(),
+                assertion.legacyClient()
         );
     }
 
@@ -273,6 +275,7 @@ public final class BukkitPreLoginService {
                     serverId,
                     false,
                     "",
+                    false,
                     false
             ));
         }

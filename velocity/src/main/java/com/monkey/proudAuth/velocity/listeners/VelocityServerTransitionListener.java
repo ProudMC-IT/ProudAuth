@@ -82,15 +82,27 @@ public final class VelocityServerTransitionListener {
 
         VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayer.get();
         ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        boolean proxyAuthenticatedInitialJoin = shouldDirectAuthenticatedJoin(initialConnection, profile, routing);
+        if (proxyAuthenticatedInitialJoin) {
+            resolvedPlayerStore.markNetworkAuthenticated(event.getPlayer().getUsername(), true);
+        }
+        boolean effectiveNetworkAuthenticated = profile.networkAuthenticated() || proxyAuthenticatedInitialJoin;
         String authEntryServer = resolveAuthEntryServer(initialConnection, previousServer, selectedTargetServer, profile, routing);
-        String targetServer = resolveEffectiveTargetServer(initialConnection, selectedTargetServer, profile, authEntryServer);
+        String targetServer = resolveEffectiveTargetServer(
+                initialConnection,
+                selectedTargetServer,
+                authEntryServer,
+                routing,
+                effectiveNetworkAuthenticated,
+                proxyAuthenticatedInitialJoin
+        );
         RegisteredServer targetRegisteredServer = findServer(targetServer).orElse(null);
         if (targetRegisteredServer != null && !targetServer.equalsIgnoreCase(selectedTargetServer)) {
             event.setResult(ServerPreConnectEvent.ServerResult.allowed(targetRegisteredServer));
         }
         resolvedPlayerStore.rememberAuthEntryServer(event.getPlayer().getUsername(), authEntryServer);
 
-        BridgeJoinMode joinMode = profile.networkAuthenticated()
+        BridgeJoinMode joinMode = effectiveNetworkAuthenticated
                 ? BridgeJoinMode.NETWORK_TRANSFER
                 : BridgeJoinMode.AUTH_ENTRY;
         bridgeServiceSupplier.get()
@@ -105,7 +117,8 @@ public final class VelocityServerTransitionListener {
                         authEntryServer,
                         routing.hasAuthEntryServer(),
                         routing.hasPostAuthServer() ? routing.postAuthServer() : "",
-                        profile.networkAuthenticated()
+                        effectiveNetworkAuthenticated,
+                        profile.legacyClient()
                 )
                 .exceptionally(exception -> {
                     debugEvent("server_switch_publish_error",
@@ -120,7 +133,8 @@ public final class VelocityServerTransitionListener {
                 "player", event.getPlayer().getUsername(),
                 "target", targetServer,
                 "join_mode", joinMode,
-                "network_authenticated", profile.networkAuthenticated(),
+                "network_authenticated", effectiveNetworkAuthenticated,
+                "proxy_authenticated_initial_bypass", proxyAuthenticatedInitialJoin,
                 "resolved_uuid", profile.accountUuid(),
                 "account_type", profile.accountType());
     }
@@ -167,10 +181,15 @@ public final class VelocityServerTransitionListener {
     private String resolveEffectiveTargetServer(
             boolean initialConnection,
             String selectedTargetServer,
-            VelocityResolvedPlayerStore.ResolvedPlayer profile,
-            String authEntryServer
+            String authEntryServer,
+            ProudAuthNetworkConfig.Routing routing,
+            boolean networkAuthenticated,
+            boolean proxyAuthenticatedInitialJoin
     ) {
-        if (profile.networkAuthenticated()) {
+        if (networkAuthenticated) {
+            if (initialConnection && proxyAuthenticatedInitialJoin && routing.hasPostAuthServer()) {
+                return routing.postAuthServer();
+            }
             return selectedTargetServer;
         }
         if (initialConnection) {
@@ -180,6 +199,18 @@ public final class VelocityServerTransitionListener {
             return authEntryServer;
         }
         return selectedTargetServer;
+    }
+
+    private boolean shouldDirectAuthenticatedJoin(
+            boolean initialConnection,
+            VelocityResolvedPlayerStore.ResolvedPlayer profile,
+            ProudAuthNetworkConfig.Routing routing
+    ) {
+        return initialConnection
+                && !profile.networkAuthenticated()
+                && profile.accountType() == AccountType.PREMIUM
+                && profile.premiumVerified()
+                && routing.shouldDirectAuthenticatedJoinsToPostAuth();
     }
 
     private Optional<RegisteredServer> findServer(String serverName) {

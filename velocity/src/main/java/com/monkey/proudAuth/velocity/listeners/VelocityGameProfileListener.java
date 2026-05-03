@@ -19,6 +19,7 @@ import com.velocitypowered.api.event.ResultedEvent;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.LoginEvent;
+import com.velocitypowered.api.network.ProtocolVersion;
 import com.velocitypowered.api.event.player.GameProfileRequestEvent;
 import com.velocitypowered.api.proxy.InboundConnection;
 import com.velocitypowered.api.util.GameProfile;
@@ -77,6 +78,9 @@ public final class VelocityGameProfileListener {
 
         PremiumVerifier.PremiumCheckResult premiumCheck =
                 premiumVerifierSupplier.get().verify(event.getUsername()).join();
+        ProtocolVersion protocolVersion = event.getConnection().getProtocolVersion();
+        String protocolLabel = protocolVersion.getMostRecentSupportedVersion();
+        boolean legacyClient = !protocolVersion.noLessThan(ProtocolVersion.MINECRAFT_1_19_1);
 
         AccountType accountType;
         UUID accountUuid;
@@ -193,7 +197,9 @@ public final class VelocityGameProfileListener {
                 accountType,
                 premiumNameDetected,
                 premiumVerified,
-                premiumEnforced
+                premiumEnforced,
+                protocolLabel,
+                legacyClient
         );
 
         publishResolvedProfile(
@@ -211,6 +217,8 @@ public final class VelocityGameProfileListener {
                 "account_type", accountType,
                 "premium_check", premiumCheck.premium(),
                 "premium_verified", premiumVerified,
+                "protocol", protocolLabel,
+                "legacy_client", legacyClient,
                 "ip", ipAddress);
     }
 

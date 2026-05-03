@@ -7,6 +7,7 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
 import com.monkey.proudAuth.config.PluginConfig;
+import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -18,6 +19,9 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class BackendNetworkSyncService {
+
+    private static final int AUTH_COMPLETED_RETRY_ATTEMPTS = 4;
+    private static final long AUTH_COMPLETED_RETRY_INTERVAL_TICKS = 5L;
 
     private final JavaPlugin plugin;
     private final PluginConfig pluginConfig;
@@ -48,7 +52,8 @@ public final class BackendNetworkSyncService {
                 resolvedLogin.authEntryServer(),
                 resolvedLogin.authEntryEnforced(),
                 resolvedLogin.postAuthServer(),
-                resolvedLogin.networkAuthenticated()
+                resolvedLogin.networkAuthenticated(),
+                resolvedLogin.legacyClient()
         ));
     }
 
@@ -77,7 +82,12 @@ public final class BackendNetworkSyncService {
         if (!isVelocityProxyMode()) {
             return;
         }
-        send(player, ProudAuthNetworkChannel.AUTH_COMPLETED);
+        JoinContext joinContext = contexts.get(player.getUniqueId());
+        if (joinContext != null && joinContext.legacyClient()) {
+            sendWithRetries(player, ProudAuthNetworkChannel.AUTH_COMPLETED, AUTH_COMPLETED_RETRY_ATTEMPTS, AUTH_COMPLETED_RETRY_INTERVAL_TICKS);
+        } else {
+            send(player, ProudAuthNetworkChannel.AUTH_COMPLETED);
+        }
         contexts.computeIfPresent(player.getUniqueId(), (ignored, context) -> context.withNetworkAuthenticated(true));
     }
 
@@ -89,7 +99,27 @@ public final class BackendNetworkSyncService {
         contexts.computeIfPresent(player.getUniqueId(), (ignored, context) -> context.afterInvalidation(pluginConfig.serverId()));
     }
 
+    private void sendWithRetries(Player player, String messageType, int attempts, long intervalTicks) {
+        int safeAttempts = Math.max(1, attempts);
+        long safeIntervalTicks = Math.max(1L, intervalTicks);
+        debugEvent("backend_network_sync_scheduled",
+                "player", player.getName(),
+                "server_id", pluginConfig.serverId(),
+                "message_type", messageType,
+                "attempts", safeAttempts,
+                "interval_ticks", safeIntervalTicks);
+        for (int attempt = 0; attempt < safeAttempts; attempt++) {
+            long delay = safeIntervalTicks * attempt;
+            int currentAttempt = attempt + 1;
+            Bukkit.getScheduler().runTaskLater(plugin, () -> send(player, messageType, currentAttempt, safeAttempts), delay);
+        }
+    }
+
     private void send(Player player, String messageType) {
+        send(player, messageType, 1, 1);
+    }
+
+    private void send(Player player, String messageType, int attempt, int totalAttempts) {
         if (!player.isOnline()) {
             return;
         }
@@ -103,7 +133,9 @@ public final class BackendNetworkSyncService {
             debugEvent("backend_network_sync_sent",
                     "player", player.getName(),
                     "server_id", pluginConfig.serverId(),
-                    "message_type", messageType);
+                    "message_type", messageType,
+                    "attempt", attempt,
+                    "total_attempts", totalAttempts);
         } catch (IOException exception) {
             logger.error("Impossibile inviare il sync ProudAuth al proxy.", exception);
         }
@@ -122,17 +154,18 @@ public final class BackendNetworkSyncService {
             String authEntryServer,
             boolean authEntryEnforced,
             String postAuthServer,
-            boolean networkAuthenticated
+            boolean networkAuthenticated,
+            boolean legacyClient
     ) {
         private JoinContext withNetworkAuthenticated(boolean authenticated) {
-            return new JoinContext(joinMode, authEntryServer, authEntryEnforced, postAuthServer, authenticated);
+            return new JoinContext(joinMode, authEntryServer, authEntryEnforced, postAuthServer, authenticated, legacyClient);
         }
 
         private JoinContext afterInvalidation(String currentServerId) {
             if (authEntryEnforced && authEntryServer != null && !authEntryServer.equalsIgnoreCase(currentServerId)) {
-                return new JoinContext(joinMode, authEntryServer, true, postAuthServer, false);
+                return new JoinContext(joinMode, authEntryServer, true, postAuthServer, false, legacyClient);
             }
-            return new JoinContext(BridgeJoinMode.AUTH_ENTRY, currentServerId, false, postAuthServer, false);
+            return new JoinContext(BridgeJoinMode.AUTH_ENTRY, currentServerId, false, postAuthServer, false, legacyClient);
         }
     }
 }

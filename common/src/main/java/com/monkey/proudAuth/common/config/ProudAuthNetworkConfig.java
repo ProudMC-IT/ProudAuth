@@ -49,7 +49,10 @@ public record ProudAuthNetworkConfig(
             boolean authEntryEnabled,
             String authEntryServer,
             boolean postAuthEnabled,
-            String postAuthServer
+            String postAuthServer,
+            AuthenticatedJoinRoutingMode authenticatedJoinRoutingMode,
+            int postAuthRedirectDelayMs,
+            int legacyPostAuthRedirectDelayMs
     ) {
         public boolean hasAuthEntryServer() {
             return authEntryEnabled && authEntryServer != null && !authEntryServer.isBlank();
@@ -57,6 +60,27 @@ public record ProudAuthNetworkConfig(
 
         public boolean hasPostAuthServer() {
             return postAuthEnabled && postAuthServer != null && !postAuthServer.isBlank();
+        }
+
+        public boolean shouldDirectAuthenticatedJoinsToPostAuth() {
+            return authenticatedJoinRoutingMode == AuthenticatedJoinRoutingMode.DIRECT_TO_POST_AUTH
+                    && hasPostAuthServer();
+        }
+    }
+
+    public enum AuthenticatedJoinRoutingMode {
+        ALWAYS_PASS_AUTH,
+        DIRECT_TO_POST_AUTH;
+
+        public static AuthenticatedJoinRoutingMode from(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return ALWAYS_PASS_AUTH;
+            }
+            try {
+                return AuthenticatedJoinRoutingMode.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                return ALWAYS_PASS_AUTH;
+            }
         }
     }
 

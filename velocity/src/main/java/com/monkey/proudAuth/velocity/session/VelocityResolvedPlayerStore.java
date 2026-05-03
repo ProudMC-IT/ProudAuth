@@ -19,7 +19,9 @@ public final class VelocityResolvedPlayerStore {
             AccountType accountType,
             boolean premiumNameDetected,
             boolean premiumVerified,
-            boolean premiumEnforced
+            boolean premiumEnforced,
+            String protocolVersion,
+            boolean legacyClient
     ) {
         resolvedPlayers.compute(key(username), (ignored, current) -> new ResolvedPlayer(
                 accountUuid,
@@ -28,6 +30,8 @@ public final class VelocityResolvedPlayerStore {
                 premiumNameDetected,
                 premiumVerified,
                 premiumEnforced,
+                protocolVersion == null ? "" : protocolVersion,
+                legacyClient,
                 current != null && current.networkAuthenticated(),
                 current == null ? "" : current.authEntryServer()
         ));
@@ -60,6 +64,8 @@ public final class VelocityResolvedPlayerStore {
             boolean premiumNameDetected,
             boolean premiumVerified,
             boolean premiumEnforced,
+            String protocolVersion,
+            boolean legacyClient,
             boolean networkAuthenticated,
             String authEntryServer
     ) {
@@ -71,6 +77,8 @@ public final class VelocityResolvedPlayerStore {
                     premiumNameDetected,
                     premiumVerified,
                     premiumEnforced,
+                    protocolVersion,
+                    legacyClient,
                     authenticated,
                     authEntryServer
             );
@@ -84,6 +92,8 @@ public final class VelocityResolvedPlayerStore {
                     premiumNameDetected,
                     premiumVerified,
                     premiumEnforced,
+                    protocolVersion,
+                    legacyClient,
                     networkAuthenticated,
                     updatedAuthEntryServer == null ? "" : updatedAuthEntryServer
             );

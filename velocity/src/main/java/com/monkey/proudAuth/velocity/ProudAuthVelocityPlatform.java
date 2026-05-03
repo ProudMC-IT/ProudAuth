@@ -188,6 +188,7 @@ public final class ProudAuthVelocityPlatform {
                     platformLogger
             ));
             proxyServer.getEventManager().register(pluginOwner, new VelocityAuthSyncListener(
+                    pluginOwner,
                     proxyServer,
                     resolvedPlayerStore,
                     () -> settings.proxy().routing(),

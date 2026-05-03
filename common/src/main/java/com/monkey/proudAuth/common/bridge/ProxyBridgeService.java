@@ -38,7 +38,8 @@ public final class ProxyBridgeService {
             String authEntryServer,
             boolean authEntryEnforced,
             String postAuthServer,
-            boolean networkAuthenticated
+            boolean networkAuthenticated,
+            boolean legacyClient
     ) {
         if (!isOperational()) {
             return CompletableFuture.completedFuture(null);
@@ -58,6 +59,7 @@ public final class ProxyBridgeService {
                 authEntryEnforced,
                 normalizeServerName(postAuthServer),
                 networkAuthenticated,
+                legacyClient,
                 issuedAt,
                 expiresAt,
                 UUID.randomUUID().toString().replace("-", ""),
@@ -180,6 +182,7 @@ public final class ProxyBridgeService {
                 Boolean.toString(assertion.authEntryEnforced()),
                 assertion.postAuthServer(),
                 Boolean.toString(assertion.networkAuthenticated()),
+                Boolean.toString(assertion.legacyClient()),
                 Long.toString(assertion.issuedAt().toEpochMilli()),
                 Long.toString(assertion.expiresAt().toEpochMilli()),
                 assertion.nonce()

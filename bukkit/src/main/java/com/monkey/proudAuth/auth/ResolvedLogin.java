@@ -14,7 +14,8 @@ public record ResolvedLogin(
         String authEntryServer,
         boolean authEntryEnforced,
         String postAuthServer,
-        boolean networkAuthenticated
+        boolean networkAuthenticated,
+        boolean legacyClient
 ) {
     public static ResolvedLogin standalone(
             UUID uuid,
@@ -32,6 +33,7 @@ public record ResolvedLogin(
                 authEntryServer == null ? "" : authEntryServer,
                 false,
                 "",
+                false,
                 false
         );
     }

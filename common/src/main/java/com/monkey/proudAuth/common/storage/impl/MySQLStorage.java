@@ -1018,8 +1018,8 @@ public final class MySQLStorage implements StorageProvider {
                     """;
             String insertSql = """
                     INSERT INTO pa_proxy_assertions
-                    (nonce, username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, issued_at, expires_at, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (nonce, username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, signature)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         resolved_name = VALUES(resolved_name),
@@ -1032,6 +1032,7 @@ public final class MySQLStorage implements StorageProvider {
                         auth_entry_enforced = VALUES(auth_entry_enforced),
                         post_auth_server = VALUES(post_auth_server),
                         network_authenticated = VALUES(network_authenticated),
+                        legacy_client = VALUES(legacy_client),
                         issued_at = VALUES(issued_at),
                         expires_at = VALUES(expires_at),
                         signature = VALUES(signature)
@@ -1055,9 +1056,10 @@ public final class MySQLStorage implements StorageProvider {
                     insertStatement.setBoolean(10, assertion.authEntryEnforced());
                     insertStatement.setString(11, assertion.postAuthServer());
                     insertStatement.setBoolean(12, assertion.networkAuthenticated());
-                    insertStatement.setTimestamp(13, Timestamp.from(assertion.issuedAt()));
-                    insertStatement.setTimestamp(14, Timestamp.from(assertion.expiresAt()));
-                    insertStatement.setString(15, assertion.signature());
+                    insertStatement.setBoolean(13, assertion.legacyClient());
+                    insertStatement.setTimestamp(14, Timestamp.from(assertion.issuedAt()));
+                    insertStatement.setTimestamp(15, Timestamp.from(assertion.expiresAt()));
+                    insertStatement.setString(16, assertion.signature());
                     insertStatement.executeUpdate();
                 }
             }
@@ -1068,7 +1070,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
                     WHERE username = ? AND ip = ? AND expires_at > CURRENT_TIMESTAMP
                     ORDER BY issued_at DESC
@@ -1092,7 +1094,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
                     WHERE username = ?
                     ORDER BY issued_at DESC
@@ -1427,6 +1429,7 @@ public final class MySQLStorage implements StorageProvider {
                         auth_entry_enforced TINYINT(1) NOT NULL DEFAULT 0,
                         post_auth_server VARCHAR(64) NOT NULL DEFAULT '',
                         network_authenticated TINYINT(1) NOT NULL DEFAULT 0,
+                        legacy_client TINYINT(1) NOT NULL DEFAULT 0,
                         issued_at DATETIME NOT NULL,
                         expires_at DATETIME NOT NULL,
                         signature VARCHAR(128) NOT NULL,
@@ -1440,6 +1443,7 @@ public final class MySQLStorage implements StorageProvider {
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS auth_entry_enforced TINYINT(1) NOT NULL DEFAULT 0");
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS post_auth_server VARCHAR(64) NOT NULL DEFAULT ''");
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS network_authenticated TINYINT(1) NOT NULL DEFAULT 0");
+            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS legacy_client TINYINT(1) NOT NULL DEFAULT 0");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_backend_join_probes (
                         probe_id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -1573,6 +1577,7 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getBoolean("auth_entry_enforced"),
                 resultSet.getString("post_auth_server"),
                 resultSet.getBoolean("network_authenticated"),
+                resultSet.getBoolean("legacy_client"),
                 resultSet.getTimestamp("issued_at").toInstant(),
                 resultSet.getTimestamp("expires_at").toInstant(),
                 resultSet.getString("nonce"),

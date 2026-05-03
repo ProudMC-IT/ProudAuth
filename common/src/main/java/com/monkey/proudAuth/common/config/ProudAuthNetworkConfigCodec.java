@@ -172,7 +172,12 @@ public final class ProudAuthNetworkConfigCodec {
                         bool(root, "routing.auth-entry.enabled", false),
                         string(root, "routing.auth-entry.server", ""),
                         bool(root, "routing.post-auth.enabled", false),
-                        string(root, "routing.post-auth.server", "")
+                        string(root, "routing.post-auth.server", ""),
+                        ProudAuthNetworkConfig.AuthenticatedJoinRoutingMode.from(
+                                string(root, "routing.authenticated-join.mode", "ALWAYS_PASS_AUTH")
+                        ),
+                        Math.max(0, integer(root, "routing.post-auth.redirect-delay-ms", 0)),
+                        Math.max(0, integer(root, "routing.post-auth.legacy-redirect-delay-ms", 150))
                 ),
                 new ProudAuthNetworkConfig.Guards(
                         bool(root, "guards.enabled", true),
@@ -441,9 +446,14 @@ public final class ProudAuthNetworkConfigCodec {
         authEntry.put("enabled", routing.authEntryEnabled());
         authEntry.put("server", routing.authEntryServer());
         values.put("auth-entry", authEntry);
+        Map<String, Object> authenticatedJoin = new LinkedHashMap<>();
+        authenticatedJoin.put("mode", routing.authenticatedJoinRoutingMode().name());
+        values.put("authenticated-join", authenticatedJoin);
         Map<String, Object> postAuth = new LinkedHashMap<>();
         postAuth.put("enabled", routing.postAuthEnabled());
         postAuth.put("server", routing.postAuthServer());
+        postAuth.put("redirect-delay-ms", routing.postAuthRedirectDelayMs());
+        postAuth.put("legacy-redirect-delay-ms", routing.legacyPostAuthRedirectDelayMs());
         values.put("post-auth", postAuth);
         return values;
     }
