@@ -1,7 +1,7 @@
 package com.monkey.proudAuth.velocity.bridge;
 
-import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
+import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.storage.BackendJoinProbeStorage;
 
