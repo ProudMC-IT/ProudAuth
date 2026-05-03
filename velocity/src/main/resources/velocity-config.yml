@@ -1,18 +1,17 @@
-# ProudAuth Velocity proxy configuration
+# ProudAuth Velocity network configuration
 #
-# This file is used only on the Velocity proxy plugin.
-# The proxy side is responsible for:
-# - premium/cracked resolution before backend join
-# - network guard / anti-abuse checks
-# - deciding the auth entry backend
-# - deciding the post-auth destination backend
-# - publishing trusted bridge assertions for all backend transfers
+# This is the single authoritative ProudAuth configuration file for the network.
+# The proxy loads this file, publishes it to the shared DB, and every Bukkit backend
+# automatically pulls and applies the same config in near real time.
+#
+# Backend-local config.yml files now only keep database/bootstrap information.
 
-# Language file loaded from the proxy data folder lang directory.
+# Language file loaded by the proxy and propagated to all backends.
 # Examples: "it", "en", "it.yml", "en.yml"
 language: "it"
 
-# Shared MySQL storage used by proxy and all backend servers.
+# Shared MySQL storage used by the proxy and by every backend instance.
+# This is also where ProudAuth stores the active network-wide configuration snapshot.
 database:
   host: "localhost"
   port: 3306
@@ -21,8 +20,13 @@ database:
   password: "password"
   pool-size: 10
 
+config-sync:
+  # How often the proxy checks whether this file changed on disk.
+  # If it changed, ProudAuth reloads the proxy config and republishes it to the DB.
+  file-watch-interval-seconds: 2
+
 # Internal debug channels.
-# Keep enabled=false in production unless you are troubleshooting.
+# Keep enabled=false in production unless you are actively investigating behavior.
 debugger:
   enabled: false
   player-resolution: true
@@ -38,49 +42,189 @@ debugger:
   command-flow: true
 
 premium:
-  # Enables premium/cracked resolution on the proxy.
+  # Enables premium/cracked resolution logic across the whole network.
   enabled: true
+
+  # If true, premium users can be authenticated automatically after identity verification.
+  # This setting is shared with backend auth flow as well.
+  auto-login: true
 
   # Timeout in milliseconds for Mojang/Premium verification requests.
   api-timeout-ms: 3000
 
+  # Enables UUID/profile proof checks where ProudAuth uses them.
+  require-uuid-proof: true
+
   # Premium nickname policy:
-  # - STRICT_GLOBAL (default): if Mojang says the nickname is premium, Velocity always forces
-  #   premium authentication and cracked clients using that nickname are denied.
-  # - CLAIM_ON_FIRST_JOIN: on the first join of an unclaimed nickname, the player must choose
-  #   /sp or /premium. That first completed claim becomes the permanent local rule for the nickname.
-  # - PROXY_CUSTOM: like CLAIM_ON_FIRST_JOIN, but /premium never forces Mojang online-mode.
-  #   The player reconnects offline and receives the verification result in chat, avoiding Invalid session screens.
-  # - AUTO_CLAIM_ON_FIRST_JOIN: no /sp or /premium choice. On first join, ProudAuth automatically
-  #   claims the nickname as PREMIUM only if ProudX/Mojang proves the client is authenticated.
-  #   Otherwise it creates a cracked/SP pending claim; after /login or /register the nickname
-  #   stays cracked forever, even if the real Mojang owner joins later.
+  # - STRICT_GLOBAL: premium nicknames always require real premium authentication
+  # - CLAIM_ON_FIRST_JOIN: first join chooses /sp or /premium permanently
+  # - PROXY_CUSTOM: custom premium claim flow without always forcing online-mode
+  # - AUTO_CLAIM_ON_FIRST_JOIN: automatic first-join premium/SP claim
   mode: STRICT_GLOBAL
 
   # Lifetime in seconds for pending premium/cracked claim decisions.
   claim-pending-seconds: 300
 
   proxy-custom:
-    # What PROXY_CUSTOM should do when the client/proxy cannot use ProudX modern proof.
-    # - FORCE_ONLINE (default): fallback to Mojang online-mode, secure and legacy-compatible,
-    #   but Invalid session can appear.
-    # - DENY_PREMIUM_CLAIM: deny the premium claim and ask for a modern client or /sp.
-    # - FORCE_SP: only for pending /premium claims, enter offline again and let the player choose /sp.
+    # Used when premium.mode = PROXY_CUSTOM and a legacy/unsupported client cannot use
+    # the modern premium proof flow.
+    #
+    # - FORCE_ONLINE: fallback to Mojang online-mode
+    # - DENY_PREMIUM_CLAIM: deny the premium claim
+    # - FORCE_SP: downgrade pending premium decision to SP/cracked flow
     legacy-unsupported-action: FORCE_ONLINE
 
-  # Custom disconnect message used when a premium nickname requires real premium auth.
+  # Disconnect/message shown when a premium nickname requires a real premium session.
   online-mode-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"
 
-  # Custom disconnect/message used when a premium claim attempt failed and the player must retry.
+  # Disconnect/message shown when a premium claim verification fails and the player must retry.
   claim-failed-denied-message: "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Verifica premium fallita</red><newline><gray>Non e stato possibile confermare questo nickname come premium.</gray><newline><yellow>Rientra e scegli di nuovo <white>/sp</white><yellow> oppure <white>/premium</white><yellow>.</yellow>"
 
+sessions:
+  # Enables session restore across the whole network.
+  enabled: true
+
+  # Session lifetime in minutes.
+  ttl-minutes: 1440
+
+  # If true, a session remains valid only from the same IP.
+  bind-to-ip: true
+
+security:
+  # Max wrong password attempts before temporary lockout.
+  max-attempts: 5
+
+  # Lock duration in seconds after too many failed password attempts.
+  lockout-seconds: 300
+
+  # Enables TOTP / authenticator app support.
+  totp-enabled: false
+
+  # Setup timeout in seconds for /2fa initialization flow.
+  totp-setup-timeout-seconds: 180
+
+  # Max invalid setup codes accepted during TOTP registration.
+  totp-setup-max-attempts: 3
+
+  # If true, TOTP is always required when enabled on the account.
+  # If false, ProudAuth may require it only on suspicious access unless the player forced it.
+  totp-default-flow-always: false
+
+  totp-suspicious:
+    # If more than this number of usernames are seen from one IP in the last hour,
+    # the access may be treated as suspicious.
+    max-usernames-per-ip-1h: 2
+
+    # If more than this number of IPs are used by the same username in the last 24 hours,
+    # the access may be treated as suspicious.
+    max-ips-per-username-24h: 3
+
+    # If true, an already banned IP is always treated as suspicious.
+    deny-when-ip-banned: true
+
+protection:
+  # Main protection toggles applied while a player is not yet authenticated.
+  block-movement: true
+  block-chat: true
+  block-interactions: true
+
+  # Legacy visibility shortcut.
+  # If true, protected players are hidden from others and vice versa unless overridden below.
+  invisible-until-auth: true
+
+  # If true, protected players do not drop items on death.
+  no-drop-on-death: true
+
+  # Time in seconds before an unauthenticated player is kicked from the auth flow.
+  auth-timeout-seconds: 60
+
+  commands:
+    # If true, commands are restricted while the player is protected.
+    block-commands: true
+
+    # Commands allowed during normal protected state.
+    # Values are normalized, so "/login" and "login" are treated the same.
+    allowed-while-protected:
+      - "/login"
+      - "/register"
+      - "/2fa"
+      - "/sp"
+      - "/cracked"
+      - "/premium"
+      - "/proudauthbackend"
+
+    # Commands allowed while the player is in cracked/premium claim-choice state.
+    allowed-during-claim-choice:
+      - "/sp"
+      - "/cracked"
+      - "/premium"
+      - "/proudauthbackend"
+
+  restrictions:
+    # Fine-grained action restrictions while the player is protected.
+    block-block-break: true
+    block-block-place: true
+    block-pvp-attack: true
+    block-pvp-take-damage: true
+    block-item-pickup: true
+    block-food-level-change: true
+    block-item-consume: true
+    block-swap-hand-items: true
+    block-book-edit: true
+    block-inventory: true
+    block-item-drop: true
+    block-entity-interact: true
+    block-world-interact: true
+
+  visibility:
+    # If true, a protected player is hidden from every other online player.
+    hide-protected-player-from-others: true
+
+    # If true, the protected player cannot see other online players.
+    hide-other-players-from-protected-player: true
+
+  effects:
+    # Visual effect applied while the player is protected on the auth backend.
+    # Supported values:
+    # - NONE
+    # - BLINDNESS
+    # - DARKNESS
+    visual-effect: "NONE"
+
+  auth-spawn:
+    # If true, ProudAuth teleports the player to the primary world spawn.
+    # This has priority over the custom auth-spawn coordinates below.
+    use-world-spawn: false
+
+    # Used only when use-world-spawn is false.
+    # If enabled, ProudAuth teleports the player to the custom auth location below.
+    enabled: false
+
+    # Custom auth coordinates used when enabled=true and use-world-spawn=false.
+    world: "world"
+    x: 0.5
+    y: 64.0
+    z: 0.5
+    yaw: 0.0
+    pitch: 0.0
+
+password:
+  # Minimum accepted password length for cracked accounts.
+  min-length: 6
+
+  # Maximum accepted password length for cracked accounts.
+  max-length: 32
+
+  # Optional regex for password complexity.
+  # Leave empty to disable extra complexity rules.
+  complexity-regex: ""
+
 bridge:
-  # Enables trusted proxy->backend bridge assertions.
+  # Enables trusted proxy->backend bridge assertions across the network.
   enabled: false
 
-  # - FALLBACK: if a backend cannot verify the bridge assertion, it may still fallback
-  #   to local checks depending on backend config
-  # - STRICT: the backend should deny access if the assertion is missing/invalid
+  # - FALLBACK: backend may fallback to local checks if assertion is missing/invalid
+  # - STRICT: backend should deny access if assertion is missing/invalid
   mode: FALLBACK
 
   # Transport currently supported by ProudAuth.
@@ -94,8 +238,8 @@ bridge:
   assertion-ttl-seconds: 10
 
   backend-check:
-    # If true, the proxy verifies that the target backend with ProudAuth is responsive
-    # before finishing the login flow.
+    # If true, the proxy verifies that the target backend with ProudAuth responds
+    # before completing the entry flow.
     enabled: true
 
     # Maximum wait time in milliseconds for backend probe acknowledgement.
@@ -106,7 +250,7 @@ bridge:
 
 routing:
   auth-entry:
-    # If true, all players first enter the configured auth backend.
+    # If true, every player first enters this backend before accessing the network.
     # This includes:
     # - players who must /login
     # - players who must /register
@@ -114,19 +258,19 @@ routing:
     # - premium players auto-authenticated
     enabled: false
 
-    # Exact Velocity backend server name used as auth entry.
+    # Exact Velocity backend name used as auth entry server.
     server: "auth"
 
   post-auth:
-    # If true, once auth is completed on the auth entry backend,
-    # the proxy sends the player to the configured destination backend.
+    # If true, after successful authentication the proxy sends the player
+    # to the configured destination backend.
     enabled: false
 
-    # Exact Velocity backend server name used after successful authentication.
+    # Exact Velocity backend name used after successful authentication.
     server: "lobby"
 
 guards:
-  # Enables proxy-side network guards and heuristics.
+  # Enables proxy-side anti-abuse and suspicious-network checks.
   enabled: true
 
   antibot:
@@ -136,7 +280,7 @@ guards:
     # Max connections allowed from one IP during the anti-bot window.
     max-connections-per-ip: 8
 
-    # Temporary ban duration in seconds after anti-bot threshold is exceeded.
+    # Temporary ban duration in seconds after the anti-bot threshold is exceeded.
     ban-seconds: 900
 
   identity:
@@ -149,15 +293,15 @@ guards:
     # Max distinct IPs seen for one username inside the identity window.
     max-ips-per-username: 5
 
-    # Temporary ban duration in seconds after identity guard threshold is exceeded.
+    # Temporary ban duration in seconds after the identity threshold is exceeded.
     ban-seconds: 7200
 
-  # How many days of observed network history ProudAuth should retain.
+  # How many days of network history ProudAuth should retain for heuristics and reports.
   history-retention-days: 30
 
 reports:
   auto-export:
-    # If true, Velocity periodically exports security/risk CSV reports.
+    # If true, the proxy periodically exports security/risk CSV reports.
     enabled: true
 
     # Export interval in minutes.

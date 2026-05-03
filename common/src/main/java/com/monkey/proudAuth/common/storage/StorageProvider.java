@@ -12,6 +12,7 @@ public interface StorageProvider extends
         BridgeAssertionStorage,
         IpHistoryStorage,
         IpBanStorage,
+        NetworkConfigStorage,
         StatsStorage,
         AutoCloseable {
 

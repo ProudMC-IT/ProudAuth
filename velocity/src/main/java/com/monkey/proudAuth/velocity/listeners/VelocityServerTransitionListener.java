@@ -2,12 +2,12 @@ package com.monkey.proudAuth.velocity.listeners;
 
 import com.monkey.proudAuth.common.bridge.BridgeJoinMode;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
-import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.PostOrder;
@@ -28,7 +28,7 @@ public final class VelocityServerTransitionListener {
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
-    private final Supplier<VelocityPluginSettings.Routing> routingSupplier;
+    private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
@@ -38,7 +38,7 @@ public final class VelocityServerTransitionListener {
             VelocityResolvedPlayerStore resolvedPlayerStore,
             VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
-            Supplier<VelocityPluginSettings.Routing> routingSupplier,
+            Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
@@ -81,7 +81,7 @@ public final class VelocityServerTransitionListener {
         }
 
         VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayer.get();
-        VelocityPluginSettings.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
         String authEntryServer = resolveAuthEntryServer(initialConnection, previousServer, selectedTargetServer, profile, routing);
         String targetServer = resolveEffectiveTargetServer(initialConnection, selectedTargetServer, profile, authEntryServer);
         RegisteredServer targetRegisteredServer = findServer(targetServer).orElse(null);
@@ -153,7 +153,7 @@ public final class VelocityServerTransitionListener {
             String previousServer,
             String selectedTargetServer,
             VelocityResolvedPlayerStore.ResolvedPlayer profile,
-            VelocityPluginSettings.Routing routing
+            ProudAuthNetworkConfig.Routing routing
     ) {
         if (routing.hasAuthEntryServer()) {
             return routing.authEntryServer();

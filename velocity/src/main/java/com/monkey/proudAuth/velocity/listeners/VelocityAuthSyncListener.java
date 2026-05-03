@@ -1,10 +1,10 @@
 package com.monkey.proudAuth.velocity.listeners;
 
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
-import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
@@ -26,14 +26,14 @@ public final class VelocityAuthSyncListener {
 
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
-    private final Supplier<VelocityPluginSettings.Routing> routingSupplier;
+    private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityAuthSyncListener(
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
-            Supplier<VelocityPluginSettings.Routing> routingSupplier,
+            Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
@@ -97,7 +97,7 @@ public final class VelocityAuthSyncListener {
                 "player", player.getUsername(),
                 "server", sourceServer);
 
-        VelocityPluginSettings.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
         if (!routing.hasPostAuthServer() || routing.postAuthServer().equalsIgnoreCase(sourceServer)) {
             return;
         }
@@ -112,7 +112,7 @@ public final class VelocityAuthSyncListener {
     }
 
     private void handleAuthInvalidated(Player player, String sourceServer) {
-        VelocityPluginSettings.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
         String authEntryServer = routing.hasAuthEntryServer() ? routing.authEntryServer() : sourceServer;
         resolvedPlayerStore.markNetworkAuthenticated(player.getUsername(), false);
         resolvedPlayerStore.rememberAuthEntryServer(player.getUsername(), authEntryServer);

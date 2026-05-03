@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.config;
 
 import com.monkey.proudAuth.common.lang.LanguageFileSupport;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.TagResolver;
@@ -24,13 +25,15 @@ public final class LangConfig {
 
     private final JavaPlugin plugin;
     private final PluginConfig pluginConfig;
+    private final ProudAuthConsoleLogger logger;
     private final MiniMessage miniMessage;
     private volatile Map<String, String> configuration;
     private volatile String activeLanguageDescription;
 
-    public LangConfig(JavaPlugin plugin, PluginConfig pluginConfig) {
+    public LangConfig(JavaPlugin plugin, PluginConfig pluginConfig, ProudAuthConsoleLogger logger) {
         this.plugin = plugin;
         this.pluginConfig = pluginConfig;
+        this.logger = logger;
         this.miniMessage = MiniMessage.miniMessage();
         this.configuration = Collections.emptyMap();
         this.activeLanguageDescription = LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)";
@@ -50,7 +53,7 @@ public final class LangConfig {
             this.configuration = loadedLanguage.messages();
             this.activeLanguageDescription = loadedLanguage.description();
         } catch (Exception exception) {
-            plugin.getLogger().severe("Impossibile caricare i file lingua: " + exception.getMessage());
+            logger.error("Impossibile caricare i file lingua: " + exception.getMessage());
             this.configuration = Collections.emptyMap();
             this.activeLanguageDescription = LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (unavailable)";
         }
@@ -89,13 +92,13 @@ public final class LangConfig {
                     requiredKeys,
                     "bundled resource lang/" + requestedFileName
             )) {
-                plugin.getLogger().warning("Il file lingua esterno "
+                logger.warn("Il file lingua esterno "
                         + selectedPath.getFileName()
                         + " non e valido. Uso la copia interna dal jar.");
                 return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled fallback)");
             }
 
-            plugin.getLogger().warning("Il file lingua " + selectedPath.getFileName()
+            logger.warn("Il file lingua " + selectedPath.getFileName()
                     + " non e valido e non esiste un fallback valido per la stessa lingua. "
                     + "Uso " + LanguageFileSupport.DEFAULT_LANGUAGE_FILE + ".");
             return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)");
@@ -110,7 +113,7 @@ public final class LangConfig {
         }
 
         if (!requestedFileName.equals(LanguageFileSupport.DEFAULT_LANGUAGE_FILE)) {
-            plugin.getLogger().warning("Lingua " + requestedFileName
+            logger.warn("Lingua " + requestedFileName
                     + " non trovata nella cartella "
                     + langDirectory.toAbsolutePath()
                     + " e nemmeno nel jar. Uso "
@@ -183,13 +186,13 @@ public final class LangConfig {
         extraKeys.removeAll(requiredKeys);
 
         if (!extraKeys.isEmpty()) {
-            plugin.getLogger().warning("Il file lingua " + sourceDescription
+            logger.warn("Il file lingua " + sourceDescription
                     + " contiene key sconosciute: "
                     + LanguageFileSupport.summarizeKeys(extraKeys, LOGGED_KEY_LIMIT));
         }
 
         if (!missingKeys.isEmpty()) {
-            plugin.getLogger().severe("Il file lingua " + sourceDescription
+            logger.error("Il file lingua " + sourceDescription
                     + " e incompleto. Key mancanti: "
                     + LanguageFileSupport.summarizeKeys(missingKeys, LOGGED_KEY_LIMIT));
             return false;

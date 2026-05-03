@@ -12,6 +12,9 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
+import com.monkey.proudAuth.config.BukkitNetworkConfigSyncService;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.listeners.*;
@@ -28,17 +31,23 @@ import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Objects;
 import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public final class ProudAuth extends JavaPlugin {
 
     private static final int BSTATS_PLUGIN_ID = 30843;
     private static final int SPIGOT_RESOURCE_ID = 134388;
+    private static final String BUKKIT_LOGGER_NAME = "ProudAuth/Bukkit";
+    private static final String ANSI_RESET = "\u001B[0m";
+    private static final String ANSI_BOLD = "\u001B[1m";
+    private static final String ANSI_CYAN = "\u001B[36m";
 
     private final ProudAuthBootstrap bootstrap = new ProudAuthBootstrap();
 
     private PluginConfig pluginConfig;
     private LangConfig langConfig;
     private ProudAuthRuntime runtime;
+    private BukkitNetworkConfigSyncService configSyncService;
     private IdentityClaimService identityClaimService;
     private PlayerProtection playerProtection;
     private PlayerPreLoginListener playerPreLoginListener;
@@ -52,21 +61,34 @@ public final class ProudAuth extends JavaPlugin {
     @Override
     public void onEnable() {
         try {
+            String bukkitLoggerName = ProudAuthConsoleLogger.colorLoggerName(BUKKIT_LOGGER_NAME);
+            Logger bukkitLogger = Logger.getLogger(bukkitLoggerName);
+
             logger = new ProudAuthConsoleLogger(
-                    "ProudAuth/Bukkit",
-                    getLogger()::info,
-                    getLogger()::warning,
+                    BUKKIT_LOGGER_NAME,
+                    bukkitLogger::info,
+                    bukkitLogger::warning,
                     (message, throwable) -> {
                         if (throwable == null) {
-                            getLogger().severe(message);
+                            bukkitLogger.severe(message);
                         } else {
-                            getLogger().log(Level.SEVERE, message, throwable);
+                            bukkitLogger.log(Level.SEVERE, message, throwable);
                         }
-                    }
+                    },
+                    false
             );
             pluginConfig = new PluginConfig(this);
-            langConfig = new LangConfig(this, pluginConfig);
-            runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings());
+            StorageProvider bootstrapStorage = new MySQLStorage(pluginConfig.storageBootstrapSettings());
+            bootstrapStorage.init();
+            configSyncService = new BukkitNetworkConfigSyncService(
+                    this,
+                    pluginConfig,
+                    () -> runtime != null ? runtime.storage() : bootstrapStorage,
+                    logger
+            );
+            configSyncService.loadInitialConfig();
+            langConfig = new LangConfig(this, pluginConfig, logger);
+            runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings(), bootstrapStorage);
             identityClaimService = new IdentityClaimService(runtime.storage(), pluginConfig.settings());
             playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
             networkSyncService = new BackendNetworkSyncService(this, pluginConfig, logger);
@@ -90,13 +112,14 @@ public final class ProudAuth extends JavaPlugin {
             registerCommands();
             startCleanupTask();
             startBackendJoinProbeTask();
+            configSyncService.start(this::applyResolvedReload);
             runUpdateCheck();
             logger.success("Bukkit backend enabled.");
         } catch (Exception exception) {
             if (logger != null) {
                 logger.error("Impossibile avviare ProudAuth.", exception);
             } else {
-                getLogger().log(Level.SEVERE, "Impossibile avviare ProudAuth.", exception);
+                Logger.getLogger(BUKKIT_LOGGER_NAME).log(Level.SEVERE, "Impossibile avviare ProudAuth.", exception);
             }
             getServer().getPluginManager().disablePlugin(this);
         }
@@ -109,6 +132,9 @@ public final class ProudAuth extends JavaPlugin {
         }
         if (backendJoinProbeTask != null) {
             backendJoinProbeTask.cancel();
+        }
+        if (configSyncService != null) {
+            configSyncService.stop();
         }
         if (runtime != null) {
             bootstrap.close(runtime);
@@ -123,6 +149,16 @@ public final class ProudAuth extends JavaPlugin {
 
     public void reloadPluginState() {
         pluginConfig.reload();
+        if (configSyncService != null) {
+            configSyncService.refreshNow();
+        }
+        applyResolvedReload();
+        if (configSyncService != null) {
+            configSyncService.start(this::applyResolvedReload);
+        }
+    }
+
+    private void applyResolvedReload() {
         langConfig.reload();
         runtime = bootstrap.reload(runtime, pluginConfig.settings());
         identityClaimService.reload(pluginConfig.settings());
@@ -345,11 +381,11 @@ public final class ProudAuth extends JavaPlugin {
     }
 
     private boolean updateCheckEnabled() {
-        return getConfig().getBoolean("updates.check-enabled", true);
+        return pluginConfig.updateCheckEnabled();
     }
 
     private boolean notifyAdminOnJoinEnabled() {
-        return getConfig().getBoolean("updates.notify-admin-on-join", true);
+        return pluginConfig.notifyAdminOnJoinEnabled();
     }
 
     private int spigotResourceId() {

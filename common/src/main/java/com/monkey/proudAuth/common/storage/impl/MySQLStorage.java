@@ -1229,6 +1229,110 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Optional<NetworkConfigSnapshotRecord>> fetchActiveNetworkConfig() {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT version, config_hash, document, updated_at, updated_by, source_node
+                    FROM pa_network_config
+                    WHERE config_key = 'active'
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql);
+                 ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(mapNetworkConfig(resultSet, true));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<NetworkConfigSnapshotRecord>> fetchActiveNetworkConfigState() {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT version, config_hash, updated_at, updated_by, source_node
+                    FROM pa_network_config
+                    WHERE config_key = 'active'
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql);
+                 ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return Optional.empty();
+                }
+                return Optional.of(mapNetworkConfig(resultSet, false));
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<NetworkConfigSnapshotRecord> saveActiveNetworkConfig(
+            String document,
+            String configHash,
+            String updatedBy,
+            String sourceNode
+    ) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection()) {
+                connection.setAutoCommit(false);
+                try {
+                    NetworkConfigSnapshotRecord current = null;
+                    try (PreparedStatement select = connection.prepareStatement("""
+                            SELECT version, config_hash, document, updated_at, updated_by, source_node
+                            FROM pa_network_config
+                            WHERE config_key = 'active'
+                            LIMIT 1
+                            FOR UPDATE
+                            """);
+                         ResultSet resultSet = select.executeQuery()) {
+                        if (resultSet.next()) {
+                            current = mapNetworkConfig(resultSet, true);
+                        }
+                    }
+
+                    if (current != null && current.configHash().equals(configHash)) {
+                        connection.commit();
+                        return current;
+                    }
+
+                    long nextVersion = current == null ? 1L : current.version() + 1L;
+                    Instant now = Instant.now();
+                    String sql = """
+                            INSERT INTO pa_network_config (config_key, version, config_hash, document, updated_at, updated_by, source_node)
+                            VALUES ('active', ?, ?, ?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE
+                                version = VALUES(version),
+                                config_hash = VALUES(config_hash),
+                                document = VALUES(document),
+                                updated_at = VALUES(updated_at),
+                                updated_by = VALUES(updated_by),
+                                source_node = VALUES(source_node)
+                            """;
+                    try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                        statement.setLong(1, nextVersion);
+                        statement.setString(2, configHash);
+                        statement.setString(3, document);
+                        statement.setTimestamp(4, Timestamp.from(now));
+                        statement.setString(5, updatedBy);
+                        statement.setString(6, sourceNode);
+                        statement.executeUpdate();
+                    }
+                    connection.commit();
+                    return new NetworkConfigSnapshotRecord(nextVersion, configHash, document, now, updatedBy, sourceNode);
+                } catch (SQLException exception) {
+                    connection.rollback();
+                    throw exception;
+                } finally {
+                    connection.setAutoCommit(true);
+                }
+            }
+        });
+    }
+
+    @Override
     public synchronized void close() {
         if (dataSource != null && !dataSource.isClosed()) {
             dataSource.close();
@@ -1296,6 +1400,17 @@ public final class MySQLStorage implements StorageProvider {
                         banned_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         expires_at DATETIME NOT NULL,
                         reason VARCHAR(255)
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_network_config (
+                        config_key VARCHAR(32) NOT NULL PRIMARY KEY,
+                        version BIGINT NOT NULL,
+                        config_hash VARCHAR(64) NOT NULL,
+                        document LONGTEXT NOT NULL,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_by VARCHAR(64) NOT NULL,
+                        source_node VARCHAR(64) NOT NULL
                     )
                     """);
             statement.executeUpdate("""
@@ -1462,6 +1577,17 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getTimestamp("expires_at").toInstant(),
                 resultSet.getString("nonce"),
                 resultSet.getString("signature")
+        );
+    }
+
+    private NetworkConfigSnapshotRecord mapNetworkConfig(ResultSet resultSet, boolean includeDocument) throws SQLException {
+        return new NetworkConfigSnapshotRecord(
+                resultSet.getLong("version"),
+                resultSet.getString("config_hash"),
+                includeDocument ? resultSet.getString("document") : "",
+                resultSet.getTimestamp("updated_at").toInstant(),
+                resultSet.getString("updated_by"),
+                resultSet.getString("source_node")
         );
     }
 

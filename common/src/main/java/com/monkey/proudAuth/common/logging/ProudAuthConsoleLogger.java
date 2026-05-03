@@ -2,6 +2,8 @@ package com.monkey.proudAuth.common.logging;
 
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -17,14 +19,20 @@ public final class ProudAuthConsoleLogger {
     private static final String ANSI_CYAN = "\u001B[36m";
     private static final String ANSI_MAGENTA = "\u001B[35m";
     private static final String ANSI_WHITE = "\u001B[97m";
+    private static final String ANSI_BLUE = "\u001B[34m";
+    private static final String ANSI_LIGHT_BLUE = "\u001B[94m";
+    private static final String ANSI_LIGHT_GRAY = "\u001B[37m";
+    private static final String ANSI_LIGHT_GREEN = "\u001B[92m";
+    private static final String ANSI_LIGHT_MAGENTA = "\u001B[95m";
     private static final String SEPARATOR = "------------------------------------------------------------";
-    private static final int CHANNEL_WIDTH = 16;
+    private static final int EVENT_KEY_WIDTH = 22;
 
     private final String prefix;
     private final Consumer<String> infoConsumer;
     private final Consumer<String> warnConsumer;
     private final BiConsumer<String, Throwable> errorConsumer;
     private final boolean ansiEnabled;
+    private final boolean includePrefix;
 
     public ProudAuthConsoleLogger(
             String name,
@@ -32,11 +40,22 @@ public final class ProudAuthConsoleLogger {
             Consumer<String> warnConsumer,
             BiConsumer<String, Throwable> errorConsumer
     ) {
+        this(name, infoConsumer, warnConsumer, errorConsumer, true);
+    }
+
+    public ProudAuthConsoleLogger(
+            String name,
+            Consumer<String> infoConsumer,
+            Consumer<String> warnConsumer,
+            BiConsumer<String, Throwable> errorConsumer,
+            boolean includePrefix
+    ) {
         String baseName = Objects.requireNonNull(name, "name");
         this.prefix = "[" + baseName + "]";
         this.infoConsumer = Objects.requireNonNull(infoConsumer, "infoConsumer");
         this.warnConsumer = Objects.requireNonNull(warnConsumer, "warnConsumer");
         this.errorConsumer = Objects.requireNonNull(errorConsumer, "errorConsumer");
+        this.includePrefix = includePrefix;
         this.ansiEnabled = !"true".equalsIgnoreCase(System.getProperty("proudauth.noAnsi", "false"));
     }
 
@@ -89,8 +108,9 @@ public final class ProudAuthConsoleLogger {
         if (!isEnabled(debugger, channel)) {
             return;
         }
-        String message = buildEventMessage(eventName, keyValues);
-        infoConsumer.accept(format(Level.DEBUG, channel.configKey(), message, channelColor(channel)));
+        for (String line : buildEventLines(eventName, keyValues)) {
+            infoConsumer.accept(format(Level.DEBUG, channel.configKey(), line, channelColor(channel)));
+        }
     }
 
     private String format(Level level, String scope, String message) {
@@ -98,21 +118,16 @@ public final class ProudAuthConsoleLogger {
     }
 
     private String format(Level level, String scope, String message, String scopeColor) {
-        String paddedScope = pad(scope, CHANNEL_WIDTH);
-        String levelToken = color(level.colorCode, pad(level.label, 5));
-        String scopeToken = color(scopeColor, paddedScope);
-        String prefixToken = color(ANSI_BOLD + ANSI_WHITE, prefix);
-        return prefixToken + " " + "[" + levelToken + "]" + " [" + scopeToken + "] " + message;
-    }
+        String levelToken = color(level.colorCode, level.label);
+        String scopeToken = color(scopeColor, normalize(scope));
+        String body = "[" + levelToken + "] [" + scopeToken + "] " + message;
 
-    private String pad(String value, int width) {
-        if (value == null) {
-            return " ".repeat(width);
+        if (!includePrefix) {
+            return body;
         }
-        if (value.length() >= width) {
-            return value.substring(0, width);
-        }
-        return value + " ".repeat(width - value.length());
+
+        String prefixToken = color(ANSI_BOLD + ANSI_CYAN, prefix);
+        return prefixToken + " " + body;
     }
 
     private String color(String code, String text) {
@@ -124,41 +139,95 @@ public final class ProudAuthConsoleLogger {
 
     private String channelColor(DebugChannel channel) {
         return switch (channel) {
-            case PLAYER_RESOLUTION -> ANSI_CYAN;
-            case SESSION_FLOW -> ANSI_GREEN;
+            case PLAYER_RESOLUTION -> ANSI_LIGHT_BLUE;
+            case SESSION_FLOW -> ANSI_LIGHT_GREEN;
             case PREMIUM_FLOW -> ANSI_YELLOW;
-            case BRIDGE_FLOW -> ANSI_MAGENTA;
+            case BRIDGE_FLOW -> ANSI_LIGHT_MAGENTA;
             case SECURITY_FLOW -> ANSI_RED;
-            case PROTECTION_FLOW -> ANSI_WHITE;
+            case PROTECTION_FLOW -> ANSI_LIGHT_GRAY;
             case IP_BAN_FLOW -> ANSI_RED;
             case PROFILE_FLOW -> ANSI_CYAN;
             case MOVEMENT_AUDIT -> ANSI_GRAY;
             case TELEPORT_AUDIT -> ANSI_GRAY;
-            case COMMAND_FLOW -> ANSI_GREEN;
+            case COMMAND_FLOW -> ANSI_LIGHT_GREEN;
         };
     }
 
-    private String buildEventMessage(String eventName, Object... keyValues) {
-        StringBuilder builder = new StringBuilder();
-        builder.append("event=").append(normalize(eventName));
+    private List<String> buildEventLines(String eventName, Object... keyValues) {
+        List<String> lines = new ArrayList<>();
+        lines.add(color(ANSI_BOLD + ANSI_LIGHT_BLUE, normalize(eventName)));
         if (keyValues == null || keyValues.length == 0) {
-            return builder.toString();
+            return lines;
         }
+
         int pairCount = keyValues.length / 2;
         for (int i = 0; i < pairCount; i++) {
             Object rawKey = keyValues[i * 2];
             Object rawValue = keyValues[i * 2 + 1];
             String key = rawKey == null ? "field" + i : String.valueOf(rawKey);
             String value = rawValue == null ? "null" : String.valueOf(rawValue);
-            builder.append(' ')
-                    .append(sanitizeKey(key))
-                    .append('=')
-                    .append(quoteIfNeeded(value));
+            lines.add(formatEventField(key, value));
         }
         if (keyValues.length % 2 != 0) {
-            builder.append(" malformed=true");
+            lines.add(formatEventField("malformed", "true"));
         }
-        return builder.toString();
+        return lines;
+    }
+
+    private String formatEventField(String key, String value) {
+        String normalizedKey = sanitizeKey(key);
+        String alignedKey = padRight(normalizedKey, EVENT_KEY_WIDTH);
+        String keyToken = color(ANSI_LIGHT_GRAY, alignedKey);
+        String separatorToken = color(ANSI_GRAY, " = ");
+        String valueToken = color(selectValueColor(normalizedKey, value), quoteIfNeeded(value));
+        return "  " + keyToken + separatorToken + valueToken;
+    }
+
+    private String selectValueColor(String key, String value) {
+        String normalizedKey = sanitizeKey(key).toLowerCase();
+        String normalizedValue = value == null ? "null" : value.trim().toLowerCase();
+        if ("true".equals(normalizedValue) || "false".equals(normalizedValue)) {
+            return "true".equals(normalizedValue) ? ANSI_LIGHT_GREEN : ANSI_RED;
+        }
+        if (normalizedKey.contains("error")
+                || normalizedKey.contains("reason")
+                || normalizedKey.contains("status")
+                || normalizedKey.contains("action")) {
+            return ANSI_YELLOW;
+        }
+        if (normalizedKey.contains("player")
+                || normalizedKey.contains("resolved_name")
+                || normalizedKey.contains("assertion_name")
+                || normalizedKey.contains("server")
+                || normalizedKey.contains("proxy_mode")
+                || normalizedKey.contains("message_type")
+                || normalizedKey.contains("event")) {
+            return ANSI_LIGHT_BLUE;
+        }
+        if (normalizedKey.contains("uuid")
+                || normalizedKey.contains("ip")
+                || normalizedKey.contains("token")
+                || normalizedKey.contains("key")
+                || normalizedKey.contains("hash")) {
+            return ANSI_WHITE;
+        }
+        if (normalizedKey.contains("account_type")
+                || normalizedKey.contains("join_mode")
+                || normalizedKey.contains("legacy")
+                || normalizedKey.contains("premium")) {
+            return ANSI_LIGHT_MAGENTA;
+        }
+        return ANSI_WHITE;
+    }
+
+    private String padRight(String value, int width) {
+        if (value == null) {
+            return " ".repeat(width);
+        }
+        if (value.length() >= width) {
+            return value;
+        }
+        return value + " ".repeat(width - value.length());
     }
 
     private String sanitizeKey(String key) {
@@ -179,12 +248,19 @@ public final class ProudAuthConsoleLogger {
         return value.trim();
     }
 
+    public static String colorLoggerName(String loggerName) {
+        if ("true".equalsIgnoreCase(System.getProperty("proudauth.noAnsi", "false"))) {
+            return loggerName;
+        }
+        return ANSI_BOLD + ANSI_CYAN + loggerName + ANSI_RESET;
+    }
+
     private enum Level {
         INFO("INFO", ANSI_CYAN),
-        SUCCESS("OK", ANSI_GREEN),
+        SUCCESS("OK", ANSI_LIGHT_GREEN),
         WARN("WARN", ANSI_YELLOW),
         ERROR("ERR", ANSI_RED),
-        DEBUG("DBG", ANSI_GRAY);
+        DEBUG("DBG", ANSI_LIGHT_GRAY);
 
         private final String label;
         private final String colorCode;

@@ -1,9 +1,9 @@
 package com.monkey.proudAuth.velocity.bridge;
 
 import com.monkey.proudAuth.common.logging.DebugChannel;
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.storage.BackendJoinProbeStorage;
-import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 
 import java.time.Instant;
 import java.util.Locale;
@@ -18,31 +18,34 @@ public final class VelocityBackendJoinProbeService {
     private static final long EXPIRES_GRACE_MS = 750L;
 
     private final Supplier<BackendJoinProbeStorage> storageSupplier;
-    private final Supplier<VelocityPluginSettings.Bridge> bridgeSettingsSupplier;
+    private final Supplier<ProudAuthNetworkConfig> settingsSupplier;
     private final Supplier<com.monkey.proudAuth.common.config.ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityBackendJoinProbeService(
             Supplier<BackendJoinProbeStorage> storageSupplier,
-            Supplier<VelocityPluginSettings.Bridge> bridgeSettingsSupplier,
+            Supplier<ProudAuthNetworkConfig> settingsSupplier,
             Supplier<com.monkey.proudAuth.common.config.ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
         this.storageSupplier = storageSupplier;
-        this.bridgeSettingsSupplier = bridgeSettingsSupplier;
+        this.settingsSupplier = settingsSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
     }
 
     public ProbeStatus probe(String username, String ipAddress, String targetServer) {
-        VelocityPluginSettings.Bridge bridge = bridgeSettingsSupplier.get();
-        if (!bridge.enabled() || !bridge.backendCheckEnabled() || targetServer == null || targetServer.isBlank()) {
+        ProudAuthNetworkConfig settings = settingsSupplier.get();
+        if (!settings.bridge().enabled()
+                || !settings.proxy().bridgeBackendCheck().enabled()
+                || targetServer == null
+                || targetServer.isBlank()) {
             return ProbeStatus.SKIPPED;
         }
 
         String probeId = UUID.randomUUID().toString().replace("-", "");
-        long timeoutMs = Math.max(MIN_TIMEOUT_MS, bridge.backendCheckTimeoutMs());
-        long pollIntervalMs = Math.max(MIN_POLL_INTERVAL_MS, Math.min(timeoutMs, bridge.backendCheckPollIntervalMs()));
+        long timeoutMs = Math.max(MIN_TIMEOUT_MS, settings.proxy().bridgeBackendCheck().timeoutMs());
+        long pollIntervalMs = Math.max(MIN_POLL_INTERVAL_MS, Math.min(timeoutMs, settings.proxy().bridgeBackendCheck().pollIntervalMs()));
         Instant issuedAt = Instant.now();
         Instant expiresAt = issuedAt.plusMillis(timeoutMs + EXPIRES_GRACE_MS);
         String canonicalUsername = username.toLowerCase(Locale.ROOT);

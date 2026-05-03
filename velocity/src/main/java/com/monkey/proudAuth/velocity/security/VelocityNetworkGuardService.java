@@ -1,10 +1,10 @@
 package com.monkey.proudAuth.velocity.security;
 
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.storage.StorageProvider;
-import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -19,14 +19,14 @@ import java.util.function.Supplier;
 public final class VelocityNetworkGuardService {
 
     private final Supplier<StorageProvider> storageSupplier;
-    private final Supplier<VelocityPluginSettings.Guards> guardsSupplier;
+    private final Supplier<ProudAuthNetworkConfig.Guards> guardsSupplier;
     private final Supplier<com.monkey.proudAuth.common.config.ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
     private final Map<String, Deque<Long>> inMemoryAttempts = new ConcurrentHashMap<>();
 
     public VelocityNetworkGuardService(
             Supplier<StorageProvider> storageSupplier,
-            Supplier<VelocityPluginSettings.Guards> guardsSupplier,
+            Supplier<ProudAuthNetworkConfig.Guards> guardsSupplier,
             Supplier<com.monkey.proudAuth.common.config.ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
@@ -37,7 +37,7 @@ public final class VelocityNetworkGuardService {
     }
 
     public GuardDecision evaluate(String username, String ipAddress) {
-        VelocityPluginSettings.Guards guards = guardsSupplier.get();
+        ProudAuthNetworkConfig.Guards guards = guardsSupplier.get();
         if (!guards.enabled()) {
             return GuardDecision.permit();
         }
@@ -92,7 +92,7 @@ public final class VelocityNetworkGuardService {
     }
 
     public void recordResolvedProfile(String username, String ipAddress, AccountType accountType) {
-        VelocityPluginSettings.Guards guards = guardsSupplier.get();
+        ProudAuthNetworkConfig.Guards guards = guardsSupplier.get();
         if (!guards.enabled()) {
             return;
         }
@@ -160,7 +160,7 @@ public final class VelocityNetworkGuardService {
     }
 
     public void cleanupHistory() {
-        VelocityPluginSettings.Guards guards = guardsSupplier.get();
+        ProudAuthNetworkConfig.Guards guards = guardsSupplier.get();
         if (!guards.enabled()) {
             return;
         }
@@ -178,7 +178,7 @@ public final class VelocityNetworkGuardService {
         }
     }
 
-    private boolean isRateLimited(String ipAddress, VelocityPluginSettings.Guards guards) {
+    private boolean isRateLimited(String ipAddress, ProudAuthNetworkConfig.Guards guards) {
         long now = System.currentTimeMillis();
         long windowMs = Math.max(1L, guards.antiBotWindowSeconds()) * 1000L;
         long minTimestamp = now - windowMs;

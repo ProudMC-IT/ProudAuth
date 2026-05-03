@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.velocity.config;
 
-import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfigCodec;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.SafeConstructor;
@@ -17,104 +18,58 @@ public final class VelocityConfigLoader {
 
     private final Object plugin;
     private final Path dataDirectory;
+    private final Path configPath;
     private final Yaml yaml;
-    private volatile VelocityPluginSettings settings;
+    private final ProudAuthNetworkConfigCodec codec;
+    private volatile ProudAuthNetworkConfig settings;
+    private volatile long lastModifiedMillis;
+    private volatile int fileWatchIntervalSeconds;
 
     public VelocityConfigLoader(Object plugin, Path dataDirectory) {
         this.plugin = plugin;
         this.dataDirectory = dataDirectory;
+        this.configPath = dataDirectory.resolve("velocity-config.yml");
         this.yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
+        this.codec = new ProudAuthNetworkConfigCodec();
         reload();
     }
 
     public void reload() {
         ensureDefaults();
-        Path configPath = dataDirectory.resolve("velocity-config.yml");
         Map<String, Object> root = loadMap(configPath);
-
-        this.settings = new VelocityPluginSettings(
-                new VelocityPluginSettings.Database(
-                        string(root, "database.host", "localhost"),
-                        integer(root, "database.port", 3306),
-                        string(root, "database.name", "proudauth"),
-                        string(root, "database.user", "root"),
-                        string(root, "database.password", ""),
-                        Math.max(1, integer(root, "database.pool-size", 10))
-                ),
-                new VelocityPluginSettings.Premium(
-                        bool(root, "premium.enabled", true),
-                        Math.max(500, integer(root, "premium.api-timeout-ms", 3000)),
-                        ProudAuthSettings.PremiumMode.from(string(root, "premium.mode", "STRICT_GLOBAL")),
-                        Math.max(30, integer(root, "premium.claim-pending-seconds", 300)),
-                        ProudAuthSettings.LegacyUnsupportedAction.from(string(
-                                root,
-                                "premium.proxy-custom.legacy-unsupported-action",
-                                "FORCE_ONLINE"
-                        )),
-                        string(root, "premium.online-mode-denied-message",
-                                "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"),
-                        string(root, "premium.claim-failed-denied-message",
-                                "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Verifica premium fallita</red><newline><gray>Non e stato possibile confermare questo nickname come premium.</gray><newline><yellow>Rientra e scegli di nuovo <white>/sp</white><yellow> oppure <white>/premium</white><yellow>.</yellow>")
-                ),
-                new VelocityPluginSettings.Bridge(
-                        bool(root, "bridge.enabled", false),
-                        ProudAuthSettings.BridgeMode.from(string(root, "bridge.mode", "FALLBACK")),
-                        ProudAuthSettings.BridgeTransport.from(string(root, "bridge.transport", "MYSQL")),
-                        string(root, "bridge.shared-secret", "change-me"),
-                        Math.max(1, integer(root, "bridge.assertion-ttl-seconds", 10)),
-                        bool(root, "bridge.backend-check.enabled", true),
-                        Math.max(250, integer(root, "bridge.backend-check.timeout-ms", 2500)),
-                        Math.max(25, integer(root, "bridge.backend-check.poll-interval-ms", 100))
-                ),
-                new VelocityPluginSettings.Routing(
-                        bool(root, "routing.auth-entry.enabled", false),
-                        string(root, "routing.auth-entry.server", ""),
-                        bool(root, "routing.post-auth.enabled", false),
-                        string(root, "routing.post-auth.server", "")
-                ),
-                new VelocityPluginSettings.Guards(
-                        bool(root, "guards.enabled", true),
-                        Math.max(1, integer(root, "guards.antibot.window-seconds", 12)),
-                        Math.max(1, integer(root, "guards.antibot.max-connections-per-ip", 8)),
-                        Math.max(1, integer(root, "guards.antibot.ban-seconds", 900)),
-                        Math.max(5, integer(root, "guards.identity.window-seconds", 3600)),
-                        Math.max(1, integer(root, "guards.identity.max-usernames-per-ip", 4)),
-                        Math.max(1, integer(root, "guards.identity.max-ips-per-username", 5)),
-                        Math.max(1, integer(root, "guards.identity.ban-seconds", 7200)),
-                        Math.max(1, integer(root, "guards.history-retention-days", 30))
-                ),
-                new VelocityPluginSettings.Reports(
-                        bool(root, "reports.auto-export.enabled", true),
-                        Math.max(1, integer(root, "reports.auto-export.interval-minutes", 60)),
-                        Math.max(1, integer(root, "reports.auto-export.window-hours", 24)),
-                        Math.max(1, integer(root, "reports.auto-export.limit", 50))
-                ),
-                string(root, "language", "it"),
-                new ProudAuthSettings.Debugger(
-                        bool(root, "debugger.enabled", false),
-                        bool(root, "debugger.player-resolution", true),
-                        bool(root, "debugger.session-flow", true),
-                        bool(root, "debugger.premium-flow", true),
-                        bool(root, "debugger.bridge-flow", true),
-                        bool(root, "debugger.security-flow", false),
-                        bool(root, "debugger.protection-flow", true),
-                        bool(root, "debugger.ip-ban-flow", true),
-                        bool(root, "debugger.profile-flow", true),
-                        bool(root, "debugger.movement-audit", false),
-                        bool(root, "debugger.teleport-audit", false),
-                        bool(root, "debugger.command-flow", true)
-                )
-        );
+        try {
+            this.settings = codec.parse(Files.readString(configPath));
+            this.lastModifiedMillis = Files.getLastModifiedTime(configPath).toMillis();
+        } catch (IOException exception) {
+            throw new IllegalStateException("Impossibile leggere " + configPath, exception);
+        }
+        this.fileWatchIntervalSeconds = Math.max(1, integer(root, "config-sync.file-watch-interval-seconds", 2));
     }
 
-    public VelocityPluginSettings settings() {
+    public ProudAuthNetworkConfig settings() {
         return settings;
+    }
+
+    public int fileWatchIntervalSeconds() {
+        return fileWatchIntervalSeconds;
+    }
+
+    public boolean hasFileChanged() {
+        try {
+            return Files.exists(configPath) && Files.getLastModifiedTime(configPath).toMillis() > lastModifiedMillis;
+        } catch (IOException exception) {
+            return false;
+        }
+    }
+
+    public Path configPath() {
+        return configPath;
     }
 
     private void ensureDefaults() {
         try {
             Files.createDirectories(dataDirectory);
-            copyIfMissing("velocity-config.yml", dataDirectory.resolve("velocity-config.yml"));
+            copyIfMissing("velocity-config.yml", configPath);
         } catch (IOException exception) {
             throw new IllegalStateException("Impossibile preparare i file di configurazione Velocity.", exception);
         }
@@ -162,19 +117,8 @@ public final class VelocityConfigLoader {
         return current;
     }
 
-    private String string(Map<String, Object> root, String path, String fallback) {
-        Object value = get(root, path);
-        return value == null ? fallback : String.valueOf(value);
-    }
-
-    private boolean bool(Map<String, Object> root, String path, boolean fallback) {
-        Object value = get(root, path);
-        return value instanceof Boolean bool ? bool : fallback;
-    }
-
     private int integer(Map<String, Object> root, String path, int fallback) {
         Object value = get(root, path);
         return value instanceof Number number ? number.intValue() : fallback;
     }
-
 }

@@ -1,5 +1,6 @@
 dependencies {
     api(libs.jetbrainsAnnotations)
+    api(libs.snakeyaml)
 
     compileOnly(libs.hikari)
     compileOnly(libs.jbcrypt)

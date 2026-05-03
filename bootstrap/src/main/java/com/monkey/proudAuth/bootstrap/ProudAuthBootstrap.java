@@ -18,6 +18,11 @@ public final class ProudAuthBootstrap {
     public ProudAuthRuntime boot(PlatformType platformType, ProudAuthSettings settings) {
         StorageProvider storage = new MySQLStorage(settings);
         storage.init();
+        return boot(platformType, settings, storage);
+    }
+
+    public ProudAuthRuntime boot(PlatformType platformType, ProudAuthSettings settings, StorageProvider storage) {
+        storage.reload(settings);
         SessionManager sessionManager = new SessionManagerImpl(storage, settings);
         PremiumVerifier premiumVerifier = new MojangPremiumVerifier(settings);
         ProxyBridgeService bridgeService = new ProxyBridgeService(storage, settings);
@@ -25,17 +30,7 @@ public final class ProudAuthBootstrap {
         TotpService totpService = new TotpService(settings);
         AuthService authService = new AuthServiceImpl(storage, sessionManager, bruteForceGuard, premiumVerifier, totpService, settings);
 
-        return new ProudAuthRuntime(
-                platformType,
-                settings,
-                storage,
-                sessionManager,
-                premiumVerifier,
-                bridgeService,
-                bruteForceGuard,
-                totpService,
-                authService
-        );
+        return new ProudAuthRuntime(platformType, settings, storage, sessionManager, premiumVerifier, bridgeService, bruteForceGuard, totpService, authService);
     }
 
     public ProudAuthRuntime reload(ProudAuthRuntime runtime, ProudAuthSettings settings) {
