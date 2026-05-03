@@ -17,7 +17,7 @@ import java.nio.file.Path;
 @Plugin(
         id = "proudauth",
         name = "ProudAuth",
-        version = "1.0.2",
+        version = ProudAuthBuildConstants.VERSION,
         authors = {"MonkeyMoon104"},
         description = "Proxy companion per ProudAuth"
 )
