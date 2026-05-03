@@ -32,7 +32,7 @@ public final class PlayerActionBlockListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onBlockBreak(BlockBreakEvent event) {
-        if (isProtected(event.getPlayer())) {
+        if (playerProtection.blockBlockBreak() && isProtected(event.getPlayer())) {
             event.setCancelled(true);
             sendNotice(event.getPlayer(), "block-break-blocked");
         }
@@ -40,7 +40,7 @@ public final class PlayerActionBlockListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onBlockPlace(BlockPlaceEvent event) {
-        if (isProtected(event.getPlayer())) {
+        if (playerProtection.blockBlockPlace() && isProtected(event.getPlayer())) {
             event.setCancelled(true);
             sendNotice(event.getPlayer(), "block-break-blocked");
         }
@@ -48,53 +48,53 @@ public final class PlayerActionBlockListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onEntityDamage(EntityDamageByEntityEvent event) {
-        if (event.getDamager() instanceof Player attacker && isProtected(attacker)) {
+        if (event.getDamager() instanceof Player attacker && playerProtection.blockPvPAttack() && isProtected(attacker)) {
             event.setCancelled(true);
             sendNotice(attacker, "pvp-blocked");
             return;
         }
-        if (event.getEntity() instanceof Player victim && isProtected(victim)) {
+        if (event.getEntity() instanceof Player victim && playerProtection.blockPvPTakeDamage() && isProtected(victim)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onPickupItem(EntityPickupItemEvent event) {
-        if (event.getEntity() instanceof Player player && isProtected(player)) {
+        if (event.getEntity() instanceof Player player && playerProtection.blockItemPickup() && isProtected(player)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onFoodLevelChange(FoodLevelChangeEvent event) {
-        if (event.getEntity() instanceof Player player && isProtected(player)) {
+        if (event.getEntity() instanceof Player player && playerProtection.blockFoodLevelChange() && isProtected(player)) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onItemConsume(PlayerItemConsumeEvent event) {
-        if (isProtected(event.getPlayer())) {
+        if (playerProtection.blockItemConsume() && isProtected(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onSwapHandItems(PlayerSwapHandItemsEvent event) {
-        if (isProtected(event.getPlayer())) {
+        if (playerProtection.blockSwapHandItems() && isProtected(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onEditBook(PlayerEditBookEvent event) {
-        if (isProtected(event.getPlayer())) {
+        if (playerProtection.blockBookEdit() && isProtected(event.getPlayer())) {
             event.setCancelled(true);
         }
     }
 
     private boolean isProtected(Player player) {
-        return playerProtection.blockInteractions() && playerProtection.isProtected(player.getUniqueId());
+        return playerProtection.isProtected(player.getUniqueId());
     }
 
     private void sendNotice(Player player, String key) {

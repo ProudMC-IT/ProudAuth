@@ -7,12 +7,16 @@ import com.monkey.proudAuth.config.PluginConfig;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitTask;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 public final class PlayerProtection {
 
@@ -21,6 +25,7 @@ public final class PlayerProtection {
     private final Set<UUID> claimChoicePlayers;
     private final Map<UUID, BukkitTask> timeoutTasks;
     private final Map<UUID, MovementStateSnapshot> movementStateSnapshots;
+    private final Map<UUID, VisualEffectSnapshot> visualEffectSnapshots;
     private volatile PluginConfig pluginConfig;
     private volatile LangConfig langConfig;
     private final ProudAuthConsoleLogger logger;
@@ -34,6 +39,7 @@ public final class PlayerProtection {
         this.claimChoicePlayers = ConcurrentHashMap.newKeySet();
         this.timeoutTasks = new ConcurrentHashMap<>();
         this.movementStateSnapshots = new ConcurrentHashMap<>();
+        this.visualEffectSnapshots = new ConcurrentHashMap<>();
     }
 
     public void reload(PluginConfig pluginConfig, LangConfig langConfig) {
@@ -49,7 +55,8 @@ public final class PlayerProtection {
                 "uuid", player.getUniqueId(),
                 "auth_spawn_enabled", pluginConfig.settings().protection().authSpawn().enabled());
         pluginConfig.authSpawn(plugin.getServer()).ifPresent(player::teleportAsync);
-        applyInvisibility(player);
+        applyVisualEffect(player);
+        refreshVisibility();
         scheduleAuthTimeout(player);
     }
 
@@ -68,7 +75,8 @@ public final class PlayerProtection {
                 "uuid", player.getUniqueId(),
                 "auth_spawn_enabled", pluginConfig.settings().protection().authSpawn().enabled());
         pluginConfig.authSpawn(plugin.getServer()).ifPresent(player::teleportAsync);
-        applyInvisibility(player);
+        applyVisualEffect(player);
+        refreshVisibility();
     }
 
     public void removeProtection(Player player) {
@@ -76,6 +84,7 @@ public final class PlayerProtection {
         claimChoicePlayers.remove(player.getUniqueId());
         BukkitTask timeoutTask = timeoutTasks.remove(player.getUniqueId());
         MovementStateSnapshot movementStateSnapshot = movementStateSnapshots.remove(player.getUniqueId());
+        VisualEffectSnapshot visualEffectSnapshot = visualEffectSnapshots.remove(player.getUniqueId());
         if (timeoutTask != null) {
             timeoutTask.cancel();
         }
@@ -84,13 +93,13 @@ public final class PlayerProtection {
                 "uuid", player.getUniqueId(),
                 "was_protected", wasProtected,
                 "timeout_task", timeoutTask != null,
-                "movement_snapshot", movementStateSnapshot != null);
+                "movement_snapshot", movementStateSnapshot != null,
+                "visual_effect_snapshot", visualEffectSnapshot != null);
         if (movementStateSnapshot != null) {
             restoreMovementState(player, movementStateSnapshot);
         }
-        if (wasProtected) {
-            removeInvisibility(player);
-        }
+        restoreVisualEffect(player, visualEffectSnapshot);
+        refreshVisibility();
     }
 
     public boolean isProtected(UUID uuid) {
@@ -125,6 +134,93 @@ public final class PlayerProtection {
         return pluginConfig.settings().protection().noDropOnDeath();
     }
 
+    public boolean blockCommands() {
+        return pluginConfig.settings().protection().blockCommands();
+    }
+
+    public Set<String> allowedCommandsWhileProtected() {
+        return pluginConfig.settings().protection().allowedCommandsWhileProtected().stream()
+                .map(this::normalizeCommand)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    public Set<String> allowedCommandsDuringClaimChoice() {
+        return pluginConfig.settings().protection().allowedCommandsDuringClaimChoice().stream()
+                .map(this::normalizeCommand)
+                .collect(Collectors.toUnmodifiableSet());
+    }
+
+    public boolean blockBlockBreak() {
+        return pluginConfig.settings().protection().blockBlockBreak();
+    }
+
+    public boolean blockBlockPlace() {
+        return pluginConfig.settings().protection().blockBlockPlace();
+    }
+
+    public boolean blockPvPAttack() {
+        return pluginConfig.settings().protection().blockPvPAttack();
+    }
+
+    public boolean blockPvPTakeDamage() {
+        return pluginConfig.settings().protection().blockPvPTakeDamage();
+    }
+
+    public boolean blockItemPickup() {
+        return pluginConfig.settings().protection().blockItemPickup();
+    }
+
+    public boolean blockFoodLevelChange() {
+        return pluginConfig.settings().protection().blockFoodLevelChange();
+    }
+
+    public boolean blockItemConsume() {
+        return pluginConfig.settings().protection().blockItemConsume();
+    }
+
+    public boolean blockSwapHandItems() {
+        return pluginConfig.settings().protection().blockSwapHandItems();
+    }
+
+    public boolean blockBookEdit() {
+        return pluginConfig.settings().protection().blockBookEdit();
+    }
+
+    public boolean blockInventory() {
+        return pluginConfig.settings().protection().blockInventory();
+    }
+
+    public boolean blockItemDrop() {
+        return pluginConfig.settings().protection().blockItemDrop();
+    }
+
+    public boolean blockEntityInteract() {
+        return pluginConfig.settings().protection().blockEntityInteract();
+    }
+
+    public boolean blockWorldInteract() {
+        return pluginConfig.settings().protection().blockWorldInteract();
+    }
+
+    public com.monkey.proudAuth.common.config.ProudAuthSettings.VisualEffect visualEffect() {
+        return pluginConfig.settings().protection().visualEffect();
+    }
+
+    public void refreshVisibility() {
+        for (Player viewer : Bukkit.getOnlinePlayers()) {
+            for (Player target : Bukkit.getOnlinePlayers()) {
+                if (viewer.getUniqueId().equals(target.getUniqueId())) {
+                    continue;
+                }
+                if (shouldHide(viewer, target)) {
+                    viewer.hidePlayer(plugin, target);
+                } else {
+                    viewer.showPlayer(plugin, target);
+                }
+            }
+        }
+    }
+
     public void clear(Player player) {
         removeProtection(player);
     }
@@ -149,31 +245,30 @@ public final class PlayerProtection {
         timeoutTasks.put(player.getUniqueId(), task);
     }
 
-    private void applyInvisibility(Player player) {
-        if (!pluginConfig.settings().protection().invisibleUntilAuth()) {
-            return;
-        }
-
-        for (Player other : Bukkit.getOnlinePlayers()) {
-            if (other.getUniqueId().equals(player.getUniqueId())) {
-                continue;
-            }
-            other.hidePlayer(plugin, player);
-            player.hidePlayer(plugin, other);
-        }
+    private boolean shouldHide(Player viewer, Player target) {
+        boolean hideProtectedPlayerFromOthers = pluginConfig.settings().protection().hideProtectedPlayerFromOthers();
+        boolean hideOtherPlayersFromProtectedPlayer = pluginConfig.settings().protection().hideOtherPlayersFromProtectedPlayer();
+        return hideProtectedPlayerFromOthers && isProtected(target.getUniqueId())
+                || hideOtherPlayersFromProtectedPlayer && isProtected(viewer.getUniqueId());
     }
 
-    private void removeInvisibility(Player player) {
-        if (!pluginConfig.settings().protection().invisibleUntilAuth()) {
+    private void applyVisualEffect(Player player) {
+        PotionEffectType effectType = resolveEffectType();
+        if (effectType == null) {
             return;
         }
+        visualEffectSnapshots.computeIfAbsent(player.getUniqueId(), ignored ->
+                new VisualEffectSnapshot(effectType, player.getPotionEffect(effectType)));
+        player.addPotionEffect(new PotionEffect(effectType, Integer.MAX_VALUE, 0, false, false, false));
+    }
 
-        for (Player other : Bukkit.getOnlinePlayers()) {
-            if (other.getUniqueId().equals(player.getUniqueId())) {
-                continue;
-            }
-            other.showPlayer(plugin, player);
-            player.showPlayer(plugin, other);
+    private void restoreVisualEffect(Player player, VisualEffectSnapshot snapshot) {
+        if (snapshot == null) {
+            return;
+        }
+        player.removePotionEffect(snapshot.effectType());
+        if (snapshot.previousEffect() != null) {
+            player.addPotionEffect(snapshot.previousEffect());
         }
     }
 
@@ -217,6 +312,31 @@ public final class PlayerProtection {
             boolean allowFlight,
             boolean flying,
             boolean invulnerable
+    ) {
+    }
+
+    private String normalizeCommand(String raw) {
+        if (raw == null) {
+            return "";
+        }
+        String normalized = raw.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return "";
+        }
+        return normalized.startsWith("/") ? normalized : "/" + normalized;
+    }
+
+    private PotionEffectType resolveEffectType() {
+        return switch (visualEffect()) {
+            case BLINDNESS -> PotionEffectType.BLINDNESS;
+            case DARKNESS -> PotionEffectType.DARKNESS;
+            case NONE -> null;
+        };
+    }
+
+    private record VisualEffectSnapshot(
+            PotionEffectType effectType,
+            PotionEffect previousEffect
     ) {
     }
 }

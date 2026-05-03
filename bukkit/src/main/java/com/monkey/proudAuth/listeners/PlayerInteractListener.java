@@ -31,7 +31,7 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInteract(PlayerInteractEvent event) {
-        if (shouldBlock(event.getPlayer())) {
+        if (playerProtection.blockWorldInteract() && shouldBlock(event.getPlayer())) {
             event.setCancelled(true);
             sendNotice(event.getPlayer());
         }
@@ -39,7 +39,7 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInteractEntity(PlayerInteractEntityEvent event) {
-        if (shouldBlock(event.getPlayer())) {
+        if (playerProtection.blockEntityInteract() && shouldBlock(event.getPlayer())) {
             event.setCancelled(true);
             sendNotice(event.getPlayer());
         }
@@ -47,7 +47,7 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInventoryClick(InventoryClickEvent event) {
-        if (event.getWhoClicked() instanceof Player player && shouldBlock(player)) {
+        if (event.getWhoClicked() instanceof Player player && playerProtection.blockInventory() && shouldBlock(player)) {
             event.setCancelled(true);
             sendNotice(player);
         }
@@ -55,7 +55,7 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInventoryDrag(InventoryDragEvent event) {
-        if (event.getWhoClicked() instanceof Player player && shouldBlock(player)) {
+        if (event.getWhoClicked() instanceof Player player && playerProtection.blockInventory() && shouldBlock(player)) {
             event.setCancelled(true);
             sendNotice(player);
         }
@@ -63,7 +63,7 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onInventoryOpen(InventoryOpenEvent event) {
-        if (event.getPlayer() instanceof Player player && shouldBlock(player)) {
+        if (event.getPlayer() instanceof Player player && playerProtection.blockInventory() && shouldBlock(player)) {
             event.setCancelled(true);
             sendNotice(player);
         }
@@ -71,14 +71,14 @@ public final class PlayerInteractListener implements Listener {
 
     @EventHandler(priority = EventPriority.LOWEST, ignoreCancelled = false)
     public void onDrop(PlayerDropItemEvent event) {
-        if (shouldBlock(event.getPlayer())) {
+        if (playerProtection.blockItemDrop() && shouldBlock(event.getPlayer())) {
             event.setCancelled(true);
             sendNotice(event.getPlayer());
         }
     }
 
     private boolean shouldBlock(Player player) {
-        return playerProtection.blockInteractions() && playerProtection.isProtected(player.getUniqueId());
+        return playerProtection.isProtected(player.getUniqueId());
     }
 
     private void sendNotice(Player player) {
