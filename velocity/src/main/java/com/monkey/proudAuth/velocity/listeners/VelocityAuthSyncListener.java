@@ -1,9 +1,9 @@
 package com.monkey.proudAuth.velocity.listeners;
 
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
-import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.velocity.config.VelocityPluginSettings;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.Subscribe;

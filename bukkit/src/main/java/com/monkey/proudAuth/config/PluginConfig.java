@@ -3,8 +3,8 @@ package com.monkey.proudAuth.config;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.util.LocationSerializer;
 import org.bukkit.Location;
-import org.bukkit.World;
 import org.bukkit.Server;
+import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
