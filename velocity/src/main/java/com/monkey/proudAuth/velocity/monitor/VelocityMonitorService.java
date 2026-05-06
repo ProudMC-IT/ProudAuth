@@ -1,5 +1,6 @@
 package com.monkey.proudAuth.velocity.monitor;
 
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.monitor.*;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
@@ -20,10 +21,13 @@ import java.util.function.Supplier;
 
 public final class VelocityMonitorService {
 
+    private static final String MONITOR_PREFIX_KEY = "monitor-prefix";
+
     private final Object pluginOwner;
     private final ProxyServer proxyServer;
     private final ProudAuthConsoleLogger logger;
     private final Supplier<VelocityLang> langSupplier;
+    private final Supplier<ProudAuthNetworkConfig.Monitor> monitorConfigSupplier;
     private final MonitorIdentity identity;
     private final MonitorSessionIdGenerator sessionIdGenerator = new MonitorSessionIdGenerator();
     private final VelocityMonitorSnapshotBuilder snapshotBuilder;
@@ -42,12 +46,14 @@ public final class VelocityMonitorService {
             ProudAuthConsoleLogger logger,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             VelocityMonitorAuthStateStore authStateStore,
-            Supplier<VelocityLang> langSupplier
+            Supplier<VelocityLang> langSupplier,
+            Supplier<ProudAuthNetworkConfig.Monitor> monitorConfigSupplier
     ) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
         this.logger = logger;
         this.langSupplier = langSupplier;
+        this.monitorConfigSupplier = monitorConfigSupplier;
         this.identity = new MonitorIdentityStore(dataDirectory, logger).loadOrCreate();
         this.snapshotBuilder = new VelocityMonitorSnapshotBuilder(
                 proxyServer,
@@ -68,7 +74,7 @@ public final class VelocityMonitorService {
 
         return socketClient.connect(sessionId, identity)
                 .thenApply(ignored -> {
-                    socketClient.send("snapshot", snapshotBuilder.build(sessionId, createdBy, identity));
+                    socketClient.send("snapshot", snapshotBuilder.build(sessionId, createdBy, identity, currentNetworkName()));
                     scheduleSessionCleanup(sessionId);
                     startServerStatusTask();
                     return ProudAuthMonitorConstants.PANEL_URL + "/monitor/" + sessionId;
@@ -291,7 +297,8 @@ public final class VelocityMonitorService {
             return;
         }
 
-        player.sendMessage(langSupplier.get().rawMessage(
+        player.sendMessage(langSupplier.get().prefixedMessage(
+                MONITOR_PREFIX_KEY,
                 "monitor-player-message",
                 Placeholder.unparsed("message", message)
         ));
@@ -307,7 +314,8 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor re-auth requested: player=" + player.getUsername());
-        player.disconnect(langSupplier.get().rawMessage(
+        player.disconnect(langSupplier.get().prefixedMessage(
+                MONITOR_PREFIX_KEY,
                 "monitor-player-reauth",
                 Placeholder.unparsed("reason", reason)
         ));
@@ -322,7 +330,8 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor force logout requested: player=" + player.getUsername());
-        player.disconnect(langSupplier.get().rawMessage(
+        player.disconnect(langSupplier.get().prefixedMessage(
+                MONITOR_PREFIX_KEY,
                 "monitor-player-force-logout",
                 Placeholder.unparsed("reason", reason)
         ));
@@ -337,7 +346,8 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor kick requested: player=" + player.getUsername() + " reason=" + reason);
-        player.disconnect(langSupplier.get().rawMessage(
+        player.disconnect(langSupplier.get().prefixedMessage(
+                MONITOR_PREFIX_KEY,
                 "monitor-player-kick",
                 Placeholder.unparsed("reason", reason)
         ));
@@ -427,5 +437,13 @@ public final class VelocityMonitorService {
                 "status", status,
                 "message", message
         ));
+    }
+
+    private String currentNetworkName() {
+        ProudAuthNetworkConfig.Monitor monitor = monitorConfigSupplier.get();
+        if (monitor == null || monitor.networkName() == null || monitor.networkName().isBlank()) {
+            return ProudAuthMonitorConstants.DEFAULT_NETWORK_NAME;
+        }
+        return monitor.networkName();
     }
 }

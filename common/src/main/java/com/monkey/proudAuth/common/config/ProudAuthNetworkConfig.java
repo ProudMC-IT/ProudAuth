@@ -2,7 +2,9 @@ package com.monkey.proudAuth.common.config;
 
 public record ProudAuthNetworkConfig(
         String language,
+        LanguageBundle languageBundle,
         ProudAuthSettings.Database database,
+        Monitor monitor,
         ProudAuthSettings.Premium premium,
         ProudAuthSettings.Sessions sessions,
         ProudAuthSettings.Security security,
@@ -26,6 +28,23 @@ public record ProudAuthNetworkConfig(
                 bridge,
                 debugger
         );
+    }
+
+    public record LanguageBundle(
+            java.util.Map<String, String> messages
+    ) {
+        public LanguageBundle {
+            messages = messages == null ? java.util.Map.of() : java.util.Map.copyOf(messages);
+        }
+
+        public boolean hasMessages() {
+            return !messages.isEmpty();
+        }
+    }
+
+    public record Monitor(
+            String networkName
+    ) {
     }
 
     public record Proxy(

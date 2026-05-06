@@ -166,7 +166,8 @@ public final class ProudAuthVelocityPlatform {
                     platformLogger,
                     resolvedPlayerStore,
                     monitorAuthStateStore,
-                    () -> lang
+                    () -> lang,
+                    () -> settings.monitor()
             );
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
@@ -333,7 +334,7 @@ public final class ProudAuthVelocityPlatform {
     }
 
     private void publishActiveNetworkConfig(String updatedBy) {
-        String document = networkConfigCodec.dump(settings);
+        String document = networkConfigCodec.dump(settings, lang.exportMessages());
         String configHash = sha256(document);
         var snapshot = storage.saveActiveNetworkConfig(document, configHash, updatedBy, "velocity-proxy").join();
 
@@ -387,12 +388,17 @@ public final class ProudAuthVelocityPlatform {
 
     private void watchConfigChanges() {
         withRuntimeContext(() -> {
-            if (!configLoader.hasFileChanged()) {
+            boolean configChanged = configLoader.hasFileChanged();
+            boolean languageChanged = lang != null && lang.hasLanguageFileChanged();
+
+            if (!configChanged && !languageChanged) {
                 return;
             }
 
             try {
-                reloadFromDisk("velocity-file-watch");
+                reloadFromDisk(languageChanged && !configChanged
+                        ? "velocity-language-file-watch"
+                        : "velocity-file-watch");
             } catch (Exception exception) {
                 platformLogger.error("Errore durante reload automatico della config Velocity.", exception);
             }

@@ -9,6 +9,7 @@ import org.bukkit.World;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Map;
 import java.util.Optional;
 
 public final class PluginConfig {
@@ -17,6 +18,7 @@ public final class PluginConfig {
     private volatile Bootstrap bootstrap;
     private volatile ProudAuthSettings settings;
     private volatile String language;
+    private volatile Map<String, String> centralizedLanguageMessages;
 
     public PluginConfig(JavaPlugin plugin) {
         this.plugin = plugin;
@@ -44,11 +46,13 @@ public final class PluginConfig {
         );
         this.settings = bootstrap.storageBootstrapSettings();
         this.language = "it";
+        this.centralizedLanguageMessages = Map.of();
     }
 
     public void applyNetworkConfig(ProudAuthNetworkConfig networkConfig) {
         this.settings = networkConfig.toBackendSettings(bootstrap.database());
         this.language = networkConfig.language();
+        this.centralizedLanguageMessages = networkConfig.languageBundle().messages();
     }
 
     public ProudAuthSettings settings() {
@@ -61,6 +65,10 @@ public final class PluginConfig {
 
     public String language() {
         return language;
+    }
+
+    public Map<String, String> centralizedLanguageMessages() {
+        return centralizedLanguageMessages;
     }
 
     public Optional<Location> authSpawn(Server server) {

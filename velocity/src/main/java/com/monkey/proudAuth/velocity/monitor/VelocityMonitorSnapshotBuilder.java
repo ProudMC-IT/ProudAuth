@@ -1,7 +1,6 @@
 package com.monkey.proudAuth.velocity.monitor;
 
 import com.monkey.proudAuth.common.monitor.MonitorIdentity;
-import com.monkey.proudAuth.common.monitor.ProudAuthMonitorConstants;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -23,10 +22,10 @@ public final class VelocityMonitorSnapshotBuilder {
         this.resolvedPlayerStore = resolvedPlayerStore;
     }
 
-    public Map<String, Object> build(String sessionId, String createdBy, MonitorIdentity identity) {
+    public Map<String, Object> build(String sessionId, String createdBy, MonitorIdentity identity, String networkName) {
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("networkId", identity.networkId());
-        snapshot.put("networkName", ProudAuthMonitorConstants.DEFAULT_NETWORK_NAME);
+        snapshot.put("networkName", networkName);
         snapshot.put("sessionId", sessionId);
         snapshot.put("createdBy", createdBy);
         snapshot.put("createdAt", System.currentTimeMillis());

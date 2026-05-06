@@ -20,6 +20,10 @@ database:
   password: "password"
   pool-size: 10
 
+monitor:
+  # Friendly network name exposed in ProudMonitor snapshots and consumable by the monitor site.
+  network-name: "ProudAuth Network"
+
 config-sync:
   # How often the proxy checks whether this file changed on disk.
   # If it changed, ProudAuth reloads the proxy config and republishes it to the DB.

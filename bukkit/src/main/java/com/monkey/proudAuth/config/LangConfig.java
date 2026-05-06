@@ -15,8 +15,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.*;
 
 public final class LangConfig {
@@ -42,14 +40,21 @@ public final class LangConfig {
 
     public void reload() {
         try {
-            Path langDirectory = plugin.getDataFolder().toPath().resolve("lang");
-            Files.createDirectories(langDirectory);
-
             Map<String, String> defaultMessages = loadBundledMessages(LanguageFileSupport.DEFAULT_LANGUAGE_FILE);
-            copyBundledLanguageIfMissing(langDirectory, LanguageFileSupport.DEFAULT_LANGUAGE_FILE);
+
+            Map<String, String> centralizedMessages = pluginConfig.centralizedLanguageMessages();
+            if (!centralizedMessages.isEmpty()) {
+                if (validateConfiguration(centralizedMessages, defaultMessages.keySet(), "shared network config language bundle")) {
+                    this.configuration = centralizedMessages;
+                    this.activeLanguageDescription = pluginConfig.language() + " (centralized from proxy)";
+                    return;
+                }
+
+                logger.warn("Bundle lingua centralizzato non valido. Ritorno al caricamento locale.");
+            }
 
             String requestedFileName = LanguageFileSupport.normalizeConfiguredLanguage(pluginConfig.language());
-            LoadedLanguage loadedLanguage = resolveConfiguredLanguage(langDirectory, requestedFileName, defaultMessages);
+            LoadedLanguage loadedLanguage = resolveBundledLanguage(requestedFileName, defaultMessages);
             this.configuration = loadedLanguage.messages();
             this.activeLanguageDescription = loadedLanguage.description();
         } catch (Exception exception) {
@@ -74,39 +79,11 @@ public final class LangConfig {
         return activeLanguageDescription;
     }
 
-    private LoadedLanguage resolveConfiguredLanguage(Path langDirectory,
-                                                     String requestedFileName,
-                                                     Map<String, String> defaultMessages) throws IOException {
+    private LoadedLanguage resolveBundledLanguage(String requestedFileName,
+                                                  Map<String, String> defaultMessages) throws IOException {
         Set<String> requiredKeys = defaultMessages.keySet();
-        Optional<Path> externalPath = LanguageFileSupport.findLanguageFile(langDirectory, requestedFileName);
-        if (externalPath.isPresent()) {
-            Path selectedPath = externalPath.get();
-            Map<String, String> externalMessages = loadFileMessages(selectedPath);
-            if (validateConfiguration(externalMessages, requiredKeys, "external file " + selectedPath.toAbsolutePath())) {
-                return new LoadedLanguage(externalMessages, selectedPath.getFileName() + " (external)");
-            }
-
-            Optional<Map<String, String>> bundledMessages = loadOptionalBundledMessages(requestedFileName);
-            if (bundledMessages.isPresent() && validateConfiguration(
-                    bundledMessages.get(),
-                    requiredKeys,
-                    "bundled resource lang/" + requestedFileName
-            )) {
-                logger.warn("Il file lingua esterno "
-                        + selectedPath.getFileName()
-                        + " non e valido. Uso la copia interna dal jar.");
-                return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled fallback)");
-            }
-
-            logger.warn("Il file lingua " + selectedPath.getFileName()
-                    + " non e valido e non esiste un fallback valido per la stessa lingua. "
-                    + "Uso " + LanguageFileSupport.DEFAULT_LANGUAGE_FILE + ".");
-            return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)");
-        }
-
         Optional<Map<String, String>> bundledMessages = loadOptionalBundledMessages(requestedFileName);
         if (bundledMessages.isPresent()) {
-            copyBundledLanguageIfMissing(langDirectory, requestedFileName);
             if (validateConfiguration(bundledMessages.get(), requiredKeys, "bundled resource lang/" + requestedFileName)) {
                 return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled)");
             }
@@ -114,28 +91,10 @@ public final class LangConfig {
 
         if (!requestedFileName.equals(LanguageFileSupport.DEFAULT_LANGUAGE_FILE)) {
             logger.warn("Lingua " + requestedFileName
-                    + " non trovata nella cartella "
-                    + langDirectory.toAbsolutePath()
-                    + " e nemmeno nel jar. Uso "
+                    + " non trovata nel jar. Uso "
                     + LanguageFileSupport.DEFAULT_LANGUAGE_FILE + ".");
         }
         return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)");
-    }
-
-    private void copyBundledLanguageIfMissing(Path langDirectory, String fileName) throws IOException {
-        if (LanguageFileSupport.findLanguageFile(langDirectory, fileName).isPresent()) {
-            return;
-        }
-
-        Optional<InputStream> resourceStream = openBundledResource(fileName);
-        if (resourceStream.isEmpty()) {
-            return;
-        }
-
-        Path targetPath = langDirectory.resolve(fileName);
-        try (InputStream inputStream = resourceStream.get()) {
-            Files.copy(inputStream, targetPath);
-        }
     }
 
     private Map<String, String> loadBundledMessages(String fileName) throws IOException {
@@ -157,12 +116,6 @@ public final class LangConfig {
 
     private Optional<InputStream> openBundledResource(String fileName) {
         return Optional.ofNullable(plugin.getResource("lang/" + fileName));
-    }
-
-    private Map<String, String> loadFileMessages(Path filePath) throws IOException {
-        try (Reader reader = Files.newBufferedReader(filePath, StandardCharsets.UTF_8)) {
-            return loadMessages(reader);
-        }
     }
 
     private Map<String, String> loadMessages(Reader reader) {

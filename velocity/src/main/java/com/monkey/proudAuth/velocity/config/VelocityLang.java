@@ -30,6 +30,8 @@ public final class VelocityLang {
     private final Yaml yaml;
     private volatile Map<String, String> configuration;
     private volatile String activeLanguageDescription;
+    private volatile Path activeExternalLanguagePath;
+    private volatile long activeExternalLanguageLastModifiedMillis;
 
     public VelocityLang(Object plugin, Path dataDirectory, ProudAuthConsoleLogger logger) {
         this.plugin = plugin;
@@ -39,6 +41,8 @@ public final class VelocityLang {
         this.yaml = new Yaml(new SafeConstructor(new LoaderOptions()));
         this.configuration = Collections.emptyMap();
         this.activeLanguageDescription = LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)";
+        this.activeExternalLanguagePath = null;
+        this.activeExternalLanguageLastModifiedMillis = -1L;
     }
 
     public void reload(String configuredLanguage) {
@@ -53,21 +57,26 @@ public final class VelocityLang {
             LoadedLanguage loadedLanguage = resolveConfiguredLanguage(langDirectory, requestedFileName, defaultMessages);
             this.configuration = loadedLanguage.messages();
             this.activeLanguageDescription = loadedLanguage.description();
+            this.activeExternalLanguagePath = loadedLanguage.externalPath();
+            this.activeExternalLanguageLastModifiedMillis = loadedLanguage.lastModifiedMillis();
         } catch (IOException exception) {
             throw new IllegalStateException("Impossibile caricare il language file Velocity.", exception);
         }
     }
 
     public Component message(String key, TagResolver... resolvers) {
-        String body = string(key, key);
-        String prefix = string("prefix", "");
-        String payload = Objects.equals(key, "prefix") ? body : prefix + body;
-        return miniMessage.deserialize(payload, resolvers);
+        return prefixedMessage("prefix", key, resolvers);
     }
 
     public Component rawMessage(String key, TagResolver... resolvers) {
         String body = string(key, key);
         return miniMessage.deserialize(body, resolvers);
+    }
+
+    public Component prefixedMessage(String prefixKey, String key, TagResolver... resolvers) {
+        String body = string(key, key);
+        String prefix = Objects.equals(key, prefixKey) ? "" : string(prefixKey, "");
+        return miniMessage.deserialize(prefix + body, resolvers);
     }
 
     public void send(Audience audience, String key, TagResolver... resolvers) {
@@ -78,8 +87,32 @@ public final class VelocityLang {
         audience.sendMessage(rawMessage(key, resolvers));
     }
 
+    public void sendPrefixed(Audience audience, String prefixKey, String key, TagResolver... resolvers) {
+        audience.sendMessage(prefixedMessage(prefixKey, key, resolvers));
+    }
+
     public String activeLanguageDescription() {
         return activeLanguageDescription;
+    }
+
+    public Map<String, String> exportMessages() {
+        return configuration;
+    }
+
+    public boolean hasLanguageFileChanged() {
+        Path activePath = activeExternalLanguagePath;
+        if (activePath == null) {
+            return false;
+        }
+
+        try {
+            if (Files.notExists(activePath)) {
+                return true;
+            }
+            return Files.getLastModifiedTime(activePath).toMillis() != activeExternalLanguageLastModifiedMillis;
+        } catch (IOException exception) {
+            return false;
+        }
     }
 
     private LoadedLanguage resolveConfiguredLanguage(Path langDirectory,
@@ -91,7 +124,12 @@ public final class VelocityLang {
             Path selectedPath = externalPath.get();
             Map<String, String> externalMessages = loadFileMessages(selectedPath);
             if (validateConfiguration(externalMessages, requiredKeys, "external file " + selectedPath.toAbsolutePath())) {
-                return new LoadedLanguage(externalMessages, selectedPath.getFileName() + " (external)");
+                return new LoadedLanguage(
+                        externalMessages,
+                        selectedPath.getFileName() + " (external)",
+                        selectedPath,
+                        Files.getLastModifiedTime(selectedPath).toMillis()
+                );
             }
 
             Optional<Map<String, String>> bundledMessages = loadOptionalBundledMessages(requestedFileName);
@@ -101,20 +139,20 @@ public final class VelocityLang {
                     "bundled resource lang/" + requestedFileName
             )) {
                 logger.warn("Il file lingua esterno " + selectedPath.getFileName() + " non e valido. Uso la copia interna dal jar.");
-                return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled fallback)");
+                return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled fallback)", null, -1L);
             }
 
             logger.warn("Il file lingua " + selectedPath.getFileName()
                     + " non e valido e non esiste un fallback valido per la stessa lingua. Uso "
                     + LanguageFileSupport.DEFAULT_LANGUAGE_FILE + ".");
-            return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)");
+            return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)", null, -1L);
         }
 
         Optional<Map<String, String>> bundledMessages = loadOptionalBundledMessages(requestedFileName);
         if (bundledMessages.isPresent()) {
             copyBundledLanguageIfMissing(langDirectory, requestedFileName);
             if (validateConfiguration(bundledMessages.get(), requiredKeys, "bundled resource lang/" + requestedFileName)) {
-                return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled)");
+                return new LoadedLanguage(bundledMessages.get(), requestedFileName + " (bundled)", null, -1L);
             }
         }
 
@@ -125,7 +163,7 @@ public final class VelocityLang {
                     + " e nemmeno nel jar. Uso "
                     + LanguageFileSupport.DEFAULT_LANGUAGE_FILE + ".");
         }
-        return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)");
+        return new LoadedLanguage(defaultMessages, LanguageFileSupport.DEFAULT_LANGUAGE_FILE + " (bundled default)", null, -1L);
     }
 
     private String string(String key, String fallback) {
@@ -221,6 +259,11 @@ public final class VelocityLang {
         return true;
     }
 
-    private record LoadedLanguage(Map<String, String> messages, String description) {
+    private record LoadedLanguage(
+            Map<String, String> messages,
+            String description,
+            Path externalPath,
+            long lastModifiedMillis
+    ) {
     }
 }

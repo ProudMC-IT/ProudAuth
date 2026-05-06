@@ -17,6 +17,8 @@ import java.util.function.Supplier;
 
 public final class ProudMonitorVelocityCommand implements SimpleCommand {
 
+    private static final String MONITOR_PREFIX_KEY = "monitor-prefix";
+
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<VelocityMonitorService> monitorServiceSupplier;
 
@@ -49,7 +51,7 @@ public final class ProudMonitorVelocityCommand implements SimpleCommand {
             case "sessionlist" -> handleSessionList(invocation, lang);
             case "closesession", "stop" -> handleCloseSession(invocation, lang);
             case "restart" -> handleRestart(invocation, lang);
-            default -> lang.sendRaw(invocation.source(), "monitor-usage");
+            default -> lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-usage");
         }
     }
 
@@ -60,11 +62,11 @@ public final class ProudMonitorVelocityCommand implements SimpleCommand {
 
         monitorServiceSupplier.get().open(createdBy).whenComplete((url, exception) -> {
             if (exception != null) {
-                lang.sendRaw(invocation.source(), "monitor-open-failed");
+                lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-open-failed");
                 return;
             }
 
-            lang.sendRaw(invocation.source(), "monitor-opened", clickableUrl("url", url));
+            lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-opened", clickableUrl("url", url));
         });
     }
 
@@ -72,26 +74,26 @@ public final class ProudMonitorVelocityCommand implements SimpleCommand {
         VelocityMonitorService monitorService = monitorServiceSupplier.get();
 
         if (!monitorService.active()) {
-            lang.sendRaw(invocation.source(), "monitor-no-active-session");
+            lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-no-active-session");
             return;
         }
 
-        lang.sendRaw(invocation.source(), "monitor-session-active-header");
-        lang.sendRaw(invocation.source(), "monitor-session-id", Placeholder.unparsed("session", monitorService.currentSessionId()));
-        lang.sendRaw(invocation.source(), "monitor-session-created-by", Placeholder.unparsed("created_by", monitorService.currentCreatedBy()));
-        lang.sendRaw(invocation.source(), "monitor-session-created-at", Placeholder.unparsed("created_at", String.valueOf(monitorService.currentCreatedAt())));
-        lang.sendRaw(invocation.source(), "monitor-session-url", clickableUrl("url", monitorService.currentUrl()));
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-active-header");
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-id", Placeholder.unparsed("session", monitorService.currentSessionId()));
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-created-by", Placeholder.unparsed("created_by", monitorService.currentCreatedBy()));
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-created-at", Placeholder.unparsed("created_at", String.valueOf(monitorService.currentCreatedAt())));
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-url", clickableUrl("url", monitorService.currentUrl()));
     }
 
     private void handleCloseSession(Invocation invocation, VelocityLang lang) {
         boolean closed = monitorServiceSupplier.get().closeSession("CLOSED_BY_STAFF", "Monitor session closed by staff.");
 
         if (!closed) {
-            lang.sendRaw(invocation.source(), "monitor-no-active-session");
+            lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-no-active-session");
             return;
         }
 
-        lang.sendRaw(invocation.source(), "monitor-session-closed");
+        lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-session-closed");
     }
 
     private void handleRestart(Invocation invocation, VelocityLang lang) {
@@ -101,11 +103,11 @@ public final class ProudMonitorVelocityCommand implements SimpleCommand {
 
         monitorServiceSupplier.get().restart(createdBy).whenComplete((url, exception) -> {
             if (exception != null) {
-                lang.sendRaw(invocation.source(), "monitor-restart-failed");
+                lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-restart-failed");
                 return;
             }
 
-            lang.sendRaw(invocation.source(), "monitor-restarted", clickableUrl("url", url));
+            lang.sendPrefixed(invocation.source(), MONITOR_PREFIX_KEY, "monitor-restarted", clickableUrl("url", url));
         });
     }
 

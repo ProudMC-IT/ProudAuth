@@ -1,5 +1,6 @@
 package com.monkey.proudAuth.common.config;
 
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorConstants;
 import org.yaml.snakeyaml.DumperOptions;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
@@ -31,9 +32,15 @@ public final class ProudAuthNetworkConfigCodec {
     }
 
     public String dump(ProudAuthNetworkConfig config) {
+        return dump(config, config.languageBundle().messages());
+    }
+
+    public String dump(ProudAuthNetworkConfig config, Map<String, String> languageMessages) {
         Map<String, Object> root = new LinkedHashMap<>();
         root.put("language", config.language());
+        root.put("language-bundle", dumpLanguageBundle(languageMessages));
         root.put("database", dumpDatabase(config.database()));
+        root.put("monitor", dumpMonitor(config.monitor()));
         root.put("debugger", dumpDebugger(config.debugger()));
         root.put("premium", dumpPremium(config));
         root.put("sessions", dumpSessions(config.sessions()));
@@ -55,6 +62,14 @@ public final class ProudAuthNetworkConfigCodec {
                 string(root, "database.user", "root"),
                 string(root, "database.password", ""),
                 Math.max(1, integer(root, "database.pool-size", 10))
+        );
+
+        ProudAuthNetworkConfig.LanguageBundle languageBundle = new ProudAuthNetworkConfig.LanguageBundle(
+                stringMap(root, "language-bundle.messages")
+        );
+
+        ProudAuthNetworkConfig.Monitor monitor = new ProudAuthNetworkConfig.Monitor(
+                normalizedNetworkName(string(root, "monitor.network-name", ProudAuthMonitorConstants.DEFAULT_NETWORK_NAME))
         );
 
         ProudAuthSettings.Premium premium = new ProudAuthSettings.Premium(
@@ -200,7 +215,9 @@ public final class ProudAuthNetworkConfigCodec {
 
         return new ProudAuthNetworkConfig(
                 string(root, "language", "it"),
+                languageBundle,
                 database,
+                monitor,
                 premium,
                 sessions,
                 security,
@@ -238,6 +255,15 @@ public final class ProudAuthNetworkConfigCodec {
         return value == null ? fallback : String.valueOf(value);
     }
 
+    private String normalizedNetworkName(String raw) {
+        if (raw == null) {
+            return ProudAuthMonitorConstants.DEFAULT_NETWORK_NAME;
+        }
+
+        String normalized = raw.trim();
+        return normalized.isEmpty() ? ProudAuthMonitorConstants.DEFAULT_NETWORK_NAME : normalized;
+    }
+
     private boolean bool(Map<String, Object> root, String path, boolean fallback) {
         Object value = get(root, path);
         return value instanceof Boolean bool ? bool : fallback;
@@ -269,6 +295,29 @@ public final class ProudAuthNetworkConfigCodec {
                 .collect(Collectors.toUnmodifiableList());
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, String> stringMap(Map<String, Object> root, String path) {
+        Object value = get(root, path);
+        if (!(value instanceof Map<?, ?> map)) {
+            return Map.of();
+        }
+
+        Map<String, String> normalized = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                continue;
+            }
+
+            Object entryValue = entry.getValue();
+            if (entryValue == null) {
+                continue;
+            }
+
+            normalized.put(key, String.valueOf(entryValue));
+        }
+        return Collections.unmodifiableMap(normalized);
+    }
+
     private List<String> normalizedCommands(List<String> configuredValues, List<String> fallbackValues) {
         List<String> source = configuredValues == null || configuredValues.isEmpty() ? fallbackValues : configuredValues;
         return source.stream()
@@ -297,6 +346,28 @@ public final class ProudAuthNetworkConfigCodec {
         values.put("user", database.user());
         values.put("password", database.password());
         values.put("pool-size", database.poolSize());
+        return values;
+    }
+
+    private Map<String, Object> dumpMonitor(ProudAuthNetworkConfig.Monitor monitor) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("network-name", normalizedNetworkName(monitor.networkName()));
+        return values;
+    }
+
+    private Map<String, Object> dumpLanguageBundle(Map<String, String> languageMessages) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        Map<String, String> normalizedMessages = languageMessages == null
+                ? Map.of()
+                : languageMessages.entrySet().stream()
+                .filter(entry -> entry.getKey() != null && !entry.getKey().isBlank() && entry.getValue() != null)
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        Map.Entry::getValue,
+                        (left, right) -> right,
+                        LinkedHashMap::new
+                ));
+        values.put("messages", normalizedMessages);
         return values;
     }
 
