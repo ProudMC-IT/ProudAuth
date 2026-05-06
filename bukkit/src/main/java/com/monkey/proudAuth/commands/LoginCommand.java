@@ -3,6 +3,7 @@ package com.monkey.proudAuth.commands;
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -115,13 +116,21 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
             switch (loginResult.status()) {
                 case SUCCESS -> {
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                     networkSyncService.notifyAuthCompleted(player);
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
                 }
-                case ALREADY_AUTHENTICATED -> langConfig.send(player, "already-authenticated");
+                case ALREADY_AUTHENTICATED -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
+                    langConfig.send(player, "already-authenticated");
+                }
                 case PREMIUM_ACCOUNT -> langConfig.send(player, "login-premium-account");
-                case NEEDS_REGISTER -> langConfig.send(player, "register-required-first");
+                case NEEDS_REGISTER -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                    langConfig.send(player, "register-required-first");
+                }
                 case WRONG_PASSWORD -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_LOGIN);
                     langConfig.send(player, "login-wrong-password");
                     langConfig.send(
                             player,
@@ -131,6 +140,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                     );
                 }
                 case LOCKED -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.LOCKED);
                     langConfig.send(
                             player,
                             "bruteforce-locked",
@@ -138,7 +148,10 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                     );
                     player.kick(langConfig.message("kick-ip-banned"));
                 }
-                case TOTP_REQUIRED -> langConfig.send(player, "totp-required");
+                case TOTP_REQUIRED -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_2FA);
+                    langConfig.send(player, "totp-required");
+                }
             }
         }));
         return true;

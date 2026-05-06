@@ -6,6 +6,7 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.session.SessionManager;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
@@ -170,6 +171,7 @@ public final class BukkitJoinFlowService {
                     if (playerProtection.isProtected(player.getUniqueId())) {
                         playerProtection.removeProtection(player);
                     }
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                     debugEvent(DebugChannel.BRIDGE_FLOW, "join_network_transfer_complete",
                             "player", player.getName(),
                             "uuid", player.getUniqueId(),
@@ -196,6 +198,7 @@ public final class BukkitJoinFlowService {
                         return;
                     }
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                     networkSyncService.notifyAuthCompleted(player);
                     debugEvent(DebugChannel.SECURITY_FLOW, "join_bypass_complete",
                             "player", player.getName(),
@@ -234,6 +237,7 @@ public final class BukkitJoinFlowService {
                         } else {
                             playerProtection.applyProtection(player);
                         }
+                        networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_2FA);
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_totp_required",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId(),
@@ -249,6 +253,7 @@ public final class BukkitJoinFlowService {
                         if (playerProtection.isProtected(player.getUniqueId())) {
                             playerProtection.removeProtection(player);
                         }
+                        networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                         networkSyncService.notifyAuthCompleted(player);
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
                                 "player", player.getName(),
@@ -345,15 +350,25 @@ public final class BukkitJoinFlowService {
         switch (outcome) {
             case SESSION_RESTORED -> {
                 playerProtection.removeProtection(player);
+                networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                 networkSyncService.notifyAuthCompleted(player);
                 debugEvent(DebugChannel.PROTECTION_FLOW, "join_protection_removed",
                         "player", player.getName(),
                         "uuid", player.getUniqueId());
                 langConfig.send(player, "session-restored", Placeholder.unparsed("player", player.getName()));
             }
-            case TOTP_REQUIRED -> langConfig.send(player, "totp-required");
-            case REQUIRES_LOGIN -> langConfig.send(player, "login-required");
-            case REQUIRES_REGISTER -> langConfig.send(player, "register-required-first");
+            case TOTP_REQUIRED -> {
+                networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_2FA);
+                langConfig.send(player, "totp-required");
+            }
+            case REQUIRES_LOGIN -> {
+                networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_LOGIN);
+                langConfig.send(player, "login-required");
+            }
+            case REQUIRES_REGISTER -> {
+                networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                langConfig.send(player, "register-required-first");
+            }
         }
     }
 

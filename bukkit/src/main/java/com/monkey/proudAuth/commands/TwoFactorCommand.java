@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -283,11 +284,20 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             switch (result.status()) {
                 case SUCCESS -> {
                     playerProtection.removeProtection(player);
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
                     networkSyncService.notifyAuthCompleted(player);
                     langConfig.send(player, "login-success", Placeholder.unparsed("player", player.getName()));
                 }
-                case INVALID -> langConfig.send(player, "totp-invalid");
-                case NOT_REQUIRED -> langConfig.send(player, "totp-not-required");
+                case INVALID -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_2FA);
+                    langConfig.send(player, "totp-invalid");
+                }
+                case NOT_REQUIRED -> {
+                    if (authService.isAuthenticated(player.getUniqueId())) {
+                        networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
+                    }
+                    langConfig.send(player, "totp-not-required");
+                }
             }
         }));
         return true;

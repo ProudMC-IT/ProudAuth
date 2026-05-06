@@ -10,6 +10,7 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -19,15 +20,18 @@ public final class VelocityMonitorSnapshotBuilder {
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Set<UUID> lockedPlayers;
+    private final VelocityMonitorAuthStateStore authStateStore;
 
     public VelocityMonitorSnapshotBuilder(
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
-            Set<UUID> lockedPlayers
+            Set<UUID> lockedPlayers,
+            VelocityMonitorAuthStateStore authStateStore
     ) {
         this.proxyServer = proxyServer;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.lockedPlayers = lockedPlayers;
+        this.authStateStore = authStateStore;
     }
 
     public Map<String, Object> build(String sessionId, String createdBy, MonitorIdentity identity) {
@@ -109,18 +113,24 @@ public final class VelocityMonitorSnapshotBuilder {
             return "LOCKED";
         }
 
-        return resolvedPlayerStore.find(player.getUsername())
-                .map(resolvedPlayer -> resolvedPlayer.networkAuthenticated()
-                        ? "AUTHENTICATED"
-                        : "WAITING_LOGIN")
-                .orElse("UNKNOWN");
+        return authStateStore.find(player.getUsername())
+                .map(Enum::name)
+                .orElseGet(() -> resolvedPlayerStore.find(player.getUsername())
+                        .map(resolvedPlayer -> resolvedPlayer.networkAuthenticated()
+                                ? "AUTHENTICATED"
+                                : "WAITING_LOGIN")
+                        .orElse("UNKNOWN"));
     }
 
     private List<String> groups(Player player) {
         return resolvedPlayerStore.find(player.getUsername())
-                .map(resolvedPlayer -> List.of(
-                        resolvedPlayer.accountType().name().toLowerCase(java.util.Locale.ROOT)
-                ))
+                .map(resolvedPlayer -> {
+                    if (resolvedPlayer.accountType() == null) {
+                        return List.of("unknown");
+                    }
+
+                    return List.of(resolvedPlayer.accountType().name().toLowerCase(Locale.ROOT));
+                })
                 .orElse(List.of("unknown"));
     }
 }

@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.bridge.BridgeJoinMode;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
 import com.monkey.proudAuth.config.PluginConfig;
 import org.bukkit.Bukkit;
@@ -99,6 +100,14 @@ public final class BackendNetworkSyncService {
         contexts.computeIfPresent(player.getUniqueId(), (ignored, context) -> context.afterInvalidation(pluginConfig.serverId()));
     }
 
+    public void notifyMonitorState(Player player, ProudAuthMonitorState state) {
+        if (!isVelocityProxyMode()) {
+            return;
+        }
+
+        send(player, ProudAuthNetworkChannel.AUTH_STATE_UPDATE, state.name());
+    }
+
     private void sendWithRetries(Player player, String messageType, int attempts, long intervalTicks) {
         int safeAttempts = Math.max(1, attempts);
         long safeIntervalTicks = Math.max(1L, intervalTicks);
@@ -116,28 +125,41 @@ public final class BackendNetworkSyncService {
     }
 
     private void send(Player player, String messageType) {
-        send(player, messageType, 1, 1);
+        send(player, messageType, "", 1, 1);
+    }
+
+    private void send(Player player, String messageType, String payload) {
+        send(player, messageType, payload, 1, 1);
     }
 
     private void send(Player player, String messageType, int attempt, int totalAttempts) {
+        send(player, messageType, "", attempt, totalAttempts);
+    }
+
+    private void send(Player player, String messageType, String payload, int attempt, int totalAttempts) {
         if (!player.isOnline()) {
             return;
         }
+
         try {
             ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(byteStream);
             output.writeUTF(messageType);
             output.writeUTF(player.getName());
             output.writeUTF(pluginConfig.serverId());
+            output.writeUTF(payload == null ? "" : payload);
+
             player.sendPluginMessage(plugin, ProudAuthNetworkChannel.CHANNEL_ID, byteStream.toByteArray());
+
             debugEvent("backend_network_sync_sent",
                     "player", player.getName(),
                     "server_id", pluginConfig.serverId(),
                     "message_type", messageType,
+                    "payload", payload == null ? "" : payload,
                     "attempt", attempt,
                     "total_attempts", totalAttempts);
         } catch (IOException exception) {
-            logger.error("Impossibile inviare il sync ProudAuth al proxy.", exception);
+            logger.error("Unable to send ProudAuth sync message to proxy.", exception);
         }
     }
 

@@ -4,9 +4,13 @@ import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
+import com.monkey.proudAuth.velocity.monitor.VelocityMonitorAuthStateStore;
+import com.monkey.proudAuth.velocity.monitor.VelocityMonitorService;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.connection.PluginMessageEvent;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
@@ -32,6 +36,8 @@ public final class VelocityAuthSyncListener {
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
+    private final VelocityMonitorAuthStateStore monitorAuthStateStore;
+    private final Supplier<VelocityMonitorService> monitorServiceSupplier;
 
     public VelocityAuthSyncListener(
             Object pluginOwner,
@@ -39,7 +45,9 @@ public final class VelocityAuthSyncListener {
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
-            ProudAuthConsoleLogger logger
+            ProudAuthConsoleLogger logger,
+            VelocityMonitorAuthStateStore monitorAuthStateStore,
+            Supplier<VelocityMonitorService> monitorServiceSupplier
     ) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
@@ -47,6 +55,8 @@ public final class VelocityAuthSyncListener {
         this.routingSupplier = routingSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
+        this.monitorAuthStateStore = monitorAuthStateStore;
+        this.monitorServiceSupplier = monitorServiceSupplier;
     }
 
     @Subscribe
@@ -54,15 +64,18 @@ public final class VelocityAuthSyncListener {
         if (!CHANNEL_IDENTIFIER.equals(event.getIdentifier())) {
             return;
         }
+
         if (!(event.getSource() instanceof ServerConnection serverConnection)) {
             return;
         }
 
         event.setResult(PluginMessageEvent.ForwardResult.handled());
+
         try (DataInputStream input = new DataInputStream(new ByteArrayInputStream(event.getData()))) {
             String type = input.readUTF();
             String username = input.readUTF();
             String backendServerId = input.readUTF();
+            String payload = readOptionalPayload(input);
             String sourceServer = serverConnection.getServerInfo().getName();
 
             if (!sourceServer.equalsIgnoreCase(backendServerId)) {
@@ -83,10 +96,16 @@ public final class VelocityAuthSyncListener {
                 return;
             }
 
+            if (ProudAuthNetworkChannel.AUTH_STATE_UPDATE.equals(type)) {
+                handleAuthStateUpdate(player.get(), sourceServer, payload);
+                return;
+            }
+
             if (ProudAuthNetworkChannel.AUTH_COMPLETED.equals(type)) {
                 handleAuthCompleted(player.get(), sourceServer);
                 return;
             }
+
             if (ProudAuthNetworkChannel.AUTH_INVALIDATED.equals(type)) {
                 handleAuthInvalidated(player.get(), sourceServer);
             }
@@ -96,11 +115,37 @@ public final class VelocityAuthSyncListener {
         }
     }
 
+    private String readOptionalPayload(DataInputStream input) {
+        try {
+            return input.readUTF();
+        } catch (IOException ignored) {
+            return "";
+        }
+    }
+
+    private void handleAuthStateUpdate(Player player, String sourceServer, String payload) {
+        ProudAuthMonitorState state = ProudAuthMonitorState.from(payload);
+        monitorAuthStateStore.update(player.getUsername(), state);
+
+        debugEvent("auth_sync_monitor_state_update",
+                "player", player.getUsername(),
+                "server", sourceServer,
+                "state", state.name());
+
+        VelocityMonitorService monitorService = monitorServiceSupplier.get();
+        if (monitorService != null) {
+            monitorService.sendPlayerUpdate(player);
+        }
+    }
+
     private void handleAuthCompleted(Player player, String sourceServer) {
         boolean alreadyAuthenticated = resolvedPlayerStore.find(player.getUsername())
                 .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
                 .orElse(false);
+
         if (alreadyAuthenticated) {
+            monitorAuthStateStore.update(player.getUsername(), ProudAuthMonitorState.AUTHENTICATED);
+            sendMonitorUpdate(player);
             debugEvent("auth_sync_completed_duplicate_ignored",
                     "player", player.getUsername(),
                     "server", sourceServer);
@@ -108,6 +153,9 @@ public final class VelocityAuthSyncListener {
         }
 
         resolvedPlayerStore.markNetworkAuthenticated(player.getUsername(), true);
+        monitorAuthStateStore.update(player.getUsername(), ProudAuthMonitorState.AUTHENTICATED);
+        sendMonitorUpdate(player);
+
         debugEvent("auth_sync_completed",
                 "player", player.getUsername(),
                 "server", sourceServer);
@@ -120,6 +168,7 @@ public final class VelocityAuthSyncListener {
         proxyServer.getServer(routing.postAuthServer()).ifPresent(targetServer -> {
             boolean legacyClient = isLegacyClient(player.getUsername());
             int delayMs = redirectDelayMillis(player.getUsername(), routing);
+
             if (delayMs <= 0) {
                 player.createConnectionRequest(targetServer).fireAndForget();
                 debugEvent("auth_sync_redirect_post_auth",
@@ -135,6 +184,7 @@ public final class VelocityAuthSyncListener {
                     .buildTask(pluginOwner, () -> executePostAuthRedirect(player.getUsername(), sourceServer, targetServer, delayMs))
                     .delay(delayMs, TimeUnit.MILLISECONDS)
                     .schedule();
+
             debugEvent("auth_sync_redirect_post_auth_scheduled",
                     "player", player.getUsername(),
                     "from", sourceServer,
@@ -147,8 +197,12 @@ public final class VelocityAuthSyncListener {
     private void handleAuthInvalidated(Player player, String sourceServer) {
         ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
         String authEntryServer = routing.hasAuthEntryServer() ? routing.authEntryServer() : sourceServer;
+
         resolvedPlayerStore.markNetworkAuthenticated(player.getUsername(), false);
         resolvedPlayerStore.rememberAuthEntryServer(player.getUsername(), authEntryServer);
+        monitorAuthStateStore.update(player.getUsername(), ProudAuthMonitorState.WAITING_LOGIN);
+        sendMonitorUpdate(player);
+
         debugEvent("auth_sync_invalidated",
                 "player", player.getUsername(),
                 "server", sourceServer,
@@ -165,6 +219,23 @@ public final class VelocityAuthSyncListener {
                     "from", sourceServer,
                     "target", authEntryServer);
         });
+    }
+
+    @Subscribe
+    public void onDisconnect(DisconnectEvent event) {
+        resolvedPlayerStore.forget(event.getPlayer().getUsername());
+        monitorAuthStateStore.forget(event.getPlayer().getUsername());
+
+        debugEvent("server_switch_cache_cleared",
+                "player", event.getPlayer().getUsername());
+    }
+
+    private void sendMonitorUpdate(Player player) {
+        VelocityMonitorService monitorService = monitorServiceSupplier.get();
+
+        if (monitorService != null) {
+            monitorService.sendPlayerUpdate(player);
+        }
     }
 
     private void debugEvent(String eventName, Object... keyValues) {

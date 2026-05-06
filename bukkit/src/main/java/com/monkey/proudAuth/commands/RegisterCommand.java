@@ -3,6 +3,7 @@ package com.monkey.proudAuth.commands;
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.model.AccountType;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
@@ -107,22 +108,40 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
             AuthService.RegisterResult registerResult = (AuthService.RegisterResult) result;
 
             switch (registerResult.status()) {
-                case SUCCESS -> langConfig.send(player, "register-success");
-                case ALREADY_REGISTERED -> langConfig.send(player, "register-already-exists");
+                case SUCCESS -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
+                    langConfig.send(player, "register-success");
+                }
+                case ALREADY_REGISTERED -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_LOGIN);
+                    langConfig.send(player, "register-already-exists");
+                }
                 case PREMIUM_ACCOUNT -> langConfig.send(player, "register-premium-account");
                 case MOJANG_UNAVAILABLE -> langConfig.send(player, "register-mojang-unavailable");
-                case PASSWORD_MISMATCH -> langConfig.send(player, "register-password-mismatch");
-                case PASSWORD_TOO_SHORT -> langConfig.send(
-                        player,
-                        "register-password-too-short",
-                        Placeholder.unparsed("min", String.valueOf(plugin.getConfig().getInt("password.min-length", 6)))
-                );
-                case PASSWORD_TOO_LONG -> langConfig.send(
-                        player,
-                        "register-password-too-long",
-                        Placeholder.unparsed("max", String.valueOf(plugin.getConfig().getInt("password.max-length", 32)))
-                );
-                case PASSWORD_INVALID -> langConfig.send(player, "register-password-invalid");
+                case PASSWORD_MISMATCH -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                    langConfig.send(player, "register-password-mismatch");
+                }
+                case PASSWORD_TOO_SHORT -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                    langConfig.send(
+                            player,
+                            "register-password-too-short",
+                            Placeholder.unparsed("min", String.valueOf(plugin.getConfig().getInt("password.min-length", 6)))
+                    );
+                }
+                case PASSWORD_TOO_LONG -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                    langConfig.send(
+                            player,
+                            "register-password-too-long",
+                            Placeholder.unparsed("max", String.valueOf(plugin.getConfig().getInt("password.max-length", 32)))
+                    );
+                }
+                case PASSWORD_INVALID -> {
+                    networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_REGISTER);
+                    langConfig.send(player, "register-password-invalid");
+                }
             }
         }));
         return true;

@@ -15,13 +15,12 @@ import com.velocitypowered.api.scheduler.ScheduledTask;
 import net.kyori.adventure.text.Component;
 
 import java.nio.file.Path;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 public final class VelocityMonitorService {
@@ -35,7 +34,7 @@ public final class VelocityMonitorService {
     private final MonitorSessionIdGenerator sessionIdGenerator = new MonitorSessionIdGenerator();
     private final VelocityMonitorSnapshotBuilder snapshotBuilder;
     private final MonitorSocketClient socketClient;
-    private final Set<UUID> lockedPlayers = new HashSet<>();
+    private final Set<UUID> lockedPlayers = ConcurrentHashMap.newKeySet();
 
     private String currentSessionId;
     private String currentCreatedBy;
@@ -48,13 +47,19 @@ public final class VelocityMonitorService {
             ProxyServer proxyServer,
             Path dataDirectory,
             ProudAuthConsoleLogger logger,
-            VelocityResolvedPlayerStore resolvedPlayerStore
+            VelocityResolvedPlayerStore resolvedPlayerStore,
+            VelocityMonitorAuthStateStore authStateStore
     ) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
         this.logger = logger;
         this.identity = new MonitorIdentityStore(dataDirectory, logger).loadOrCreate();
-        this.snapshotBuilder = new VelocityMonitorSnapshotBuilder(proxyServer, resolvedPlayerStore, lockedPlayers);
+        this.snapshotBuilder = new VelocityMonitorSnapshotBuilder(
+                proxyServer,
+                resolvedPlayerStore,
+                lockedPlayers,
+                authStateStore
+        );
         this.socketClient = new MonitorSocketClient(logger, this::handleIncomingMessage);
     }
 
@@ -155,6 +160,7 @@ public final class VelocityMonitorService {
 
         if (removed) {
             logger.info("Monitor account unlock applied from proxy command: uuid=" + uuid.get());
+            proxyServer.getPlayer(uuid.get()).ifPresent(this::sendPlayerUpdate);
         }
 
         return removed;
@@ -201,9 +207,17 @@ public final class VelocityMonitorService {
                     "serverId", connection.getServerInfo().getName()
             ));
 
-            socketClient.send("player_update", snapshotBuilder.player(player));
+            sendPlayerUpdate(player);
             socketClient.send("server_update", snapshotBuilder.serverUpdate(connection.getServer(), "ONLINE"));
         });
+    }
+
+    public void sendPlayerUpdate(Player player) {
+        if (!active()) {
+            return;
+        }
+
+        socketClient.send("player_update", snapshotBuilder.player(player));
     }
 
     private void sendCurrentServerUpdate(Player player) {
@@ -409,7 +423,7 @@ public final class VelocityMonitorService {
                     "serverId", serverId
             ));
 
-            socketClient.send("player_update", snapshotBuilder.player(player));
+            sendPlayerUpdate(player);
             socketClient.send("server_update", snapshotBuilder.serverUpdate(server.get(), "ONLINE"));
         });
     }
@@ -430,7 +444,7 @@ public final class VelocityMonitorService {
         lockedPlayers.add(uuid.get());
 
         player.ifPresent(onlinePlayer -> {
-            socketClient.send("player_update", snapshotBuilder.player(onlinePlayer));
+            sendPlayerUpdate(onlinePlayer);
             onlinePlayer.disconnect(MONITOR_PREFIX.append(Component.text(reason)));
         });
 
@@ -448,9 +462,7 @@ public final class VelocityMonitorService {
 
         boolean removed = lockedPlayers.remove(uuid.get());
 
-        findPlayer(targetUuid).ifPresent(player ->
-                socketClient.send("player_update", snapshotBuilder.player(player))
-        );
+        findPlayer(targetUuid).ifPresent(this::sendPlayerUpdate);
 
         logger.info("Monitor account unlock applied: uuid=" + targetUuid + " removed=" + removed);
         sendActionResult(actionId, "SUCCESS", "Account unlocked");

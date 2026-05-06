@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
@@ -65,6 +66,7 @@ public final class LogoutCommand implements CommandExecutor, TabCompleter {
             }
 
             playerProtection.applyProtection(player);
+            networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.WAITING_LOGIN);
             networkSyncService.notifyAuthInvalidated(player);
             langConfig.send(player, "logout-success");
             langConfig.send(player, "not-authenticated");

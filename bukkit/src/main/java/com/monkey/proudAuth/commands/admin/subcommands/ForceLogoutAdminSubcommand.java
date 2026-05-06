@@ -3,6 +3,7 @@ package com.monkey.proudAuth.commands.admin.subcommands;
 import com.monkey.proudAuth.commands.admin.support.AdminCommandContext;
 import com.monkey.proudAuth.commands.admin.support.AdminCommandSupport;
 import com.monkey.proudAuth.commands.admin.support.AdminSubcommand;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
@@ -53,6 +54,7 @@ public final class ForceLogoutAdminSubcommand implements AdminSubcommand {
                         return;
                     }
                     context.playerProtection().applyProtection(target);
+                    context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.WAITING_LOGIN);
                     context.networkSyncService().notifyAuthInvalidated(target);
                     context.langConfig().send(sender, "admin-force-logout", Placeholder.unparsed("player", target.getName()));
                 }

@@ -5,6 +5,7 @@ import com.monkey.proudAuth.commands.admin.support.AdminCommandSupport;
 import com.monkey.proudAuth.commands.admin.support.AdminSubcommand;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
+import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import org.bukkit.Bukkit;
 import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
@@ -60,6 +61,7 @@ public final class ForceLoginAdminSubcommand implements AdminSubcommand {
                         return;
                     }
                     context.playerProtection().removeProtection(target);
+                    context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.AUTHENTICATED);
                     context.networkSyncService().notifyAuthCompleted(target);
                     context.langConfig().send(sender, "admin-force-login",
                             net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", target.getName()));
