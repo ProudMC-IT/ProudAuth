@@ -6,10 +6,12 @@ import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.Session;
 import com.monkey.proudAuth.common.storage.*;
+import com.mysql.cj.jdbc.MysqlDataSource;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import org.jetbrains.annotations.Nullable;
 
+import javax.sql.DataSource;
 import java.sql.*;
 import java.time.Instant;
 import java.util.*;
@@ -1343,25 +1345,51 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     private synchronized void rebuildDataSource() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
+        HikariDataSource previousDataSource = this.dataSource;
+        this.dataSource = null;
+
+        if (previousDataSource != null && !previousDataSource.isClosed()) {
+            previousDataSource.close();
         }
+
+        ProudAuthSettings.Database database = settings.database();
+        int poolSize = Math.max(1, database.poolSize());
 
         HikariConfig hikariConfig = new HikariConfig();
         hikariConfig.setPoolName("ProudAuthPool");
-        hikariConfig.setJdbcUrl("jdbc:mysql://%s:%d/%s?useSSL=false&allowPublicKeyRetrieval=true&characterEncoding=utf8&serverTimezone=UTC"
-                .formatted(
-                        settings.database().host(),
-                        settings.database().port(),
-                        settings.database().name()
-                ));
-        hikariConfig.setUsername(settings.database().user());
-        hikariConfig.setPassword(settings.database().password());
-        hikariConfig.setMaximumPoolSize(settings.database().poolSize());
-        hikariConfig.setMinimumIdle(Math.min(2, settings.database().poolSize()));
+
+        hikariConfig.setDataSource(createMysqlDataSource(database));
+
+        hikariConfig.setMaximumPoolSize(poolSize);
+        hikariConfig.setMinimumIdle(Math.min(2, poolSize));
         hikariConfig.setConnectionTimeout(5000L);
         hikariConfig.setValidationTimeout(3000L);
+        hikariConfig.setIdleTimeout(600_000L);
+        hikariConfig.setMaxLifetime(1_800_000L);
+        hikariConfig.setLeakDetectionThreshold(0L);
+
         this.dataSource = new HikariDataSource(hikariConfig);
+    }
+
+    private DataSource createMysqlDataSource(ProudAuthSettings.Database database) {
+        try {
+            MysqlDataSource mysqlDataSource = new MysqlDataSource();
+
+            mysqlDataSource.setServerName(database.host());
+            mysqlDataSource.setPortNumber(database.port());
+            mysqlDataSource.setDatabaseName(database.name());
+            mysqlDataSource.setUser(database.user());
+            mysqlDataSource.setPassword(database.password());
+
+            mysqlDataSource.setUseSSL(false);
+            mysqlDataSource.setAllowPublicKeyRetrieval(true);
+            mysqlDataSource.setCharacterEncoding("utf8");
+            mysqlDataSource.setServerTimezone("UTC");
+
+            return mysqlDataSource;
+        } catch (SQLException exception) {
+            throw new IllegalStateException("Impossibile configurare il DataSource MySQL di ProudAuth.", exception);
+        }
     }
 
     private void migrateSchema() {
