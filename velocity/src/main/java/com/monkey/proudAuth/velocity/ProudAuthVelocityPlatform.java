@@ -13,6 +13,7 @@ import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
 import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
 import com.monkey.proudAuth.velocity.commands.ProudAuthVelocityCommand;
+import com.monkey.proudAuth.velocity.commands.ProudMonitorVelocityCommand;
 import com.monkey.proudAuth.velocity.config.VelocityConfigLoader;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectInstrumentation;
@@ -164,7 +165,8 @@ public final class ProudAuthVelocityPlatform {
                     dataDirectory,
                     platformLogger,
                     resolvedPlayerStore,
-                    monitorAuthStateStore
+                    monitorAuthStateStore,
+                    () -> lang
             );
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
@@ -232,6 +234,16 @@ public final class ProudAuthVelocityPlatform {
                     () -> storage,
                     () -> monitorService,
                     this::reloadPluginState
+            ));
+
+            CommandMeta monitorCommandMeta = proxyServer.getCommandManager()
+                    .metaBuilder("proudmonitor")
+                    .aliases("pmonitor", "pmon")
+                    .build();
+
+            proxyServer.getCommandManager().register(monitorCommandMeta, new ProudMonitorVelocityCommand(
+                    () -> lang,
+                    () -> monitorService
             ));
 
             scheduleMaintenance();

@@ -7,12 +7,13 @@ import com.monkey.proudAuth.common.monitor.MonitorJsonReader;
 import com.monkey.proudAuth.common.monitor.MonitorSessionIdGenerator;
 import com.monkey.proudAuth.common.monitor.MonitorSocketClient;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorConstants;
+import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
 import com.velocitypowered.api.scheduler.ScheduledTask;
-import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
 import java.nio.file.Path;
 import java.util.Map;
@@ -22,19 +23,18 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 public final class VelocityMonitorService {
-
-    private static final Component MONITOR_PREFIX = Component.text("[ProudAuth Monitor] ");
 
     private final Object pluginOwner;
     private final ProxyServer proxyServer;
     private final ProudAuthConsoleLogger logger;
+    private final Supplier<VelocityLang> langSupplier;
     private final MonitorIdentity identity;
     private final MonitorSessionIdGenerator sessionIdGenerator = new MonitorSessionIdGenerator();
     private final VelocityMonitorSnapshotBuilder snapshotBuilder;
     private final MonitorSocketClient socketClient;
-    private final Set<UUID> lockedPlayers = ConcurrentHashMap.newKeySet();
 
     private String currentSessionId;
     private String currentCreatedBy;
@@ -48,17 +48,17 @@ public final class VelocityMonitorService {
             Path dataDirectory,
             ProudAuthConsoleLogger logger,
             VelocityResolvedPlayerStore resolvedPlayerStore,
-            VelocityMonitorAuthStateStore authStateStore
+            VelocityMonitorAuthStateStore authStateStore,
+            Supplier<VelocityLang> langSupplier
     ) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
         this.logger = logger;
+        this.langSupplier = langSupplier;
         this.identity = new MonitorIdentityStore(dataDirectory, logger).loadOrCreate();
         this.snapshotBuilder = new VelocityMonitorSnapshotBuilder(
                 proxyServer,
-                resolvedPlayerStore,
-                lockedPlayers,
-                authStateStore
+                resolvedPlayerStore
         );
         this.socketClient = new MonitorSocketClient(logger, this::handleIncomingMessage);
     }
@@ -149,34 +149,7 @@ public final class VelocityMonitorService {
         return ProudAuthMonitorConstants.PANEL_URL + "/monitor/" + currentSessionId;
     }
 
-    public boolean unlockAccount(String target) {
-        Optional<UUID> uuid = resolveUuid(target);
-
-        if (uuid.isEmpty()) {
-            return false;
-        }
-
-        boolean removed = lockedPlayers.remove(uuid.get());
-
-        if (removed) {
-            logger.info("Monitor account unlock applied from proxy command: uuid=" + uuid.get());
-            proxyServer.getPlayer(uuid.get()).ifPresent(this::sendPlayerUpdate);
-        }
-
-        return removed;
-    }
-
-    public boolean isLocked(String target) {
-        Optional<UUID> uuid = resolveUuid(target);
-        return uuid.filter(lockedPlayers::contains).isPresent();
-    }
-
     public void sendPlayerJoin(Player player) {
-        if (lockedPlayers.contains(player.getUniqueId())) {
-            player.disconnect(MONITOR_PREFIX.append(Component.text("Your account is locked by staff.")));
-            return;
-        }
-
         if (!active()) {
             return;
         }
@@ -302,8 +275,6 @@ public final class VelocityMonitorService {
             case "FORCE_LOGOUT" -> executeForceLogout(actionId, player.get(), actionPayload);
             case "KICK_PLAYER" -> executeKick(actionId, player.get(), actionPayload);
             case "MOVE_SERVER" -> executeMoveServer(actionId, player.get(), actionPayload);
-            case "LOCK_ACCOUNT" -> executeLockAccount(actionId, targetUuid, player, actionPayload);
-            case "UNLOCK_ACCOUNT" -> executeUnlockAccount(actionId, targetUuid);
             default -> {
                 logger.warn("Unsupported monitor action: " + actionType);
                 sendActionResult(actionId, "FAILED", "Unsupported action");
@@ -327,7 +298,10 @@ public final class VelocityMonitorService {
             return;
         }
 
-        player.sendMessage(MONITOR_PREFIX.append(Component.text(message)));
+        player.sendMessage(langSupplier.get().rawMessage(
+                "monitor-player-message",
+                Placeholder.unparsed("message", message)
+        ));
         logger.info("Monitor message sent to " + player.getUsername());
         sendActionResult(actionId, "SUCCESS", "Message sent");
     }
@@ -340,7 +314,10 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor re-auth requested: player=" + player.getUsername());
-        player.disconnect(MONITOR_PREFIX.append(Component.text(reason)));
+        player.disconnect(langSupplier.get().rawMessage(
+                "monitor-player-reauth",
+                Placeholder.unparsed("reason", reason)
+        ));
         sendActionResult(actionId, "SUCCESS", "Re-auth requested");
     }
 
@@ -352,7 +329,10 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor force logout requested: player=" + player.getUsername());
-        player.disconnect(MONITOR_PREFIX.append(Component.text(reason)));
+        player.disconnect(langSupplier.get().rawMessage(
+                "monitor-player-force-logout",
+                Placeholder.unparsed("reason", reason)
+        ));
         sendActionResult(actionId, "SUCCESS", "Player logged out");
     }
 
@@ -364,7 +344,10 @@ public final class VelocityMonitorService {
         }
 
         logger.info("Monitor kick requested: player=" + player.getUsername() + " reason=" + reason);
-        player.disconnect(MONITOR_PREFIX.append(Component.text(reason)));
+        player.disconnect(langSupplier.get().rawMessage(
+                "monitor-player-kick",
+                Placeholder.unparsed("reason", reason)
+        ));
         sendActionResult(actionId, "SUCCESS", "Player kicked");
     }
 
@@ -428,46 +411,6 @@ public final class VelocityMonitorService {
         });
     }
 
-    private void executeLockAccount(String actionId, String targetUuid, Optional<Player> player, String payload) {
-        Optional<UUID> uuid = parseUuid(targetUuid);
-
-        if (uuid.isEmpty()) {
-            sendActionResult(actionId, "FAILED", "Invalid player UUID");
-            return;
-        }
-
-        String rawReason = MonitorJsonReader.string(payload, "reason");
-        String reason = rawReason.isBlank()
-                ? "Your account has been locked by staff."
-                : rawReason;
-
-        lockedPlayers.add(uuid.get());
-
-        player.ifPresent(onlinePlayer -> {
-            sendPlayerUpdate(onlinePlayer);
-            onlinePlayer.disconnect(MONITOR_PREFIX.append(Component.text(reason)));
-        });
-
-        logger.info("Monitor account lock applied: uuid=" + targetUuid);
-        sendActionResult(actionId, "SUCCESS", "Account locked");
-    }
-
-    private void executeUnlockAccount(String actionId, String targetUuid) {
-        Optional<UUID> uuid = parseUuid(targetUuid);
-
-        if (uuid.isEmpty()) {
-            sendActionResult(actionId, "FAILED", "Invalid player UUID");
-            return;
-        }
-
-        boolean removed = lockedPlayers.remove(uuid.get());
-
-        findPlayer(targetUuid).ifPresent(this::sendPlayerUpdate);
-
-        logger.info("Monitor account unlock applied: uuid=" + targetUuid + " removed=" + removed);
-        sendActionResult(actionId, "SUCCESS", "Account unlocked");
-    }
-
     private Optional<Player> findPlayer(String targetUuid) {
         Optional<UUID> uuid = parseUuid(targetUuid);
         return uuid.flatMap(proxyServer::getPlayer);
@@ -483,20 +426,6 @@ public final class VelocityMonitorService {
         } catch (IllegalArgumentException exception) {
             return Optional.empty();
         }
-    }
-
-    private Optional<UUID> resolveUuid(String target) {
-        if (target == null || target.isBlank()) {
-            return Optional.empty();
-        }
-
-        try {
-            return Optional.of(UUID.fromString(target));
-        } catch (IllegalArgumentException ignored) {
-        }
-
-        return proxyServer.getPlayer(target)
-                .map(Player::getUniqueId);
     }
 
     private void sendActionResult(String actionId, String status, String message) {

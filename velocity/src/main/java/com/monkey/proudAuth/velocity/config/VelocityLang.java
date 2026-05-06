@@ -65,8 +65,17 @@ public final class VelocityLang {
         return miniMessage.deserialize(payload, resolvers);
     }
 
+    public Component rawMessage(String key, TagResolver... resolvers) {
+        String body = string(key, key);
+        return miniMessage.deserialize(body, resolvers);
+    }
+
     public void send(Audience audience, String key, TagResolver... resolvers) {
         audience.sendMessage(message(key, resolvers));
+    }
+
+    public void sendRaw(Audience audience, String key, TagResolver... resolvers) {
+        audience.sendMessage(rawMessage(key, resolvers));
     }
 
     public String activeLanguageDescription() {

@@ -8,8 +8,6 @@ import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
-import net.kyori.adventure.text.Component;
-import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
@@ -54,7 +52,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         String[] args = invocation.arguments();
 
         if (args.length == 0) {
-            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|monitor|iphistory|risk|risk-top|banwave-ip|export-risk-csv|whitelistip>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|iphistory|risk|risk-top|banwave-ip|export-risk-csv|whitelistip>"));
             return;
         }
 
@@ -62,7 +60,6 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         switch (subcommand) {
             case "reload" -> handleReload(invocation, lang);
-            case "monitor" -> handleMonitor(invocation, args, lang);
             case "iphistory" -> handleIpHistory(invocation, args, lang);
             case "risk" -> handleRisk(invocation, args, lang);
             case "risk-top" -> handleRiskTop(invocation, args, lang);
@@ -71,89 +68,6 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             case "whitelistip" -> handleWhitelistIp(invocation, args, lang);
             default -> lang.send(invocation.source(), "admin-unknown-subcommand");
         }
-    }
-
-    private void handleMonitor(Invocation invocation, String[] args, VelocityLang lang) {
-        if (!hasMonitorPermission(invocation)) {
-            lang.send(invocation.source(), "no-permission");
-            return;
-        }
-
-        if (args.length == 1) {
-            openMonitor(invocation);
-            return;
-        }
-
-        String monitorSubcommand = args[1].toLowerCase(Locale.ROOT);
-
-        switch (monitorSubcommand) {
-            case "sessionlist" -> handleMonitorSessionList(invocation);
-            case "closesession", "stop" -> handleMonitorCloseSession(invocation);
-            case "restart" -> handleMonitorRestart(invocation);
-            default -> invocation.source().sendMessage(Component.text("[ProudAuth] Usage: /paproxy monitor <sessionlist|closesession|restart|stop>"));
-        }
-    }
-
-    private void openMonitor(Invocation invocation) {
-        String createdBy = invocation.source() instanceof Player player
-                ? player.getUsername()
-                : "Console";
-
-        monitorServiceSupplier.get().open(createdBy).whenComplete((url, exception) -> {
-            if (exception != null) {
-                invocation.source().sendMessage(Component.text("[ProudAuth] Monitor failed to open."));
-                return;
-            }
-
-            invocation.source().sendMessage(
-                    Component.text("[ProudAuth] Monitor: ")
-                            .append(Component.text(url).clickEvent(ClickEvent.openUrl(url)))
-            );
-        });
-    }
-
-    private void handleMonitorSessionList(Invocation invocation) {
-        VelocityMonitorService monitorService = monitorServiceSupplier.get();
-
-        if (!monitorService.active()) {
-            invocation.source().sendMessage(Component.text("[ProudAuth] No active monitor session."));
-            return;
-        }
-
-        invocation.source().sendMessage(Component.text("[ProudAuth] Active monitor session:"));
-        invocation.source().sendMessage(Component.text("- sessionId: " + monitorService.currentSessionId()));
-        invocation.source().sendMessage(Component.text("- createdBy: " + monitorService.currentCreatedBy()));
-        invocation.source().sendMessage(Component.text("- createdAt: " + monitorService.currentCreatedAt()));
-        invocation.source().sendMessage(Component.text("- url: " + monitorService.currentUrl()).clickEvent(ClickEvent.openUrl(monitorService.currentUrl())));
-    }
-
-    private void handleMonitorCloseSession(Invocation invocation) {
-        boolean closed = monitorServiceSupplier.get().closeSession("CLOSED_BY_STAFF", "Monitor session closed by staff.");
-
-        if (!closed) {
-            invocation.source().sendMessage(Component.text("[ProudAuth] No active monitor session."));
-            return;
-        }
-
-        invocation.source().sendMessage(Component.text("[ProudAuth] Monitor session closed."));
-    }
-
-    private void handleMonitorRestart(Invocation invocation) {
-        String createdBy = invocation.source() instanceof Player player
-                ? player.getUsername()
-                : "Console";
-
-        monitorServiceSupplier.get().restart(createdBy).whenComplete((url, exception) -> {
-            if (exception != null) {
-                invocation.source().sendMessage(Component.text("[ProudAuth] Monitor restart failed."));
-                return;
-            }
-
-            invocation.source().sendMessage(
-                    Component.text("[ProudAuth] Monitor restarted: ")
-                            .append(Component.text(url).clickEvent(ClickEvent.openUrl(url)))
-            );
-        });
     }
 
     private void handleReload(Invocation invocation, VelocityLang lang) {
@@ -471,17 +385,11 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         return invocation.source().hasPermission("proudauth.admin.whitelistip");
     }
 
-    private boolean hasMonitorPermission(Invocation invocation) {
-        return invocation.source().hasPermission("proudauth.admin.monitor")
-                || invocation.source().hasPermission("proudauth.admin.reload");
-    }
-
     @Override
     public boolean hasPermission(Invocation invocation) {
         return hasReloadPermission(invocation)
                 || hasSecurityPermission(invocation)
-                || hasWhitelistPermission(invocation)
-                || hasMonitorPermission(invocation);
+                || hasWhitelistPermission(invocation);
     }
 
     @Override
@@ -490,17 +398,10 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         if (args.length <= 1) {
             String token = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
-            return filter(List.of("reload", "monitor", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv", "whitelistip"), token);
+            return filter(List.of("reload", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv", "whitelistip"), token);
         }
 
         String subcommand = args[0].toLowerCase(Locale.ROOT);
-
-        if ("monitor".equals(subcommand)) {
-            if (args.length == 2) {
-                return filter(List.of("sessionlist", "closesession", "restart", "stop"), args[1]);
-            }
-            return List.of();
-        }
 
         return switch (subcommand) {
             case "iphistory" -> args.length == 2
