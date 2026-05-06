@@ -20,6 +20,8 @@ import com.monkey.proudAuth.velocity.listeners.VelocityAuthSyncListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityGameProfileListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityPreLoginListener;
 import com.monkey.proudAuth.velocity.listeners.VelocityServerTransitionListener;
+import com.monkey.proudAuth.velocity.monitor.VelocityMonitorListener;
+import com.monkey.proudAuth.velocity.monitor.VelocityMonitorService;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
@@ -49,6 +51,7 @@ public final class ProudAuthVelocityPlatform {
     private final ProudAuthConsoleLogger platformLogger;
     private final Path dataDirectory;
     private final ProudAuthNetworkConfigCodec networkConfigCodec = new ProudAuthNetworkConfigCodec();
+    private VelocityMonitorService monitorService;
 
     private VelocityConfigLoader configLoader;
     private VelocityLang lang;
@@ -149,6 +152,14 @@ public final class ProudAuthVelocityPlatform {
                     platformLogger
             );
 
+            monitorService = new VelocityMonitorService(
+                    pluginOwner,
+                    proxyServer,
+                    dataDirectory,
+                    platformLogger,
+                    resolvedPlayerStore
+            );
+
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
                     () -> premiumVerifier,
@@ -196,6 +207,8 @@ public final class ProudAuthVelocityPlatform {
                     platformLogger
             ));
 
+            proxyServer.getEventManager().register(pluginOwner, new VelocityMonitorListener(monitorService));
+
             CommandMeta commandMeta = proxyServer.getCommandManager()
                     .metaBuilder("paproxy")
                     .build();
@@ -204,6 +217,7 @@ public final class ProudAuthVelocityPlatform {
                     () -> securityInspectorService,
                     () -> riskCsvExporter,
                     () -> storage,
+                    () -> monitorService,
                     this::reloadPluginState
             ));
             scheduleMaintenance();
@@ -225,6 +239,10 @@ public final class ProudAuthVelocityPlatform {
             if (disconnectInstrumentation != null) {
                 disconnectInstrumentation.shutdown();
                 disconnectInstrumentation = null;
+            }
+            if (monitorService != null) {
+                monitorService.shutdown();
+                monitorService = null;
             }
             proxyServer.getChannelRegistrar().unregister(networkChannelIdentifier);
             if (storage != null) {

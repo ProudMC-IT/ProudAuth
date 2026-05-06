@@ -3,10 +3,13 @@ package com.monkey.proudAuth.velocity.commands;
 import com.monkey.proudAuth.common.storage.IpHistoryStorage;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
+import com.monkey.proudAuth.velocity.monitor.VelocityMonitorService;
 import com.monkey.proudAuth.velocity.security.VelocityRiskCsvExporter;
 import com.monkey.proudAuth.velocity.security.VelocitySecurityInspectorService;
 import com.velocitypowered.api.command.SimpleCommand;
 import com.velocitypowered.api.proxy.Player;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
@@ -26,6 +29,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
     private final Supplier<VelocitySecurityInspectorService> securityInspectorSupplier;
     private final Supplier<VelocityRiskCsvExporter> csvExporterSupplier;
     private final Supplier<StorageProvider> storageSupplier;
+    private final Supplier<VelocityMonitorService> monitorServiceSupplier;
     private final Runnable reloadAction;
 
     public ProudAuthVelocityCommand(
@@ -33,12 +37,14 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             Supplier<VelocitySecurityInspectorService> securityInspectorSupplier,
             Supplier<VelocityRiskCsvExporter> csvExporterSupplier,
             Supplier<StorageProvider> storageSupplier,
+            Supplier<VelocityMonitorService> monitorServiceSupplier,
             Runnable reloadAction
     ) {
         this.langSupplier = langSupplier;
         this.securityInspectorSupplier = securityInspectorSupplier;
         this.csvExporterSupplier = csvExporterSupplier;
         this.storageSupplier = storageSupplier;
+        this.monitorServiceSupplier = monitorServiceSupplier;
         this.reloadAction = reloadAction;
     }
 
@@ -46,14 +52,17 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
     public void execute(Invocation invocation) {
         VelocityLang lang = langSupplier.get();
         String[] args = invocation.arguments();
+
         if (args.length == 0) {
-            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|iphistory|risk|risk-top|banwave-ip|export-risk-csv|whitelistip>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy <reload|monitor|iphistory|risk|risk-top|banwave-ip|export-risk-csv|whitelistip>"));
             return;
         }
 
         String subcommand = args[0].toLowerCase(Locale.ROOT);
+
         switch (subcommand) {
             case "reload" -> handleReload(invocation, lang);
+            case "monitor" -> handleMonitor(invocation, args, lang);
             case "iphistory" -> handleIpHistory(invocation, args, lang);
             case "risk" -> handleRisk(invocation, args, lang);
             case "risk-top" -> handleRiskTop(invocation, args, lang);
@@ -64,11 +73,96 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         }
     }
 
+    private void handleMonitor(Invocation invocation, String[] args, VelocityLang lang) {
+        if (!hasMonitorPermission(invocation)) {
+            lang.send(invocation.source(), "no-permission");
+            return;
+        }
+
+        if (args.length == 1) {
+            openMonitor(invocation);
+            return;
+        }
+
+        String monitorSubcommand = args[1].toLowerCase(Locale.ROOT);
+
+        switch (monitorSubcommand) {
+            case "sessionlist" -> handleMonitorSessionList(invocation);
+            case "closesession", "stop" -> handleMonitorCloseSession(invocation);
+            case "restart" -> handleMonitorRestart(invocation);
+            default -> invocation.source().sendMessage(Component.text("[ProudAuth] Usage: /paproxy monitor <sessionlist|closesession|restart|stop>"));
+        }
+    }
+
+    private void openMonitor(Invocation invocation) {
+        String createdBy = invocation.source() instanceof Player player
+                ? player.getUsername()
+                : "Console";
+
+        monitorServiceSupplier.get().open(createdBy).whenComplete((url, exception) -> {
+            if (exception != null) {
+                invocation.source().sendMessage(Component.text("[ProudAuth] Monitor failed to open."));
+                return;
+            }
+
+            invocation.source().sendMessage(
+                    Component.text("[ProudAuth] Monitor: ")
+                            .append(Component.text(url).clickEvent(ClickEvent.openUrl(url)))
+            );
+        });
+    }
+
+    private void handleMonitorSessionList(Invocation invocation) {
+        VelocityMonitorService monitorService = monitorServiceSupplier.get();
+
+        if (!monitorService.active()) {
+            invocation.source().sendMessage(Component.text("[ProudAuth] No active monitor session."));
+            return;
+        }
+
+        invocation.source().sendMessage(Component.text("[ProudAuth] Active monitor session:"));
+        invocation.source().sendMessage(Component.text("- sessionId: " + monitorService.currentSessionId()));
+        invocation.source().sendMessage(Component.text("- createdBy: " + monitorService.currentCreatedBy()));
+        invocation.source().sendMessage(Component.text("- createdAt: " + monitorService.currentCreatedAt()));
+        invocation.source().sendMessage(Component.text("- url: " + monitorService.currentUrl()).clickEvent(ClickEvent.openUrl(monitorService.currentUrl())));
+    }
+
+    private void handleMonitorCloseSession(Invocation invocation) {
+        boolean closed = monitorServiceSupplier.get().closeSession("CLOSED_BY_STAFF", "Monitor session closed by staff.");
+
+        if (!closed) {
+            invocation.source().sendMessage(Component.text("[ProudAuth] No active monitor session."));
+            return;
+        }
+
+        invocation.source().sendMessage(Component.text("[ProudAuth] Monitor session closed."));
+    }
+
+    private void handleMonitorRestart(Invocation invocation) {
+        String createdBy = invocation.source() instanceof Player player
+                ? player.getUsername()
+                : "Console";
+
+        monitorServiceSupplier.get().restart(createdBy).whenComplete((url, exception) -> {
+            if (exception != null) {
+                invocation.source().sendMessage(Component.text("[ProudAuth] Monitor restart failed."));
+                return;
+            }
+
+            invocation.source().sendMessage(
+                    Component.text("[ProudAuth] Monitor restarted: ")
+                            .append(Component.text(url).clickEvent(ClickEvent.openUrl(url)))
+            );
+        });
+    }
+
     private void handleReload(Invocation invocation, VelocityLang lang) {
         if (!hasReloadPermission(invocation)) {
             lang.send(invocation.source(), "no-permission");
             return;
         }
+
+        monitorServiceSupplier.get().closeSession("PROXY_RELOAD", "ProudAuth proxy state is reloading.");
         reloadAction.run();
         lang.send(invocation.source(), "admin-reload");
     }
@@ -78,12 +172,14 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             lang.send(invocation.source(), "no-permission");
             return;
         }
+
         if (args.length < 2 || args[1].isBlank()) {
             lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy iphistory <ip>"));
             return;
         }
 
         String ipAddress = args[1];
+
         securityInspectorSupplier.get()
                 .inspectIp(ipAddress)
                 .whenComplete((report, exception) -> {
@@ -91,25 +187,12 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                         lang.send(invocation.source(), "error-generic");
                         return;
                     }
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>[ProudAuth]</gray> <aqua>IP History</aqua> <white>" + report.ipAddress() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- usernames 1h:</gray> <white>" + report.distinctUsernames1h() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- usernames 24h:</gray> <white>" + report.distinctUsernames24h() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- usernames 7d:</gray> <white>" + report.distinctUsernames7d() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- banned:</gray> <white>" + report.banned() + "</white> <gray>remaining(s):</gray> <white>"
-                                    + report.banRemainingSeconds()
-                                    + "</white> <gray>reason:</gray> <white>"
-                                    + report.banReason()
-                                    + "</white>"
-                    ));
+
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>[ProudAuth]</gray> <aqua>IP History</aqua> <white>" + report.ipAddress() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- usernames 1h:</gray> <white>" + report.distinctUsernames1h() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- usernames 24h:</gray> <white>" + report.distinctUsernames24h() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- usernames 7d:</gray> <white>" + report.distinctUsernames7d() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- banned:</gray> <white>" + report.banned() + "</white> <gray>remaining(s):</gray> <white>" + report.banRemainingSeconds() + "</white> <gray>reason:</gray> <white>" + report.banReason() + "</white>"));
                 });
     }
 
@@ -118,12 +201,14 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             lang.send(invocation.source(), "no-permission");
             return;
         }
+
         if (args.length < 2 || args[1].isBlank()) {
             lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy risk <username>"));
             return;
         }
 
         String username = args[1];
+
         securityInspectorSupplier.get()
                 .inspectUser(username)
                 .whenComplete((report, exception) -> {
@@ -131,37 +216,16 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                         lang.send(invocation.source(), "error-generic");
                         return;
                     }
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>[ProudAuth]</gray> <aqua>User Risk</aqua> <white>" + report.username() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- ips 1h:</gray> <white>" + report.distinctIps1h() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- ips 24h:</gray> <white>" + report.distinctIps24h() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- ips 7d:</gray> <white>" + report.distinctIps7d() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- account:</gray> <white>" + report.accountExists() + "</white> <gray>type:</gray> <white>"
-                                    + (report.accountType() == null ? "n/a" : report.accountType().name())
-                                    + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- stored uuid:</gray> <white>" + (report.storedUuid() == null ? "n/a" : report.storedUuid()) + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- last ip:</gray> <white>" + report.lastIp() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- premium uuid mismatch:</gray> <white>" + report.premiumUuidMismatch() + "</white>"
-                    ));
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>- risk:</gray> <white>" + report.riskLevel().name() + "</white> <gray>score:</gray> <white>"
-                                    + report.riskScore()
-                                    + "</white>"
-                    ));
+
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>[ProudAuth]</gray> <aqua>User Risk</aqua> <white>" + report.username() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- ips 1h:</gray> <white>" + report.distinctIps1h() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- ips 24h:</gray> <white>" + report.distinctIps24h() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- ips 7d:</gray> <white>" + report.distinctIps7d() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- account:</gray> <white>" + report.accountExists() + "</white> <gray>type:</gray> <white>" + (report.accountType() == null ? "n/a" : report.accountType().name()) + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- stored uuid:</gray> <white>" + (report.storedUuid() == null ? "n/a" : report.storedUuid()) + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- last ip:</gray> <white>" + report.lastIp() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- premium uuid mismatch:</gray> <white>" + report.premiumUuidMismatch() + "</white>"));
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>- risk:</gray> <white>" + report.riskLevel().name() + "</white> <gray>score:</gray> <white>" + report.riskScore() + "</white>"));
                 });
     }
 
@@ -173,6 +237,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         int limit = 10;
         int hours = 24;
+
         if (args.length >= 2) {
             try {
                 limit = Math.max(1, Integer.parseInt(args[1]));
@@ -181,6 +246,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 return;
             }
         }
+
         if (args.length >= 3) {
             try {
                 hours = Math.max(1, Integer.parseInt(args[2]));
@@ -189,6 +255,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 return;
             }
         }
+
         final int reportLimit = limit;
         final int reportHours = hours;
 
@@ -199,36 +266,18 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                         lang.send(invocation.source(), "error-generic");
                         return;
                     }
-                    invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                            "<gray>[ProudAuth]</gray> <aqua>Risk Top</aqua> <gray>window:</gray> <white>"
-                                    + report.window().toHours()
-                                    + "h</white> <gray>limit:</gray> <white>"
-                                    + reportLimit
-                                    + "</white>"
-                    ));
+
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>[ProudAuth]</gray> <aqua>Risk Top</aqua> <gray>window:</gray> <white>" + report.window().toHours() + "h</white> <gray>limit:</gray> <white>" + reportLimit + "</white>"));
                     invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>Top IP by usernames:</gray>"));
+
                     for (IpHistoryStorage.IpSummary ipSummary : report.topIpsByUserSpread()) {
-                        invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                                "<white>"
-                                        + ipSummary.ipAddress()
-                                        + "</white> <gray>usernames:</gray> <white>"
-                                        + ipSummary.distinctUsernames()
-                                        + "</white> <gray>hits:</gray> <white>"
-                                        + ipSummary.totalHits()
-                                        + "</white>"
-                        ));
+                        invocation.source().sendMessage(MINI_MESSAGE.deserialize("<white>" + ipSummary.ipAddress() + "</white> <gray>usernames:</gray> <white>" + ipSummary.distinctUsernames() + "</white> <gray>hits:</gray> <white>" + ipSummary.totalHits() + "</white>"));
                     }
+
                     invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>Top users by IPs:</gray>"));
+
                     for (IpHistoryStorage.UserSummary userSummary : report.topUsersByIpSpread()) {
-                        invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                                "<white>"
-                                        + userSummary.username()
-                                        + "</white> <gray>ips:</gray> <white>"
-                                        + userSummary.distinctIps()
-                                        + "</white> <gray>hits:</gray> <white>"
-                                        + userSummary.totalHits()
-                                        + "</white>"
-                        ));
+                        invocation.source().sendMessage(MINI_MESSAGE.deserialize("<white>" + userSummary.username() + "</white> <gray>ips:</gray> <white>" + userSummary.distinctIps() + "</white> <gray>hits:</gray> <white>" + userSummary.totalHits() + "</white>"));
                     }
                 });
     }
@@ -238,6 +287,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             lang.send(invocation.source(), "no-permission");
             return;
         }
+
         if (args.length < 3) {
             lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy banwave-ip <ip> <seconds> [reason]"));
             return;
@@ -245,6 +295,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         String ipAddress = args[1];
         long seconds;
+
         try {
             seconds = Math.max(1L, Long.parseLong(args[2]));
         } catch (NumberFormatException exception) {
@@ -254,25 +305,18 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         String reason = args.length > 3
                 ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length))
-                : "Banwave manuale da console proxy";
+                : "Manual proxy banwave";
 
-        CompletableFuture<Void> action = storageSupplier.get()
-                .banIp(ipAddress, Instant.now().plusSeconds(seconds), reason);
-        action.whenComplete((ignored, exception) -> {
-            if (exception != null) {
-                lang.send(invocation.source(), "error-generic");
-                return;
-            }
-            invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                    "<gray>[ProudAuth]</gray> <green>Banwave IP applicata</green> <white>"
-                            + ipAddress
-                            + "</white> <gray>seconds:</gray> <white>"
-                            + seconds
-                            + "</white> <gray>reason:</gray> <white>"
-                            + reason
-                            + "</white>"
-            ));
-        });
+        storageSupplier.get()
+                .banIp(ipAddress, Instant.now().plusSeconds(seconds), reason)
+                .whenComplete((ignored, exception) -> {
+                    if (exception != null) {
+                        lang.send(invocation.source(), "error-generic");
+                        return;
+                    }
+
+                    invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>[ProudAuth]</gray> <green>IP banwave applied</green> <white>" + ipAddress + "</white> <gray>seconds:</gray> <white>" + seconds + "</white> <gray>reason:</gray> <white>" + reason + "</white>"));
+                });
     }
 
     private void handleExportRiskCsv(Invocation invocation, String[] args, VelocityLang lang) {
@@ -283,6 +327,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
         int hours = 24;
         int limit = 50;
+
         if (args.length >= 2) {
             try {
                 hours = Math.max(1, Integer.parseInt(args[1]));
@@ -291,6 +336,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 return;
             }
         }
+
         if (args.length >= 3) {
             try {
                 limit = Math.max(1, Integer.parseInt(args[2]));
@@ -299,6 +345,7 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 return;
             }
         }
+
         final int exportHours = hours;
         final int exportLimit = limit;
 
@@ -313,12 +360,9 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 lang.send(invocation.source(), "error-generic");
                 return;
             }
+
             Path absolutePath = path.toAbsolutePath();
-            invocation.source().sendMessage(MINI_MESSAGE.deserialize(
-                    "<gray>[ProudAuth]</gray> <green>CSV export creato</green> <white>"
-                            + absolutePath
-                            + "</white>"
-            ));
+            invocation.source().sendMessage(MINI_MESSAGE.deserialize("<gray>[ProudAuth]</gray> <green>CSV export created</green> <white>" + absolutePath + "</white>"));
         });
     }
 
@@ -327,13 +371,14 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
             lang.send(invocation.source(), "no-permission");
             return;
         }
+
         if (args.length < 2) {
-            lang.send(invocation.source(), "error-usage",
-                    Placeholder.unparsed("usage", "/paproxy whitelistip <add|remove|list> <player> [ip]"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy whitelistip <add|remove|list> <player> [ip]"));
             return;
         }
 
         String action = args[1].toLowerCase(Locale.ROOT);
+
         switch (action) {
             case "add" -> handleWhitelistIpAdd(invocation, args, lang);
             case "remove" -> handleWhitelistIpRemove(invocation, args, lang);
@@ -344,13 +389,13 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
 
     private void handleWhitelistIpAdd(Invocation invocation, String[] args, VelocityLang lang) {
         if (args.length != 4) {
-            lang.send(invocation.source(), "error-usage",
-                    Placeholder.unparsed("usage", "/paproxy whitelistip add <player> <ip>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy whitelistip add <player> <ip>"));
             return;
         }
 
         String username = args[2];
         String ipAddress = args[3].trim();
+
         if (!isLikelyIpAddress(ipAddress)) {
             lang.send(invocation.source(), "admin-invalid-ip", Placeholder.unparsed("ip", ipAddress));
             return;
@@ -361,59 +406,55 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                 lang.send(invocation.source(), "error-generic");
                 return;
             }
-            lang.send(invocation.source(), "admin-whitelist-ip-added",
-                    Placeholder.unparsed("player", username),
-                    Placeholder.unparsed("ip", ipAddress));
+
+            lang.send(invocation.source(), "admin-whitelist-ip-added", Placeholder.unparsed("player", username), Placeholder.unparsed("ip", ipAddress));
         });
     }
 
     private void handleWhitelistIpRemove(Invocation invocation, String[] args, VelocityLang lang) {
         if (args.length != 4) {
-            lang.send(invocation.source(), "error-usage",
-                    Placeholder.unparsed("usage", "/paproxy whitelistip remove <player> <ip>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy whitelistip remove <player> <ip>"));
             return;
         }
 
         String username = args[2];
         String ipAddress = args[3].trim();
+
         storageSupplier.get().removePremiumIpWhitelist(username, ipAddress).whenComplete((removed, exception) -> {
             if (exception != null) {
                 lang.send(invocation.source(), "error-generic");
                 return;
             }
+
             if (!removed) {
-                lang.send(invocation.source(), "admin-whitelist-ip-not-found",
-                        Placeholder.unparsed("player", username),
-                        Placeholder.unparsed("ip", ipAddress));
+                lang.send(invocation.source(), "admin-whitelist-ip-not-found", Placeholder.unparsed("player", username), Placeholder.unparsed("ip", ipAddress));
                 return;
             }
-            lang.send(invocation.source(), "admin-whitelist-ip-removed",
-                    Placeholder.unparsed("player", username),
-                    Placeholder.unparsed("ip", ipAddress));
+
+            lang.send(invocation.source(), "admin-whitelist-ip-removed", Placeholder.unparsed("player", username), Placeholder.unparsed("ip", ipAddress));
         });
     }
 
     private void handleWhitelistIpList(Invocation invocation, String[] args, VelocityLang lang) {
         if (args.length != 3) {
-            lang.send(invocation.source(), "error-usage",
-                    Placeholder.unparsed("usage", "/paproxy whitelistip list <player>"));
+            lang.send(invocation.source(), "error-usage", Placeholder.unparsed("usage", "/paproxy whitelistip list <player>"));
             return;
         }
 
         String username = args[2];
+
         storageSupplier.get().listPremiumIpWhitelist(username).whenComplete((ips, exception) -> {
             if (exception != null) {
                 lang.send(invocation.source(), "error-generic");
                 return;
             }
+
             if (ips.isEmpty()) {
-                lang.send(invocation.source(), "admin-whitelist-ip-empty",
-                        Placeholder.unparsed("player", username));
+                lang.send(invocation.source(), "admin-whitelist-ip-empty", Placeholder.unparsed("player", username));
                 return;
             }
-            lang.send(invocation.source(), "admin-whitelist-ip-list",
-                    Placeholder.unparsed("player", username),
-                    Placeholder.unparsed("ips", String.join(", ", ips)));
+
+            lang.send(invocation.source(), "admin-whitelist-ip-list", Placeholder.unparsed("player", username), Placeholder.unparsed("ips", String.join(", ", ips)));
         });
     }
 
@@ -430,20 +471,37 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         return invocation.source().hasPermission("proudauth.admin.whitelistip");
     }
 
+    private boolean hasMonitorPermission(Invocation invocation) {
+        return invocation.source().hasPermission("proudauth.admin.monitor")
+                || invocation.source().hasPermission("proudauth.admin.reload");
+    }
+
     @Override
     public boolean hasPermission(Invocation invocation) {
-        return hasReloadPermission(invocation) || hasSecurityPermission(invocation) || hasWhitelistPermission(invocation);
+        return hasReloadPermission(invocation)
+                || hasSecurityPermission(invocation)
+                || hasWhitelistPermission(invocation)
+                || hasMonitorPermission(invocation);
     }
 
     @Override
     public List<String> suggest(Invocation invocation) {
         String[] args = invocation.arguments();
+
         if (args.length <= 1) {
             String token = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
-            return filter(List.of("reload", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv", "whitelistip"), token);
+            return filter(List.of("reload", "monitor", "iphistory", "risk", "risk-top", "banwave-ip", "export-risk-csv", "whitelistip"), token);
         }
 
         String subcommand = args[0].toLowerCase(Locale.ROOT);
+
+        if ("monitor".equals(subcommand)) {
+            if (args.length == 2) {
+                return filter(List.of("sessionlist", "closesession", "restart", "stop"), args[1]);
+            }
+            return List.of();
+        }
+
         return switch (subcommand) {
             case "iphistory" -> args.length == 2
                     ? filter(List.of("127.0.0.1", "192.168.1.10"), args[1])
@@ -508,8 +566,10 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
         if (raw == null || raw.isBlank() || raw.length() > 45) {
             return false;
         }
-        for (int i = 0; i < raw.length(); i++) {
-            char character = raw.charAt(i);
+
+        for (int index = 0; index < raw.length(); index++) {
+            char character = raw.charAt(index);
+
             if (Character.isDigit(character)
                     || (character >= 'a' && character <= 'f')
                     || (character >= 'A' && character <= 'F')
@@ -517,8 +577,10 @@ public final class ProudAuthVelocityCommand implements SimpleCommand {
                     || character == ':') {
                 continue;
             }
+
             return false;
         }
+
         return true;
     }
 }
