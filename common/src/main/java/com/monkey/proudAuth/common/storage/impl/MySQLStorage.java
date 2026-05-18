@@ -162,6 +162,17 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
+    public CompletableFuture<Boolean> deleteAccount(UUID uuid) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_accounts WHERE uuid = ?")) {
+                statement.setString(1, uuid.toString());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    @Override
     public CompletableFuture<Void> updatePassword(UUID uuid, String passwordHash) {
         return runAsync(() -> {
             try (Connection connection = connection();

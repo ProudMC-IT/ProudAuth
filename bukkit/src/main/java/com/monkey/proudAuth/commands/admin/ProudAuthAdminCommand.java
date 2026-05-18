@@ -62,6 +62,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
                 new ForceLoginAdminSubcommand(context),
                 new ForceLogoutAdminSubcommand(context),
                 new ResetPasswordAdminSubcommand(context),
+                new WipePlayerAdminSubcommand(context),
                 new BanIpAdminSubcommand(context),
                 new UnbanIpAdminSubcommand(context),
                 new TrustIpAdminSubcommand(context),
@@ -90,7 +91,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         if (args.length == 0) {
             langConfig.send(sender, "error-usage",
                     Placeholder.unparsed("usage",
-                            "/proudauth <forcelogin|forcelogout|resetpassword|banip|unbanip|trustip|whitelistip|claim|session|premiumcheck|authinfo|2fa|unlock|history|bridge|debug|stats|reload>"));
+                            "/proudauth <forcelogin|forcelogout|resetpassword|wipeplayer|banip|unbanip|trustip|whitelistip|claim|session|premiumcheck|authinfo|2fa|unlock|history|bridge|debug|stats|reload>"));
             return true;
         }
 

@@ -18,6 +18,8 @@ public interface AccountStorage {
 
     CompletableFuture<Void> saveAccount(AccountRecord accountRecord);
 
+    CompletableFuture<Boolean> deleteAccount(UUID uuid);
+
     CompletableFuture<Void> updatePassword(UUID uuid, String passwordHash);
 
     CompletableFuture<Void> touchLogin(UUID uuid, String username, String ip, AccountType accountType);
