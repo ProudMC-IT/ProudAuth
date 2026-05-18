@@ -35,7 +35,8 @@ public final class VelocityResolvedPlayerStore {
                 current != null && current.networkAuthenticated(),
                 current == null ? "" : current.authEntryServer(),
                 current == null ? "" : current.pendingNoticeKey(),
-                current == null ? "" : current.pendingNoticeTargetServer()
+                current == null ? "" : current.pendingNoticeTargetServer(),
+                current == null ? "" : current.allowedAuthEntryTargetServer()
         ));
     }
 
@@ -56,6 +57,11 @@ public final class VelocityResolvedPlayerStore {
                 (ignored, current) -> current.withPendingNotice(messageKey, targetServer));
     }
 
+    public void rememberAllowedAuthEntry(String username, String targetServer) {
+        resolvedPlayers.computeIfPresent(key(username),
+                (ignored, current) -> current.withAllowedAuthEntryTargetServer(targetServer));
+    }
+
     public Optional<String> consumePendingNotice(String username, String currentServer) {
         String normalizedServer = currentServer == null ? "" : currentServer;
         String[] consumedMessage = new String[1];
@@ -69,6 +75,20 @@ public final class VelocityResolvedPlayerStore {
             return current.withPendingNotice("", "");
         });
         return Optional.ofNullable(consumedMessage[0]).filter(messageKey -> !messageKey.isBlank());
+    }
+
+    public boolean consumeAllowedAuthEntry(String username, String targetServer) {
+        String normalizedServer = targetServer == null ? "" : targetServer;
+        boolean[] consumed = new boolean[1];
+        resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> {
+            if (current.allowedAuthEntryTargetServer().isBlank()
+                    || !current.allowedAuthEntryTargetServer().equalsIgnoreCase(normalizedServer)) {
+                return current;
+            }
+            consumed[0] = true;
+            return current.withAllowedAuthEntryTargetServer("");
+        });
+        return consumed[0];
     }
 
     public void forget(String username) {
@@ -91,7 +111,8 @@ public final class VelocityResolvedPlayerStore {
             boolean networkAuthenticated,
             String authEntryServer,
             String pendingNoticeKey,
-            String pendingNoticeTargetServer
+            String pendingNoticeTargetServer,
+            String allowedAuthEntryTargetServer
     ) {
         public ResolvedPlayer withNetworkAuthenticated(boolean authenticated) {
             return new ResolvedPlayer(
@@ -106,7 +127,8 @@ public final class VelocityResolvedPlayerStore {
                     authenticated,
                     authEntryServer,
                     pendingNoticeKey,
-                    pendingNoticeTargetServer
+                    pendingNoticeTargetServer,
+                    allowedAuthEntryTargetServer
             );
         }
 
@@ -123,7 +145,8 @@ public final class VelocityResolvedPlayerStore {
                     networkAuthenticated,
                     updatedAuthEntryServer == null ? "" : updatedAuthEntryServer,
                     pendingNoticeKey,
-                    pendingNoticeTargetServer
+                    pendingNoticeTargetServer,
+                    allowedAuthEntryTargetServer
             );
         }
 
@@ -140,7 +163,26 @@ public final class VelocityResolvedPlayerStore {
                     networkAuthenticated,
                     authEntryServer,
                     updatedMessageKey == null ? "" : updatedMessageKey,
-                    updatedTargetServer == null ? "" : updatedTargetServer
+                    updatedTargetServer == null ? "" : updatedTargetServer,
+                    allowedAuthEntryTargetServer
+            );
+        }
+
+        public ResolvedPlayer withAllowedAuthEntryTargetServer(String updatedAllowedAuthEntryTargetServer) {
+            return new ResolvedPlayer(
+                    accountUuid,
+                    accountName,
+                    accountType,
+                    premiumNameDetected,
+                    premiumVerified,
+                    premiumEnforced,
+                    protocolVersion,
+                    legacyClient,
+                    networkAuthenticated,
+                    authEntryServer,
+                    pendingNoticeKey,
+                    pendingNoticeTargetServer,
+                    updatedAllowedAuthEntryTargetServer == null ? "" : updatedAllowedAuthEntryTargetServer
             );
         }
     }

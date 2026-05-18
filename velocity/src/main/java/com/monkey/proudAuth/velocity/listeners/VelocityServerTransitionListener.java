@@ -99,6 +99,16 @@ public final class VelocityServerTransitionListener {
                 effectiveNetworkAuthenticated,
                 proxyAuthenticatedInitialJoin
         );
+        if (shouldDenyProtectedAuthEntryTransfer(event, routing, initialConnection, selectedTargetServer, targetServer)) {
+            event.setResult(ServerPreConnectEvent.ServerResult.denied());
+            event.getPlayer().sendMessage(langSupplier.get().message("auth-entry-protected-denied"));
+            debugEvent("auth_entry_protected_transfer_denied",
+                    "player", event.getPlayer().getUsername(),
+                    "previous", previousServer,
+                    "requested_target", selectedTargetServer,
+                    "effective_target", targetServer);
+            return;
+        }
         RegisteredServer targetRegisteredServer = findServer(targetServer).orElse(null);
         if (targetRegisteredServer != null && !targetServer.equalsIgnoreCase(selectedTargetServer)) {
             event.setResult(ServerPreConnectEvent.ServerResult.allowed(targetRegisteredServer));
@@ -222,6 +232,27 @@ public final class VelocityServerTransitionListener {
                 && profile.accountType() == AccountType.PREMIUM
                 && profile.premiumVerified()
                 && routing.shouldDirectAuthenticatedJoinsToPostAuth();
+    }
+
+    private boolean shouldDenyProtectedAuthEntryTransfer(
+            ServerPreConnectEvent event,
+            ProudAuthNetworkConfig.Routing routing,
+            boolean initialConnection,
+            String selectedTargetServer,
+            String effectiveTargetServer
+    ) {
+        if (!routing.authEntryProtected() || !routing.hasAuthEntryServer() || initialConnection) {
+            return false;
+        }
+
+        String authEntryServer = routing.authEntryServer();
+        boolean targetingAuth = authEntryServer.equalsIgnoreCase(selectedTargetServer)
+                || authEntryServer.equalsIgnoreCase(effectiveTargetServer);
+        if (!targetingAuth) {
+            return false;
+        }
+
+        return !resolvedPlayerStore.consumeAllowedAuthEntry(event.getPlayer().getUsername(), authEntryServer);
     }
 
     private Optional<RegisteredServer> findServer(String serverName) {

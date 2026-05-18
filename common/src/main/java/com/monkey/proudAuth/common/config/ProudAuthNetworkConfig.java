@@ -67,6 +67,7 @@ public record ProudAuthNetworkConfig(
     public record Routing(
             boolean authEntryEnabled,
             String authEntryServer,
+            boolean authEntryProtected,
             boolean postAuthEnabled,
             String postAuthServer,
             AuthenticatedJoinRoutingMode authenticatedJoinRoutingMode,

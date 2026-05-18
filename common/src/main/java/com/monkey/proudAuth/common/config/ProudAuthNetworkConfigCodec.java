@@ -186,6 +186,7 @@ public final class ProudAuthNetworkConfigCodec {
                 new ProudAuthNetworkConfig.Routing(
                         bool(root, "routing.auth-entry.enabled", false),
                         string(root, "routing.auth-entry.server", ""),
+                        bool(root, "routing.auth-entry.protected", false),
                         bool(root, "routing.post-auth.enabled", false),
                         string(root, "routing.post-auth.server", ""),
                         ProudAuthNetworkConfig.AuthenticatedJoinRoutingMode.from(
@@ -516,6 +517,7 @@ public final class ProudAuthNetworkConfigCodec {
         Map<String, Object> authEntry = new LinkedHashMap<>();
         authEntry.put("enabled", routing.authEntryEnabled());
         authEntry.put("server", routing.authEntryServer());
+        authEntry.put("protected", routing.authEntryProtected());
         values.put("auth-entry", authEntry);
         Map<String, Object> authenticatedJoin = new LinkedHashMap<>();
         authenticatedJoin.put("mode", routing.authenticatedJoinRoutingMode().name());

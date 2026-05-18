@@ -45,6 +45,7 @@ kick-auth-timeout: "<red>Tempo scaduto. Autenticati piu velocemente al prossimo 
 kick-ip-banned: "<red>Il tuo IP e stato temporaneamente bloccato per troppi tentativi falliti."
 kick-bridge-required: "<red>Accesso rifiutato: il controllo trusted dal proxy non e valido o e scaduto."
 kick-backend-unavailable: "<red>Connessione temporaneamente bloccata: backend non ancora pronto. Riprova tra pochi secondi."
+auth-entry-protected-denied: "<red>Trasferimento negato: il server auth accetta solo ingressi iniziali o redirect autorizzati da ProudAuth.</red>"
 kick-suspicious-network: "<red>Connessione bloccata dal sistema di sicurezza di rete."
 kick-trusted-ip-mismatch: "<red>Accesso rifiutato: questo account puo entrare solo da un IP trusted."
 kick-premium-impersonation: "<red>Accesso rifiutato: tentativo di uso non autorizzato di un account premium."

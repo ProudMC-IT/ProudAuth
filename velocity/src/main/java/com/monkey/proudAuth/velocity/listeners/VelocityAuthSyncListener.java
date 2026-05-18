@@ -222,6 +222,7 @@ public final class VelocityAuthSyncListener {
         }
 
         proxyServer.getServer(authEntryServer).ifPresent(targetServer -> {
+            resolvedPlayerStore.rememberAllowedAuthEntry(player.getUsername(), authEntryServer);
             player.createConnectionRequest(targetServer).fireAndForget();
             debugEvent("auth_sync_redirect_auth_entry",
                     "player", player.getUsername(),

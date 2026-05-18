@@ -265,6 +265,11 @@ routing:
     # Exact Velocity backend name used as auth entry server.
     server: "auth"
 
+    # If true, internal server-to-server transfers into the auth server are denied
+    # unless ProudAuth explicitly requested the redirect itself.
+    # This blocks manual actions such as /send <player> auth for players already inside the network.
+    protected: false
+
   authenticated-join:
     # Decides what happens when the proxy has already verified the player as premium
     # during the login pipeline.
