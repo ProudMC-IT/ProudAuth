@@ -108,6 +108,14 @@ public final class BackendNetworkSyncService {
         send(player, ProudAuthNetworkChannel.AUTH_STATE_UPDATE, state.name());
     }
 
+    public void notifyAuthNotice(Player player, String messageKey) {
+        if (!isVelocityProxyMode()) {
+            return;
+        }
+
+        send(player, ProudAuthNetworkChannel.AUTH_NOTICE, messageKey);
+    }
+
     private void sendWithRetries(Player player, String messageType, int attempts, long intervalTicks) {
         int safeAttempts = Math.max(1, attempts);
         long safeIntervalTicks = Math.max(1L, intervalTicks);

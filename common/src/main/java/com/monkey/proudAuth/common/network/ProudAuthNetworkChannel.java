@@ -6,6 +6,7 @@ public final class ProudAuthNetworkChannel {
     public static final String AUTH_COMPLETED = "AUTH_COMPLETED";
     public static final String AUTH_INVALIDATED = "AUTH_INVALIDATED";
     public static final String AUTH_STATE_UPDATE = "AUTH_STATE_UPDATE";
+    public static final String AUTH_NOTICE = "AUTH_NOTICE";
 
     private ProudAuthNetworkChannel() {
     }

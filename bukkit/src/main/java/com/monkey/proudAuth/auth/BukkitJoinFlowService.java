@@ -8,6 +8,7 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.session.SessionManager;
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
@@ -258,7 +259,11 @@ public final class BukkitJoinFlowService {
                         debugEvent(DebugChannel.PREMIUM_FLOW, "join_premium_fastpath_complete",
                                 "player", player.getName(),
                                 "uuid", player.getUniqueId());
-                        langConfig.send(player, "premium-auto-login");
+                        if (pluginConfig.settings().proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY) {
+                            networkSyncService.notifyAuthNotice(player, "premium-auto-login");
+                        } else {
+                            langConfig.send(player, "premium-auto-login");
+                        }
                     }, 1L);
                 }));
     }

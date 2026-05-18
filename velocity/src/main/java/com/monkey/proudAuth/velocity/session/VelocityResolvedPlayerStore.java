@@ -33,7 +33,9 @@ public final class VelocityResolvedPlayerStore {
                 protocolVersion == null ? "" : protocolVersion,
                 legacyClient,
                 current != null && current.networkAuthenticated(),
-                current == null ? "" : current.authEntryServer()
+                current == null ? "" : current.authEntryServer(),
+                current == null ? "" : current.pendingNoticeKey(),
+                current == null ? "" : current.pendingNoticeTargetServer()
         ));
     }
 
@@ -47,6 +49,26 @@ public final class VelocityResolvedPlayerStore {
 
     public void markNetworkAuthenticated(String username, boolean authenticated) {
         resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> current.withNetworkAuthenticated(authenticated));
+    }
+
+    public void rememberPendingNotice(String username, String messageKey, String targetServer) {
+        resolvedPlayers.computeIfPresent(key(username),
+                (ignored, current) -> current.withPendingNotice(messageKey, targetServer));
+    }
+
+    public Optional<String> consumePendingNotice(String username, String currentServer) {
+        String normalizedServer = currentServer == null ? "" : currentServer;
+        String[] consumedMessage = new String[1];
+        resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> {
+            if (current.pendingNoticeKey().isBlank()
+                    || current.pendingNoticeTargetServer().isBlank()
+                    || !current.pendingNoticeTargetServer().equalsIgnoreCase(normalizedServer)) {
+                return current;
+            }
+            consumedMessage[0] = current.pendingNoticeKey();
+            return current.withPendingNotice("", "");
+        });
+        return Optional.ofNullable(consumedMessage[0]).filter(messageKey -> !messageKey.isBlank());
     }
 
     public void forget(String username) {
@@ -67,7 +89,9 @@ public final class VelocityResolvedPlayerStore {
             String protocolVersion,
             boolean legacyClient,
             boolean networkAuthenticated,
-            String authEntryServer
+            String authEntryServer,
+            String pendingNoticeKey,
+            String pendingNoticeTargetServer
     ) {
         public ResolvedPlayer withNetworkAuthenticated(boolean authenticated) {
             return new ResolvedPlayer(
@@ -80,7 +104,9 @@ public final class VelocityResolvedPlayerStore {
                     protocolVersion,
                     legacyClient,
                     authenticated,
-                    authEntryServer
+                    authEntryServer,
+                    pendingNoticeKey,
+                    pendingNoticeTargetServer
             );
         }
 
@@ -95,7 +121,26 @@ public final class VelocityResolvedPlayerStore {
                     protocolVersion,
                     legacyClient,
                     networkAuthenticated,
-                    updatedAuthEntryServer == null ? "" : updatedAuthEntryServer
+                    updatedAuthEntryServer == null ? "" : updatedAuthEntryServer,
+                    pendingNoticeKey,
+                    pendingNoticeTargetServer
+            );
+        }
+
+        public ResolvedPlayer withPendingNotice(String updatedMessageKey, String updatedTargetServer) {
+            return new ResolvedPlayer(
+                    accountUuid,
+                    accountName,
+                    accountType,
+                    premiumNameDetected,
+                    premiumVerified,
+                    premiumEnforced,
+                    protocolVersion,
+                    legacyClient,
+                    networkAuthenticated,
+                    authEntryServer,
+                    updatedMessageKey == null ? "" : updatedMessageKey,
+                    updatedTargetServer == null ? "" : updatedTargetServer
             );
         }
     }

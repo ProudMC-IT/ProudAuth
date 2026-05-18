@@ -216,6 +216,7 @@ public final class ProudAuthVelocityPlatform {
                     proxyServer,
                     resolvedPlayerStore,
                     () -> settings.proxy().routing(),
+                    () -> lang,
                     () -> settings.debugger(),
                     platformLogger,
                     monitorAuthStateStore,

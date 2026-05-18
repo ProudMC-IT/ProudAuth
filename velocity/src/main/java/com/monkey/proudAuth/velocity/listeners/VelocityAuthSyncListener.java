@@ -6,6 +6,7 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
+import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.monitor.VelocityMonitorAuthStateStore;
 import com.monkey.proudAuth.velocity.monitor.VelocityMonitorService;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
@@ -34,6 +35,7 @@ public final class VelocityAuthSyncListener {
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
     private final VelocityMonitorAuthStateStore monitorAuthStateStore;
@@ -44,6 +46,7 @@ public final class VelocityAuthSyncListener {
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger,
             VelocityMonitorAuthStateStore monitorAuthStateStore,
@@ -53,6 +56,7 @@ public final class VelocityAuthSyncListener {
         this.proxyServer = proxyServer;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
+        this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
         this.monitorAuthStateStore = monitorAuthStateStore;
@@ -108,6 +112,11 @@ public final class VelocityAuthSyncListener {
 
             if (ProudAuthNetworkChannel.AUTH_INVALIDATED.equals(type)) {
                 handleAuthInvalidated(player.get(), sourceServer);
+                return;
+            }
+
+            if (ProudAuthNetworkChannel.AUTH_NOTICE.equals(type)) {
+                handleAuthNotice(player.get(), sourceServer, payload);
             }
         } catch (IOException exception) {
             debugEvent("auth_sync_decode_error",
@@ -219,6 +228,29 @@ public final class VelocityAuthSyncListener {
                     "from", sourceServer,
                     "target", authEntryServer);
         });
+    }
+
+    private void handleAuthNotice(Player player, String sourceServer, String messageKey) {
+        if (messageKey == null || messageKey.isBlank()) {
+            return;
+        }
+
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        if (!routing.hasPostAuthServer() || routing.postAuthServer().equalsIgnoreCase(sourceServer)) {
+            langSupplier.get().send(player, messageKey);
+            debugEvent("auth_sync_notice_sent_immediate",
+                    "player", player.getUsername(),
+                    "server", sourceServer,
+                    "message_key", messageKey);
+            return;
+        }
+
+        resolvedPlayerStore.rememberPendingNotice(player.getUsername(), messageKey, routing.postAuthServer());
+        debugEvent("auth_sync_notice_scheduled",
+                "player", player.getUsername(),
+                "server", sourceServer,
+                "target", routing.postAuthServer(),
+                "message_key", messageKey);
     }
 
     @Subscribe

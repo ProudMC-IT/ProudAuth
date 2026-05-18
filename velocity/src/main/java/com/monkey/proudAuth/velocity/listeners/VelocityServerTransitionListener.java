@@ -85,6 +85,9 @@ public final class VelocityServerTransitionListener {
         boolean proxyAuthenticatedInitialJoin = shouldDirectAuthenticatedJoin(initialConnection, profile, routing);
         if (proxyAuthenticatedInitialJoin) {
             resolvedPlayerStore.markNetworkAuthenticated(event.getPlayer().getUsername(), true);
+            if (routing.hasPostAuthServer()) {
+                resolvedPlayerStore.rememberPendingNotice(event.getPlayer().getUsername(), "premium-auto-login", routing.postAuthServer());
+            }
         }
         boolean effectiveNetworkAuthenticated = profile.networkAuthenticated() || proxyAuthenticatedInitialJoin;
         String authEntryServer = resolveAuthEntryServer(initialConnection, previousServer, selectedTargetServer, profile, routing);
@@ -143,14 +146,22 @@ public final class VelocityServerTransitionListener {
     public void onServerConnected(ServerConnectedEvent event) {
         String username = event.getPlayer().getUsername();
         String ipAddress = ipAddress(event.getPlayer());
+        String currentServerName = event.getServer().getServerInfo().getName();
         var resolvedPlayer = resolvedPlayerStore.find(username);
+        resolvedPlayerStore.consumePendingNotice(username, currentServerName).ifPresent(messageKey -> {
+            event.getPlayer().sendMessage(langSupplier.get().message(messageKey));
+            debugEvent("post_auth_notice_sent",
+                    "player", username,
+                    "server", currentServerName,
+                    "message_key", messageKey);
+        });
         if (resolvedPlayer.isPresent()
                 && resolvedPlayer.get().accountType() == AccountType.CRACKED
                 && premiumClaimFailureStore.consume(username, ipAddress)) {
             event.getPlayer().sendMessage(langSupplier.get().message("claim-premium-failed-choose-again"));
             debugEvent("premium_claim_failed_notice_sent",
                     "player", username,
-                    "server", event.getServer().getServerInfo().getName(),
+                    "server", currentServerName,
                     "ip", ipAddress);
         }
     }
