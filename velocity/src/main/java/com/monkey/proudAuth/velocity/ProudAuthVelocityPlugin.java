@@ -13,12 +13,7 @@ import org.slf4j.Logger;
 import java.lang.reflect.Method;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
-import java.sql.Connection;
-import java.sql.Driver;
-import java.sql.DriverManager;
-import java.sql.DriverPropertyInfo;
-import java.sql.SQLException;
-import java.sql.SQLFeatureNotSupportedException;
+import java.sql.*;
 import java.util.Properties;
 
 @Plugin(

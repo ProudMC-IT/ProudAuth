@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.auth;
 
 import com.monkey.proudAuth.common.auth.AuthService;
+import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
@@ -8,7 +9,6 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.AuthState;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.session.SessionManager;
-import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
