@@ -297,6 +297,20 @@ routing:
     # Older clients are more sensitive to immediate backend switches right after auth.
     legacy-redirect-delay-ms: 150
 
+paaccess:
+  history:
+    # Timezone used by /paaccess history.
+    timezone: "Europe/Rome"
+
+    # Java DateTimeFormatter pattern used by /paaccess history.
+    time-format: "dd/MM/yyyy HH:mm:ss"
+
+    # Rows shown per history page.
+    page-size: 8
+
+    # How many days of ProudAccess audit history are retained.
+    retention-days: 90
+
 guards:
   # Enables proxy-side anti-abuse and suspicious-network checks.
   enabled: true

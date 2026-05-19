@@ -15,7 +15,8 @@ public record ResolvedLogin(
         boolean authEntryEnforced,
         String postAuthServer,
         boolean networkAuthenticated,
-        boolean legacyClient
+        boolean legacyClient,
+        String proxyUsername
 ) {
     public static ResolvedLogin standalone(
             UUID uuid,
@@ -34,7 +35,8 @@ public record ResolvedLogin(
                 false,
                 "",
                 false,
-                false
+                false,
+                username
         );
     }
 }

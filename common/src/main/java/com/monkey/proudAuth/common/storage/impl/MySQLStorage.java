@@ -1031,12 +1031,13 @@ public final class MySQLStorage implements StorageProvider {
                     """;
             String insertSql = """
                     INSERT INTO pa_proxy_assertions
-                    (nonce, username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (nonce, username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, signature)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         resolved_name = VALUES(resolved_name),
                         uuid = VALUES(uuid),
+                        runtime_uuid = VALUES(runtime_uuid),
                         account_type = VALUES(account_type),
                         ip = VALUES(ip),
                         join_mode = VALUES(join_mode),
@@ -1061,18 +1062,19 @@ public final class MySQLStorage implements StorageProvider {
                     insertStatement.setString(2, assertion.username());
                     insertStatement.setString(3, assertion.resolvedName());
                     insertStatement.setString(4, assertion.uuid().toString());
-                    insertStatement.setString(5, assertion.accountType().name());
-                    insertStatement.setString(6, assertion.ipAddress());
-                    insertStatement.setString(7, assertion.joinMode().name());
-                    insertStatement.setString(8, assertion.targetServer());
-                    insertStatement.setString(9, assertion.authEntryServer());
-                    insertStatement.setBoolean(10, assertion.authEntryEnforced());
-                    insertStatement.setString(11, assertion.postAuthServer());
-                    insertStatement.setBoolean(12, assertion.networkAuthenticated());
-                    insertStatement.setBoolean(13, assertion.legacyClient());
-                    insertStatement.setTimestamp(14, Timestamp.from(assertion.issuedAt()));
-                    insertStatement.setTimestamp(15, Timestamp.from(assertion.expiresAt()));
-                    insertStatement.setString(16, assertion.signature());
+                    insertStatement.setString(5, assertion.runtimeUuid().toString());
+                    insertStatement.setString(6, assertion.accountType().name());
+                    insertStatement.setString(7, assertion.ipAddress());
+                    insertStatement.setString(8, assertion.joinMode().name());
+                    insertStatement.setString(9, assertion.targetServer());
+                    insertStatement.setString(10, assertion.authEntryServer());
+                    insertStatement.setBoolean(11, assertion.authEntryEnforced());
+                    insertStatement.setString(12, assertion.postAuthServer());
+                    insertStatement.setBoolean(13, assertion.networkAuthenticated());
+                    insertStatement.setBoolean(14, assertion.legacyClient());
+                    insertStatement.setTimestamp(15, Timestamp.from(assertion.issuedAt()));
+                    insertStatement.setTimestamp(16, Timestamp.from(assertion.expiresAt()));
+                    insertStatement.setString(17, assertion.signature());
                     insertStatement.executeUpdate();
                 }
             }
@@ -1083,7 +1085,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
                     WHERE username = ? AND ip = ? AND expires_at > CURRENT_TIMESTAMP
                     ORDER BY issued_at DESC
@@ -1107,7 +1109,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
                     WHERE username = ?
                     ORDER BY issued_at DESC
@@ -1142,6 +1144,182 @@ public final class MySQLStorage implements StorageProvider {
         return supplyAsync(() -> {
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP")) {
+                return statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> saveDelegatedAccessGrant(DelegatedAccessGrantRecord grant) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_delegated_access_grants
+                    (owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE
+                        owner_username = VALUES(owner_username),
+                        delegate_username = VALUES(delegate_username),
+                        delegate_account_type = VALUES(delegate_account_type),
+                        code_hash = VALUES(code_hash),
+                        updated_at = VALUES(updated_at),
+                        active = VALUES(active)
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, grant.ownerUuid().toString());
+                statement.setString(2, grant.ownerUsername());
+                statement.setString(3, grant.delegateUuid().toString());
+                statement.setString(4, grant.delegateUsername());
+                statement.setString(5, grant.delegateAccountType().name());
+                statement.setString(6, grant.codeHash());
+                statement.setTimestamp(7, Timestamp.from(grant.createdAt()));
+                statement.setTimestamp(8, Timestamp.from(grant.updatedAt()));
+                statement.setBoolean(9, grant.active());
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Optional<DelegatedAccessGrantRecord>> findDelegatedAccessGrant(UUID ownerUuid, UUID delegateUuid) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active
+                    FROM pa_delegated_access_grants
+                    WHERE owner_uuid = ? AND delegate_uuid = ? AND active = 1
+                    LIMIT 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, ownerUuid.toString());
+                statement.setString(2, delegateUuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    if (!resultSet.next()) {
+                        return Optional.empty();
+                    }
+                    return Optional.of(mapDelegatedAccessGrant(resultSet));
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<DelegatedAccessGrantRecord>> listDelegatedAccessGrants(UUID ownerUuid) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active
+                    FROM pa_delegated_access_grants
+                    WHERE owner_uuid = ? AND active = 1
+                    ORDER BY updated_at DESC
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, ownerUuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<DelegatedAccessGrantRecord> grants = new ArrayList<>();
+                    while (resultSet.next()) {
+                        grants.add(mapDelegatedAccessGrant(resultSet));
+                    }
+                    return grants;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Boolean> revokeDelegatedAccessGrant(UUID ownerUuid, UUID delegateUuid) {
+        return supplyAsync(() -> {
+            String sql = """
+                    UPDATE pa_delegated_access_grants
+                    SET active = 0, updated_at = CURRENT_TIMESTAMP
+                    WHERE owner_uuid = ? AND delegate_uuid = ? AND active = 1
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, ownerUuid.toString());
+                statement.setString(2, delegateUuid.toString());
+                return statement.executeUpdate() > 0;
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Void> saveDelegatedAccessHistory(DelegatedAccessHistoryRecord record) {
+        return runAsync(() -> {
+            String sql = """
+                    INSERT INTO pa_delegated_access_history
+                    (actor_uuid, actor_username, target_uuid, target_username, event_type, result, reason, ip, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                setNullableString(statement, 1, record.actorUuid() == null ? null : record.actorUuid().toString());
+                statement.setString(2, record.actorUsername());
+                setNullableString(statement, 3, record.targetUuid() == null ? null : record.targetUuid().toString());
+                statement.setString(4, record.targetUsername());
+                statement.setString(5, record.eventType());
+                statement.setString(6, record.result());
+                statement.setString(7, record.reason());
+                statement.setString(8, record.ipAddress());
+                statement.setTimestamp(9, Timestamp.from(record.createdAt()));
+                statement.executeUpdate();
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<DelegatedAccessHistoryRecord>> listDelegatedAccessHistory(UUID accountUuid, DelegatedAccessHistoryDirection direction, int page, int pageSize) {
+        return supplyAsync(() -> {
+            int safePage = Math.max(1, page);
+            int safePageSize = Math.max(1, Math.min(50, pageSize));
+            String sql = delegatedAccessHistorySelectSql(direction) + """
+                    ORDER BY created_at DESC, id DESC
+                    LIMIT ? OFFSET ?
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, accountUuid.toString());
+                int nextIndex = 2;
+                if (direction == null) {
+                    statement.setString(nextIndex++, accountUuid.toString());
+                }
+                statement.setInt(nextIndex++, safePageSize);
+                statement.setInt(nextIndex, (safePage - 1) * safePageSize);
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<DelegatedAccessHistoryRecord> rows = new ArrayList<>();
+                    while (resultSet.next()) {
+                        rows.add(mapDelegatedAccessHistory(resultSet));
+                    }
+                    return rows;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> countDelegatedAccessHistory(UUID accountUuid, DelegatedAccessHistoryDirection direction) {
+        return supplyAsync(() -> {
+            String sql = delegatedAccessHistoryCountSql(direction);
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, accountUuid.toString());
+                if (direction == null) {
+                    statement.setString(2, accountUuid.toString());
+                }
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    resultSet.next();
+                    return resultSet.getInt(1);
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<Integer> deleteDelegatedAccessHistoryBefore(Instant cutoff) {
+        return supplyAsync(() -> {
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement("DELETE FROM pa_delegated_access_history WHERE created_at < ?")) {
+                statement.setTimestamp(1, Timestamp.from(cutoff));
                 return statement.executeUpdate();
             }
         });
@@ -1460,6 +1638,7 @@ public final class MySQLStorage implements StorageProvider {
                         username VARCHAR(16) NOT NULL,
                         resolved_name VARCHAR(16) NOT NULL,
                         uuid VARCHAR(36) NOT NULL,
+                        runtime_uuid VARCHAR(36) NOT NULL,
                         account_type ENUM('PREMIUM','CRACKED') NOT NULL,
                         ip VARCHAR(45) NOT NULL,
                         join_mode VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER',
@@ -1477,6 +1656,7 @@ public final class MySQLStorage implements StorageProvider {
                     )
                     """);
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS join_mode VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER'");
+            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS runtime_uuid VARCHAR(36) NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS target_server VARCHAR(64) NOT NULL DEFAULT ''");
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS auth_entry_server VARCHAR(64) NOT NULL DEFAULT ''");
             statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS auth_entry_enforced TINYINT(1) NOT NULL DEFAULT 0");
@@ -1546,6 +1726,39 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_whitelist_username (username)
                     )
                     """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_delegated_access_grants (
+                        owner_uuid VARCHAR(36) NOT NULL,
+                        owner_username VARCHAR(16) NOT NULL,
+                        delegate_uuid VARCHAR(36) NOT NULL,
+                        delegate_username VARCHAR(16) NOT NULL,
+                        delegate_account_type ENUM('PREMIUM','CRACKED') NOT NULL,
+                        code_hash VARCHAR(72) NOT NULL,
+                        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        active TINYINT(1) NOT NULL DEFAULT 1,
+                        PRIMARY KEY (owner_uuid, delegate_uuid),
+                        INDEX idx_delegated_owner (owner_uuid, active),
+                        INDEX idx_delegated_delegate (delegate_uuid, active)
+                    )
+                    """);
+            statement.executeUpdate("""
+                    CREATE TABLE IF NOT EXISTS pa_delegated_access_history (
+                        id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+                        actor_uuid VARCHAR(36),
+                        actor_username VARCHAR(16) NOT NULL,
+                        target_uuid VARCHAR(36),
+                        target_username VARCHAR(16) NOT NULL,
+                        event_type VARCHAR(32) NOT NULL,
+                        result VARCHAR(32) NOT NULL,
+                        reason VARCHAR(128) NOT NULL DEFAULT '',
+                        ip VARCHAR(45) NOT NULL DEFAULT 'unknown',
+                        created_at DATETIME NOT NULL,
+                        INDEX idx_access_history_actor_time (actor_uuid, created_at),
+                        INDEX idx_access_history_target_time (target_uuid, created_at),
+                        INDEX idx_access_history_created (created_at)
+                    )
+                    """);
             ensureIndex(connection, "pa_accounts", "idx_accounts_username", "CREATE INDEX idx_accounts_username ON pa_accounts (username)");
             ensureIndex(connection, "pa_accounts", "idx_accounts_last_login", "CREATE INDEX idx_accounts_last_login ON pa_accounts (last_login_at)");
             ensureIndex(connection, "pa_ip_bans", "idx_ip_bans_active", "CREATE INDEX idx_ip_bans_active ON pa_ip_bans (expires_at, banned_at, ip)");
@@ -1608,6 +1821,7 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getString("username"),
                 resultSet.getString("resolved_name"),
                 UUID.fromString(resultSet.getString("uuid")),
+                mapRuntimeUuid(resultSet),
                 AccountType.valueOf(resultSet.getString("account_type")),
                 resultSet.getString("ip"),
                 BridgeJoinMode.from(resultSet.getString("join_mode")),
@@ -1622,6 +1836,70 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getString("nonce"),
                 resultSet.getString("signature")
         );
+    }
+
+    private DelegatedAccessGrantRecord mapDelegatedAccessGrant(ResultSet resultSet) throws SQLException {
+        return new DelegatedAccessGrantRecord(
+                UUID.fromString(resultSet.getString("owner_uuid")),
+                resultSet.getString("owner_username"),
+                UUID.fromString(resultSet.getString("delegate_uuid")),
+                resultSet.getString("delegate_username"),
+                AccountType.valueOf(resultSet.getString("delegate_account_type")),
+                resultSet.getString("code_hash"),
+                resultSet.getTimestamp("created_at").toInstant(),
+                resultSet.getTimestamp("updated_at").toInstant(),
+                resultSet.getBoolean("active")
+        );
+    }
+
+    private DelegatedAccessHistoryRecord mapDelegatedAccessHistory(ResultSet resultSet) throws SQLException {
+        String actorUuid = resultSet.getString("actor_uuid");
+        String targetUuid = resultSet.getString("target_uuid");
+        return new DelegatedAccessHistoryRecord(
+                resultSet.getLong("id"),
+                actorUuid == null || actorUuid.isBlank() ? null : UUID.fromString(actorUuid),
+                resultSet.getString("actor_username"),
+                targetUuid == null || targetUuid.isBlank() ? null : UUID.fromString(targetUuid),
+                resultSet.getString("target_username"),
+                resultSet.getString("event_type"),
+                resultSet.getString("result"),
+                resultSet.getString("reason"),
+                resultSet.getString("ip"),
+                resultSet.getTimestamp("created_at").toInstant()
+        );
+    }
+
+    private String delegatedAccessHistorySelectSql(DelegatedAccessHistoryDirection direction) {
+        String base = """
+                SELECT id, actor_uuid, actor_username, target_uuid, target_username, event_type, result, reason, ip, created_at
+                FROM pa_delegated_access_history
+                WHERE %s
+                """;
+        return base.formatted(delegatedAccessHistoryWhere(direction));
+    }
+
+    private String delegatedAccessHistoryCountSql(DelegatedAccessHistoryDirection direction) {
+        return "SELECT COUNT(*) FROM pa_delegated_access_history WHERE " + delegatedAccessHistoryWhere(direction);
+    }
+
+    private String delegatedAccessHistoryWhere(DelegatedAccessHistoryDirection direction) {
+        if (direction == DelegatedAccessHistoryDirection.OUT) {
+            return "actor_uuid = ?";
+        }
+        if (direction == DelegatedAccessHistoryDirection.IN) {
+            return "target_uuid = ?";
+        }
+        return "(actor_uuid = ? OR target_uuid = ?)";
+    }
+
+    private UUID mapRuntimeUuid(ResultSet resultSet) throws SQLException {
+        String runtimeUuid = resultSet.getString("runtime_uuid");
+        if (runtimeUuid == null
+                || runtimeUuid.isBlank()
+                || "00000000-0000-0000-0000-000000000000".equals(runtimeUuid)) {
+            return UUID.fromString(resultSet.getString("uuid"));
+        }
+        return UUID.fromString(runtimeUuid);
     }
 
     private NetworkConfigSnapshotRecord mapNetworkConfig(ResultSet resultSet, boolean includeDocument) throws SQLException {

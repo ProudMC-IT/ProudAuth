@@ -121,9 +121,10 @@ public final class VelocityServerTransitionListener {
         bridgeServiceSupplier.get()
                 .publish(
                         event.getPlayer().getUsername(),
-                        profile.accountName(),
+                        profile.effectiveAccountName(),
+                        profile.effectiveAccountUuid(),
                         profile.accountUuid(),
-                        profile.accountType(),
+                        profile.effectiveAccountType(),
                         ipAddress,
                         joinMode,
                         targetServer,
@@ -148,8 +149,9 @@ public final class VelocityServerTransitionListener {
                 "join_mode", joinMode,
                 "network_authenticated", effectiveNetworkAuthenticated,
                 "proxy_authenticated_initial_bypass", proxyAuthenticatedInitialJoin,
-                "resolved_uuid", profile.accountUuid(),
-                "account_type", profile.accountType());
+                "resolved_uuid", profile.effectiveAccountUuid(),
+                "account_type", profile.effectiveAccountType(),
+                "impersonating", profile.isImpersonating());
     }
 
     @Subscribe

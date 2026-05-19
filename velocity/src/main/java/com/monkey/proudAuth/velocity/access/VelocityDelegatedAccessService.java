@@ -1,0 +1,575 @@
+package com.monkey.proudAuth.velocity.access;
+
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
+import com.monkey.proudAuth.common.model.AccountType;
+import com.monkey.proudAuth.common.premium.PremiumVerifier;
+import com.monkey.proudAuth.common.storage.AccountRecord;
+import com.monkey.proudAuth.common.storage.DelegatedAccessGrantRecord;
+import com.monkey.proudAuth.common.storage.DelegatedAccessHistoryDirection;
+import com.monkey.proudAuth.common.storage.DelegatedAccessHistoryRecord;
+import com.monkey.proudAuth.common.storage.StorageProvider;
+import com.monkey.proudAuth.common.util.HashUtil;
+import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
+import com.velocitypowered.api.event.PostOrder;
+import com.velocitypowered.api.event.Subscribe;
+import com.velocitypowered.api.event.connection.DisconnectEvent;
+import com.velocitypowered.api.proxy.Player;
+import com.velocitypowered.api.proxy.ProxyServer;
+import com.velocitypowered.api.proxy.crypto.IdentifiedKey;
+import com.velocitypowered.api.proxy.server.RegisteredServer;
+
+import java.security.SecureRandom;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
+
+public final class VelocityDelegatedAccessService {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final int MAX_ATTEMPTS = 3;
+
+    private final Object pluginOwner;
+    private final ProxyServer proxyServer;
+    private final Supplier<StorageProvider> storageSupplier;
+    private final Supplier<PremiumVerifier> premiumVerifierSupplier;
+    private final VelocityResolvedPlayerStore resolvedPlayerStore;
+    private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Map<UUID, PendingChallenge> pendingChallenges = new ConcurrentHashMap<>();
+
+    public VelocityDelegatedAccessService(
+            Object pluginOwner,
+            ProxyServer proxyServer,
+            Supplier<StorageProvider> storageSupplier,
+            Supplier<PremiumVerifier> premiumVerifierSupplier,
+            VelocityResolvedPlayerStore resolvedPlayerStore,
+            Supplier<ProudAuthNetworkConfig.Routing> routingSupplier
+    ) {
+        this.pluginOwner = pluginOwner;
+        this.proxyServer = proxyServer;
+        this.storageSupplier = storageSupplier;
+        this.premiumVerifierSupplier = premiumVerifierSupplier;
+        this.resolvedPlayerStore = resolvedPlayerStore;
+        this.routingSupplier = routingSupplier;
+    }
+
+    public CompletableFuture<AllowResult> allowAccess(Player owner, String delegateUsername) {
+        return allowAccess(owner, delegateUsername, "");
+    }
+
+    public CompletableFuture<AllowResult> allowAccess(Player owner, String delegateUsername, String expectedFingerprint) {
+        Optional<VelocityResolvedPlayerStore.ResolvedPlayer> ownerProfile = resolvedPlayerStore.find(owner.getUsername());
+        if (ownerProfile.isEmpty() || !ownerProfile.get().networkAuthenticated()) {
+            return CompletableFuture.completedFuture(AllowResult.ownerNotAuthenticated());
+        }
+        if (expectedFingerprint == null || expectedFingerprint.isBlank()) {
+            return CompletableFuture.completedFuture(AllowResult.fingerprintRequired());
+        }
+        StorageProvider storage = storageSupplier.get();
+        return storage.findAccountByUsername(owner.getUsername())
+                .thenCompose(ownerAccount -> {
+                    if (ownerAccount.isEmpty()) {
+                        return CompletableFuture.completedFuture(AllowResult.ownerMissing());
+                    }
+                    return resolveRegisteredDelegate(delegateUsername)
+                            .thenCompose(delegate -> {
+                                if (delegate.isEmpty()) {
+                                    return CompletableFuture.completedFuture(AllowResult.delegateNotRegistered());
+                                }
+                                DelegatedAccessIdentity identity = delegate.get();
+                                if (!fingerprint(identity).equals(normalizeFingerprint(expectedFingerprint))) {
+                                    return CompletableFuture.completedFuture(AllowResult.fingerprintMismatch(fingerprint(identity)));
+                                }
+                                String code = code();
+                                Instant now = Instant.now();
+                                DelegatedAccessGrantRecord grant = new DelegatedAccessGrantRecord(
+                                        ownerAccount.get().uuid(),
+                                        ownerAccount.get().username(),
+                                        identity.uuid(),
+                                        identity.username(),
+                                        identity.accountType(),
+                                        HashUtil.hash(code),
+                                        now,
+                                        now,
+                                        true
+                                );
+                                return storage.saveDelegatedAccessGrant(grant)
+                                        .thenApply(ignored -> {
+                                            audit(owner, ownerAccount.get(), identity, "ALLOW_CREATED", "SUCCESS", "");
+                                            return AllowResult.allowed(identity.username(), code, fingerprint(identity));
+                                        });
+                            });
+                });
+    }
+
+    public Optional<String> fingerprint(Player player) {
+        return resolvedPlayerStore.find(player.getUsername())
+                .map(profile -> fingerprint(new DelegatedAccessIdentity(
+                        profile.accountUuid(),
+                        profile.accountName(),
+                        profile.accountType()
+                )));
+    }
+
+    public boolean isAuthenticated(Player player) {
+        return resolvedPlayerStore.find(player.getUsername())
+                .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
+                .orElse(false);
+    }
+
+    public CompletableFuture<HistoryPageResult> history(String username, DelegatedAccessHistoryDirection direction, int page, int pageSize) {
+        StorageProvider storage = storageSupplier.get();
+        int safePage = Math.max(1, page);
+        int safePageSize = Math.max(1, Math.min(50, pageSize));
+        return storage.findAccountByUsername(username)
+                .thenCompose(account -> {
+                    if (account.isEmpty()) {
+                        return CompletableFuture.completedFuture(HistoryPageResult.missing());
+                    }
+                    AccountRecord record = account.get();
+                    CompletableFuture<Integer> countFuture = storage.countDelegatedAccessHistory(record.uuid(), direction);
+                    CompletableFuture<java.util.List<DelegatedAccessHistoryRecord>> rowsFuture =
+                            storage.listDelegatedAccessHistory(record.uuid(), direction, safePage, safePageSize);
+                    return countFuture.thenCombine(rowsFuture, (count, rows) -> HistoryPageResult.found(record, rows, count, safePage, safePageSize));
+                });
+    }
+
+    public CompletableFuture<JoinRequestResult> requestJoin(Player actor, String ownerUsername) {
+        StorageProvider storage = storageSupplier.get();
+        Optional<VelocityResolvedPlayerStore.ResolvedPlayer> actorProfile = resolvedPlayerStore.find(actor.getUsername());
+        if (actorProfile.isEmpty()) {
+            return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.ACTOR_UNRESOLVED));
+        }
+        if (!actorProfile.get().networkAuthenticated()) {
+            return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.ACTOR_NOT_AUTHENTICATED));
+        }
+        if (actorProfile.get().isImpersonating()) {
+            return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.ALREADY_IMPERSONATING));
+        }
+
+        return storage.findAccountByUsername(ownerUsername)
+                .thenCompose(ownerAccount -> {
+                    if (ownerAccount.isEmpty()) {
+                        return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.OWNER_MISSING));
+                    }
+                    AccountRecord owner = ownerAccount.get();
+                    if (owner.username().equalsIgnoreCase(actor.getUsername())) {
+                        audit(actor, actorProfile.get(), owner, "JOIN_REQUEST", "DENIED", "SELF_TARGET");
+                        return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.SELF_TARGET));
+                    }
+                    if (proxyServer.getPlayer(owner.username()).isPresent()) {
+                        audit(actor, actorProfile.get(), owner, "JOIN_REQUEST", "DENIED", "OWNER_ONLINE");
+                        return CompletableFuture.completedFuture(JoinRequestResult.error(JoinRequestStatus.OWNER_ONLINE));
+                    }
+                    return storage.findDelegatedAccessGrant(owner.uuid(), actorProfile.get().accountUuid())
+                            .thenApply(grant -> {
+                                if (grant.isEmpty()) {
+                                    audit(actor, actorProfile.get(), owner, "JOIN_REQUEST", "DENIED", "GRANT_MISSING");
+                                    return JoinRequestResult.error(JoinRequestStatus.GRANT_MISSING);
+                                }
+                                audit(actor, actorProfile.get(), owner, "JOIN_REQUEST", "PENDING", "");
+                                pendingChallenges.put(actor.getUniqueId(), new PendingChallenge(grant.get(), Instant.now().plusSeconds(90), 0));
+                                return JoinRequestResult.challenge(owner.username());
+                            });
+                });
+    }
+
+    public CompleteResult submitCode(Player actor, String code) {
+        PendingChallenge challenge = pendingChallenges.get(actor.getUniqueId());
+        VelocityResolvedPlayerStore.ResolvedPlayer actorProfile = resolvedPlayerStore.find(actor.getUsername()).orElse(null);
+        if (challenge == null || !challenge.expiresAt().isAfter(Instant.now())) {
+            pendingChallenges.remove(actor.getUniqueId());
+            audit(actor, actorProfile, challenge == null ? null : challenge.grant(), "CODE_SUBMIT", "DENIED", "NO_CHALLENGE");
+            return CompleteResult.error(CompleteStatus.NO_CHALLENGE);
+        }
+        if (!code.matches("\\d{6}")) {
+            audit(actor, actorProfile, challenge.grant(), "CODE_SUBMIT", "FAILED", "INVALID_FORMAT");
+            return CompleteResult.error(CompleteStatus.INVALID_CODE);
+        }
+        if (!HashUtil.matches(code, challenge.grant().codeHash())) {
+            int attempts = challenge.attempts() + 1;
+            if (attempts >= MAX_ATTEMPTS) {
+                pendingChallenges.remove(actor.getUniqueId());
+                audit(actor, actorProfile, challenge.grant(), "CODE_SUBMIT", "LOCKED", "TOO_MANY_ATTEMPTS");
+                return CompleteResult.error(CompleteStatus.TOO_MANY_ATTEMPTS);
+            }
+            pendingChallenges.put(actor.getUniqueId(), new PendingChallenge(challenge.grant(), challenge.expiresAt(), attempts));
+            audit(actor, actorProfile, challenge.grant(), "CODE_SUBMIT", "FAILED", "INVALID_CODE");
+            return CompleteResult.error(CompleteStatus.INVALID_CODE);
+        }
+
+        pendingChallenges.remove(actor.getUniqueId());
+        DelegatedAccessGrantRecord grant = challenge.grant();
+        AccountRecord owner = storageSupplier.get().findAccountByUuid(grant.ownerUuid()).join().orElse(null);
+        if (owner == null) {
+            audit(actor, actorProfile, grant, "CODE_SUBMIT", "DENIED", "OWNER_MISSING");
+            return CompleteResult.error(CompleteStatus.OWNER_MISSING);
+        }
+        if (isPremiumProfileKeyMismatch(actor, owner)) {
+            audit(actor, actorProfile, owner, "CODE_SUBMIT", "DENIED", "PROFILE_KEY_MISMATCH");
+            return CompleteResult.error(CompleteStatus.PROFILE_KEY_MISMATCH);
+        }
+        resolvedPlayerStore.startImpersonation(actor.getUsername(), owner.uuid(), owner.username(), owner.accountType());
+        resolvedPlayerStore.markNetworkAuthenticated(actor.getUsername(), true);
+        audit(actor, actorProfile, owner, "CODE_SUBMIT", "SUCCESS", "");
+        refreshBackendIdentity(actor, true);
+        return CompleteResult.started(owner.username());
+    }
+
+    public LeaveResult leave(Player actor) {
+        VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayerStore.find(actor.getUsername()).orElse(null);
+        if (profile != null && profile.isImpersonating()) {
+            audit(actor, profile, profile.impersonationTargetUuid(), profile.impersonationTargetName(), "LEAVE", "SUCCESS", "MANUAL");
+        }
+        boolean stopped = resolvedPlayerStore.stopImpersonation(actor.getUsername());
+        pendingChallenges.remove(actor.getUniqueId());
+        if (!stopped) {
+            return LeaveResult.notImpersonating();
+        }
+        refreshBackendIdentity(actor, false);
+        return LeaveResult.left();
+    }
+
+    public CompletableFuture<Boolean> revoke(Player owner, String delegateUsername) {
+        Optional<VelocityResolvedPlayerStore.ResolvedPlayer> ownerProfile = resolvedPlayerStore.find(owner.getUsername());
+        if (ownerProfile.isEmpty() || !ownerProfile.get().networkAuthenticated()) {
+            return CompletableFuture.completedFuture(false);
+        }
+        StorageProvider storage = storageSupplier.get();
+        return storage.findAccountByUsername(owner.getUsername())
+                .thenCompose(ownerAccount -> {
+                    if (ownerAccount.isEmpty()) {
+                        return CompletableFuture.completedFuture(false);
+                    }
+                    return resolveRegisteredDelegate(delegateUsername)
+                            .thenCompose(delegate -> delegate
+                                    .map(identity -> storage.revokeDelegatedAccessGrant(ownerAccount.get().uuid(), identity.uuid())
+                                            .thenApply(removed -> {
+                                                if (removed) {
+                                                    audit(owner, ownerAccount.get(), identity, "ALLOW_REVOKED", "SUCCESS", "");
+                                                }
+                                                return removed;
+                                            }))
+                                    .orElseGet(() -> CompletableFuture.completedFuture(false)));
+                });
+    }
+
+    @Subscribe(order = PostOrder.FIRST)
+    public void onDisconnect(DisconnectEvent event) {
+        VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayerStore.find(event.getPlayer().getUsername()).orElse(null);
+        if (profile == null || !profile.isImpersonating()) {
+            return;
+        }
+        audit(event.getPlayer(), profile, profile.impersonationTargetUuid(), profile.impersonationTargetName(), "LEAVE", "SUCCESS", "DISCONNECT");
+    }
+
+    private CompletableFuture<Optional<DelegatedAccessIdentity>> resolveRegisteredDelegate(String username) {
+        Optional<Player> onlinePlayer = proxyServer.getPlayer(username);
+        if (onlinePlayer.isPresent()) {
+            Optional<VelocityResolvedPlayerStore.ResolvedPlayer> profile = resolvedPlayerStore.find(onlinePlayer.get().getUsername());
+            if (profile.isPresent()) {
+                VelocityResolvedPlayerStore.ResolvedPlayer resolved = profile.get();
+                return storageSupplier.get().findAccountByUuid(resolved.accountUuid())
+                        .thenApply(account -> account.map(this::identityFromAccount));
+            }
+        }
+
+        StorageProvider storage = storageSupplier.get();
+        return storage.findAccountByUsername(username)
+                .thenApply(account -> account.map(this::identityFromAccount));
+    }
+
+    private DelegatedAccessIdentity identityFromAccount(AccountRecord record) {
+        return new DelegatedAccessIdentity(record.uuid(), record.username(), record.accountType());
+    }
+
+    private void refreshBackendIdentity(Player player, boolean enteringImpersonation) {
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        String currentServer = player.getCurrentServer()
+                .map(server -> server.getServerInfo().getName())
+                .orElse("");
+        String finalServer = routing.hasPostAuthServer() ? routing.postAuthServer() : currentServer;
+        if (!enteringImpersonation && !currentServer.isBlank()) {
+            finalServer = currentServer;
+        }
+
+        if (currentServer.isBlank()) {
+            connect(player, finalServer);
+            return;
+        }
+
+        Optional<RegisteredServer> bounceServer = findBounceServer(currentServer, finalServer, routing);
+        if (bounceServer.isEmpty()) {
+            if (!finalServer.isBlank()) {
+                connect(player, finalServer);
+            }
+            return;
+        }
+
+        RegisteredServer bounce = bounceServer.get();
+        String bounceName = bounce.getServerInfo().getName();
+        if (routing.hasAuthEntryServer() && routing.authEntryServer().equalsIgnoreCase(bounceName)) {
+            resolvedPlayerStore.rememberAllowedAuthEntry(player.getUsername(), routing.authEntryServer());
+        }
+        player.createConnectionRequest(bounce).fireAndForget();
+
+        String delayedFinalServer = finalServer;
+        proxyServer.getScheduler()
+                .buildTask(pluginOwner, () -> connect(player, delayedFinalServer))
+                .delay(800, TimeUnit.MILLISECONDS)
+                .schedule();
+    }
+
+    private boolean isPremiumProfileKeyMismatch(Player actor, AccountRecord target) {
+        if (target.accountType() != AccountType.PREMIUM) {
+            return false;
+        }
+        IdentifiedKey key = actor.getIdentifiedKey();
+        return key == null || !target.uuid().equals(key.getSignatureHolder());
+    }
+
+    private Optional<RegisteredServer> findBounceServer(String currentServer, String finalServer, ProudAuthNetworkConfig.Routing routing) {
+        if (routing.hasAuthEntryServer()
+                && !routing.authEntryServer().equalsIgnoreCase(currentServer)
+                && !routing.authEntryServer().equalsIgnoreCase(finalServer)) {
+            return proxyServer.getServer(routing.authEntryServer());
+        }
+        return proxyServer.getAllServers().stream()
+                .filter(server -> !server.getServerInfo().getName().equalsIgnoreCase(currentServer))
+                .filter(server -> finalServer == null || !server.getServerInfo().getName().equalsIgnoreCase(finalServer))
+                .findFirst();
+    }
+
+    private void connect(Player player, String serverName) {
+        if (serverName == null || serverName.isBlank()) {
+            return;
+        }
+        proxyServer.getServer(serverName).ifPresent(server -> player.createConnectionRequest(server).fireAndForget());
+    }
+
+    private void audit(Player actor, AccountRecord owner, DelegatedAccessIdentity delegate, String eventType, String result, String reason) {
+        saveAudit(
+                delegate.uuid(),
+                delegate.username(),
+                owner.uuid(),
+                owner.username(),
+                eventType,
+                result,
+                reason,
+                ipAddress(actor)
+        );
+    }
+
+    private void audit(Player actor, VelocityResolvedPlayerStore.ResolvedPlayer actorProfile, AccountRecord target, String eventType, String result, String reason) {
+        saveAudit(
+                actorProfile == null ? actor.getUniqueId() : actorProfile.accountUuid(),
+                actorProfile == null ? actor.getUsername() : actorProfile.accountName(),
+                target.uuid(),
+                target.username(),
+                eventType,
+                result,
+                reason,
+                ipAddress(actor)
+        );
+    }
+
+    private void audit(Player actor, VelocityResolvedPlayerStore.ResolvedPlayer actorProfile, DelegatedAccessGrantRecord grant, String eventType, String result, String reason) {
+        saveAudit(
+                actorProfile == null ? actor.getUniqueId() : actorProfile.accountUuid(),
+                actorProfile == null ? actor.getUsername() : actorProfile.accountName(),
+                grant == null ? null : grant.ownerUuid(),
+                grant == null ? "" : grant.ownerUsername(),
+                eventType,
+                result,
+                reason,
+                ipAddress(actor)
+        );
+    }
+
+    private void audit(Player actor, VelocityResolvedPlayerStore.ResolvedPlayer actorProfile, UUID targetUuid, String targetUsername, String eventType, String result, String reason) {
+        saveAudit(
+                actorProfile == null ? actor.getUniqueId() : actorProfile.accountUuid(),
+                actorProfile == null ? actor.getUsername() : actorProfile.accountName(),
+                targetUuid,
+                targetUsername,
+                eventType,
+                result,
+                reason,
+                ipAddress(actor)
+        );
+    }
+
+    private void saveAudit(UUID actorUuid, String actorUsername, UUID targetUuid, String targetUsername, String eventType, String result, String reason, String ipAddress) {
+        storageSupplier.get().saveDelegatedAccessHistory(new DelegatedAccessHistoryRecord(
+                0L,
+                actorUuid,
+                safeUsername(actorUsername),
+                targetUuid,
+                safeUsername(targetUsername),
+                eventType,
+                result,
+                reason == null ? "" : reason,
+                ipAddress,
+                Instant.now()
+        )).exceptionally(ignored -> null);
+    }
+
+    private String ipAddress(Player player) {
+        if (player.getRemoteAddress() instanceof java.net.InetSocketAddress socketAddress && socketAddress.getAddress() != null) {
+            return socketAddress.getAddress().getHostAddress();
+        }
+        return "unknown";
+    }
+
+    private static String safeUsername(String username) {
+        return username == null || username.isBlank() ? "unknown" : username;
+    }
+
+    private static String code() {
+        return String.format(Locale.ROOT, "%06d", RANDOM.nextInt(1_000_000));
+    }
+
+    private static String fingerprint(DelegatedAccessIdentity identity) {
+        String payload = "ProudAuth delegated access v1|" + identity.uuid() + "|" + identity.accountType().name();
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder builder = new StringBuilder();
+            for (int index = 0; index < 12; index++) {
+                builder.append(String.format(Locale.ROOT, "%02x", hash[index]));
+            }
+            return builder.toString();
+        } catch (NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("SHA-256 non disponibile.", exception);
+        }
+    }
+
+    private static String normalizeFingerprint(String fingerprint) {
+        return fingerprint.replace("-", "").trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record DelegatedAccessIdentity(UUID uuid, String username, AccountType accountType) {
+    }
+
+    private record PendingChallenge(DelegatedAccessGrantRecord grant, Instant expiresAt, int attempts) {
+    }
+
+    public enum JoinRequestStatus {
+        CHALLENGE,
+        ACTOR_UNRESOLVED,
+        ACTOR_NOT_AUTHENTICATED,
+        ALREADY_IMPERSONATING,
+        OWNER_MISSING,
+        OWNER_ONLINE,
+        SELF_TARGET,
+        GRANT_MISSING
+    }
+
+    public enum CompleteStatus {
+        STARTED,
+        NO_CHALLENGE,
+        INVALID_CODE,
+        TOO_MANY_ATTEMPTS,
+        OWNER_MISSING,
+        PROFILE_KEY_MISMATCH
+    }
+
+    public record AllowResult(boolean success, String delegateUsername, String code, String fingerprint, AllowStatus status) {
+        private static AllowResult allowed(String delegateUsername, String code, String fingerprint) {
+            return new AllowResult(true, delegateUsername, code, fingerprint, AllowStatus.ALLOWED);
+        }
+
+        private static AllowResult ownerMissing() {
+            return new AllowResult(false, "", "", "", AllowStatus.OWNER_MISSING);
+        }
+
+        private static AllowResult ownerNotAuthenticated() {
+            return new AllowResult(false, "", "", "", AllowStatus.OWNER_NOT_AUTHENTICATED);
+        }
+
+        private static AllowResult delegateMissing() {
+            return new AllowResult(false, "", "", "", AllowStatus.DELEGATE_MISSING);
+        }
+
+        private static AllowResult delegateNotRegistered() {
+            return new AllowResult(false, "", "", "", AllowStatus.DELEGATE_NOT_REGISTERED);
+        }
+
+        private static AllowResult fingerprintRequired() {
+            return new AllowResult(false, "", "", "", AllowStatus.FINGERPRINT_REQUIRED);
+        }
+
+        private static AllowResult fingerprintMismatch(String fingerprint) {
+            return new AllowResult(false, "", "", fingerprint, AllowStatus.FINGERPRINT_MISMATCH);
+        }
+    }
+
+    public enum AllowStatus {
+        ALLOWED,
+        OWNER_NOT_AUTHENTICATED,
+        OWNER_MISSING,
+        DELEGATE_MISSING,
+        DELEGATE_NOT_REGISTERED,
+        FINGERPRINT_REQUIRED,
+        FINGERPRINT_MISMATCH
+    }
+
+    public record JoinRequestResult(JoinRequestStatus status, String ownerUsername) {
+        private static JoinRequestResult challenge(String ownerUsername) {
+            return new JoinRequestResult(JoinRequestStatus.CHALLENGE, ownerUsername);
+        }
+
+        private static JoinRequestResult error(JoinRequestStatus status) {
+            return new JoinRequestResult(status, "");
+        }
+    }
+
+    public record CompleteResult(CompleteStatus status, String ownerUsername) {
+        private static CompleteResult started(String ownerUsername) {
+            return new CompleteResult(CompleteStatus.STARTED, ownerUsername);
+        }
+
+        private static CompleteResult error(CompleteStatus status) {
+            return new CompleteResult(status, "");
+        }
+    }
+
+    public record LeaveResult(boolean success) {
+        private static LeaveResult left() {
+            return new LeaveResult(true);
+        }
+
+        private static LeaveResult notImpersonating() {
+            return new LeaveResult(false);
+        }
+    }
+
+    public record HistoryPageResult(
+            boolean found,
+            AccountRecord account,
+            java.util.List<DelegatedAccessHistoryRecord> rows,
+            int totalRows,
+            int page,
+            int pageSize
+    ) {
+        private static HistoryPageResult missing() {
+            return new HistoryPageResult(false, null, java.util.List.of(), 0, 1, 1);
+        }
+
+        private static HistoryPageResult found(AccountRecord account, java.util.List<DelegatedAccessHistoryRecord> rows, int totalRows, int page, int pageSize) {
+            return new HistoryPageResult(true, account, rows, totalRows, page, pageSize);
+        }
+
+        public int totalPages() {
+            return Math.max(1, (int) Math.ceil((double) totalRows / (double) pageSize));
+        }
+    }
+}

@@ -10,6 +10,8 @@ public interface StorageProvider extends
         SessionStorage,
         BackendJoinProbeStorage,
         BridgeAssertionStorage,
+        DelegatedAccessStorage,
+        DelegatedAccessHistoryStorage,
         IpHistoryStorage,
         IpBanStorage,
         NetworkConfigStorage,

@@ -41,6 +41,38 @@ public final class ProxyBridgeService {
             boolean networkAuthenticated,
             boolean legacyClient
     ) {
+        return publish(
+                username,
+                resolvedName,
+                uuid,
+                uuid,
+                accountType,
+                ipAddress,
+                joinMode,
+                targetServer,
+                authEntryServer,
+                authEntryEnforced,
+                postAuthServer,
+                networkAuthenticated,
+                legacyClient
+        );
+    }
+
+    public CompletableFuture<Void> publish(
+            String username,
+            String resolvedName,
+            UUID uuid,
+            UUID runtimeUuid,
+            AccountType accountType,
+            String ipAddress,
+            BridgeJoinMode joinMode,
+            String targetServer,
+            String authEntryServer,
+            boolean authEntryEnforced,
+            String postAuthServer,
+            boolean networkAuthenticated,
+            boolean legacyClient
+    ) {
         if (!isOperational()) {
             return CompletableFuture.completedFuture(null);
         }
@@ -51,6 +83,7 @@ public final class ProxyBridgeService {
                 canonicalUsername(username),
                 resolvedName,
                 uuid,
+                runtimeUuid == null ? uuid : runtimeUuid,
                 accountType,
                 ipAddress,
                 joinMode,
@@ -143,7 +176,9 @@ public final class ProxyBridgeService {
         }
 
         UUID offlineUuid = PremiumVerifier.offlineUuid(originalUsername);
-        if (!currentUuid.equals(assertion.uuid()) && !currentUuid.equals(offlineUuid)) {
+        if (!currentUuid.equals(assertion.uuid())
+                && !currentUuid.equals(assertion.runtimeUuid())
+                && !currentUuid.equals(offlineUuid)) {
             return new VerificationResult(VerificationStatus.INVALID_UUID, Optional.empty());
         }
 
@@ -174,6 +209,7 @@ public final class ProxyBridgeService {
                 assertion.username(),
                 assertion.resolvedName(),
                 assertion.uuid().toString(),
+                assertion.runtimeUuid().toString(),
                 assertion.accountType().name(),
                 assertion.ipAddress(),
                 assertion.joinMode().name(),

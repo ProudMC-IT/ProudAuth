@@ -36,7 +36,10 @@ public final class VelocityResolvedPlayerStore {
                 current == null ? "" : current.authEntryServer(),
                 current == null ? "" : current.pendingNoticeKey(),
                 current == null ? "" : current.pendingNoticeTargetServer(),
-                current == null ? "" : current.allowedAuthEntryTargetServer()
+                current == null ? "" : current.allowedAuthEntryTargetServer(),
+                current == null ? null : current.impersonationTargetUuid(),
+                current == null ? "" : current.impersonationTargetName(),
+                current == null ? null : current.impersonationTargetAccountType()
         ));
     }
 
@@ -91,6 +94,20 @@ public final class VelocityResolvedPlayerStore {
         return consumed[0];
     }
 
+    public void startImpersonation(String username, UUID targetUuid, String targetName, AccountType targetAccountType) {
+        resolvedPlayers.computeIfPresent(key(username),
+                (ignored, current) -> current.withImpersonation(targetUuid, targetName, targetAccountType));
+    }
+
+    public boolean stopImpersonation(String username) {
+        boolean[] stopped = new boolean[1];
+        resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> {
+            stopped[0] = current.isImpersonating();
+            return current.withImpersonation(null, "", null);
+        });
+        return stopped[0];
+    }
+
     public void forget(String username) {
         resolvedPlayers.remove(key(username));
     }
@@ -112,8 +129,30 @@ public final class VelocityResolvedPlayerStore {
             String authEntryServer,
             String pendingNoticeKey,
             String pendingNoticeTargetServer,
-            String allowedAuthEntryTargetServer
+            String allowedAuthEntryTargetServer,
+            UUID impersonationTargetUuid,
+            String impersonationTargetName,
+            AccountType impersonationTargetAccountType
     ) {
+        public UUID effectiveAccountUuid() {
+            return isImpersonating() ? impersonationTargetUuid : accountUuid;
+        }
+
+        public String effectiveAccountName() {
+            return isImpersonating() ? impersonationTargetName : accountName;
+        }
+
+        public AccountType effectiveAccountType() {
+            return isImpersonating() ? impersonationTargetAccountType : accountType;
+        }
+
+        public boolean isImpersonating() {
+            return impersonationTargetUuid != null
+                    && impersonationTargetAccountType != null
+                    && impersonationTargetName != null
+                    && !impersonationTargetName.isBlank();
+        }
+
         public ResolvedPlayer withNetworkAuthenticated(boolean authenticated) {
             return new ResolvedPlayer(
                     accountUuid,
@@ -128,7 +167,10 @@ public final class VelocityResolvedPlayerStore {
                     authEntryServer,
                     pendingNoticeKey,
                     pendingNoticeTargetServer,
-                    allowedAuthEntryTargetServer
+                    allowedAuthEntryTargetServer,
+                    impersonationTargetUuid,
+                    impersonationTargetName,
+                    impersonationTargetAccountType
             );
         }
 
@@ -146,7 +188,10 @@ public final class VelocityResolvedPlayerStore {
                     updatedAuthEntryServer == null ? "" : updatedAuthEntryServer,
                     pendingNoticeKey,
                     pendingNoticeTargetServer,
-                    allowedAuthEntryTargetServer
+                    allowedAuthEntryTargetServer,
+                    impersonationTargetUuid,
+                    impersonationTargetName,
+                    impersonationTargetAccountType
             );
         }
 
@@ -164,7 +209,10 @@ public final class VelocityResolvedPlayerStore {
                     authEntryServer,
                     updatedMessageKey == null ? "" : updatedMessageKey,
                     updatedTargetServer == null ? "" : updatedTargetServer,
-                    allowedAuthEntryTargetServer
+                    allowedAuthEntryTargetServer,
+                    impersonationTargetUuid,
+                    impersonationTargetName,
+                    impersonationTargetAccountType
             );
         }
 
@@ -182,7 +230,31 @@ public final class VelocityResolvedPlayerStore {
                     authEntryServer,
                     pendingNoticeKey,
                     pendingNoticeTargetServer,
-                    updatedAllowedAuthEntryTargetServer == null ? "" : updatedAllowedAuthEntryTargetServer
+                    updatedAllowedAuthEntryTargetServer == null ? "" : updatedAllowedAuthEntryTargetServer,
+                    impersonationTargetUuid,
+                    impersonationTargetName,
+                    impersonationTargetAccountType
+            );
+        }
+
+        public ResolvedPlayer withImpersonation(UUID targetUuid, String targetName, AccountType targetAccountType) {
+            return new ResolvedPlayer(
+                    accountUuid,
+                    accountName,
+                    accountType,
+                    premiumNameDetected,
+                    premiumVerified,
+                    premiumEnforced,
+                    protocolVersion,
+                    legacyClient,
+                    networkAuthenticated,
+                    authEntryServer,
+                    pendingNoticeKey,
+                    pendingNoticeTargetServer,
+                    allowedAuthEntryTargetServer,
+                    targetUuid,
+                    targetName == null ? "" : targetName,
+                    targetAccountType
             );
         }
     }

@@ -11,7 +11,9 @@ import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.premium.impl.MojangPremiumVerifier;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.common.storage.impl.MySQLStorage;
+import com.monkey.proudAuth.velocity.access.VelocityDelegatedAccessService;
 import com.monkey.proudAuth.velocity.bridge.VelocityBackendJoinProbeService;
+import com.monkey.proudAuth.velocity.commands.ProudAccessVelocityCommand;
 import com.monkey.proudAuth.velocity.commands.ProudAuthVelocityCommand;
 import com.monkey.proudAuth.velocity.commands.ProudMonitorVelocityCommand;
 import com.monkey.proudAuth.velocity.config.VelocityConfigLoader;
@@ -170,6 +172,16 @@ public final class ProudAuthVelocityPlatform {
                     () -> settings.monitor()
             );
 
+            VelocityDelegatedAccessService delegatedAccessService = new VelocityDelegatedAccessService(
+                    pluginOwner,
+                    proxyServer,
+                    () -> storage,
+                    () -> premiumVerifier,
+                    resolvedPlayerStore,
+                    () -> settings.proxy().routing()
+            );
+            proxyServer.getEventManager().register(pluginOwner, delegatedAccessService);
+
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
                     () -> premiumVerifier,
@@ -236,6 +248,17 @@ public final class ProudAuthVelocityPlatform {
                     () -> storage,
                     () -> monitorService,
                     this::reloadPluginState
+            ));
+
+            CommandMeta accessCommandMeta = proxyServer.getCommandManager()
+                    .metaBuilder("proudaccess")
+                    .aliases("paaccess")
+                    .build();
+
+            proxyServer.getCommandManager().register(accessCommandMeta, new ProudAccessVelocityCommand(
+                    delegatedAccessService,
+                    () -> lang,
+                    () -> settings.paAccess().history()
             ));
 
             CommandMeta monitorCommandMeta = proxyServer.getCommandManager()
@@ -412,6 +435,9 @@ public final class ProudAuthVelocityPlatform {
                 storage.deleteExpiredProxyAssertions().join();
                 storage.deleteExpiredBackendJoinProbes().join();
                 storage.deleteExpiredPendingIdentityClaims().join();
+                storage.deleteDelegatedAccessHistoryBefore(
+                        Instant.now().minus(Duration.ofDays(settings.paAccess().history().retentionDays()))
+                ).join();
 
                 if (networkGuardService != null) {
                     networkGuardService.cleanupHistory();

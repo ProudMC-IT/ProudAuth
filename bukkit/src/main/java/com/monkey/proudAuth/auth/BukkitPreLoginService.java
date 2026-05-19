@@ -13,6 +13,7 @@ import com.monkey.proudAuth.common.security.BruteForceGuard;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.destroystokyo.paper.profile.PlayerProfile;
 import org.bukkit.Bukkit;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 
@@ -130,9 +131,10 @@ public final class BukkitPreLoginService {
         if (bridgeResult.accepted()) {
             ProxyBridgeAssertion assertion = bridgeResult.assertion().orElseThrow();
             if (assertion.accountType() == AccountType.CRACKED
-                    && shouldDenyPremiumImpersonation(event.getName(), assertion.uuid(), ip)) {
+                    && shouldDenyPremiumImpersonation(assertion.resolvedName(), assertion.uuid(), ip)) {
                 debugEvent(DebugChannel.PREMIUM_FLOW, "bridge_impersonation_denied",
-                        "player", event.getName(),
+                        "player", assertion.resolvedName(),
+                        "proxy_player", event.getName(),
                         "assertion_uuid", assertion.uuid(),
                         "ip", ip);
                 event.disallow(AsyncPlayerPreLoginEvent.Result.KICK_OTHER, langConfig.message("kick-premium-impersonation"));
@@ -197,7 +199,8 @@ public final class BukkitPreLoginService {
                 false,
                 "",
                 false,
-                false
+                false,
+                premiumCheck.resolvedName()
         ));
     }
 
@@ -212,6 +215,7 @@ public final class BukkitPreLoginService {
                 "player", event.getName(),
                 "current_uuid", event.getUniqueId(),
                 "asserted_uuid", assertion.uuid());
+        applyProfileIfRequired(event, assertion);
         return new ResolvedLogin(
                 assertion.uuid(),
                 assertion.resolvedName(),
@@ -222,7 +226,8 @@ public final class BukkitPreLoginService {
                 assertion.authEntryEnforced(),
                 assertion.postAuthServer(),
                 assertion.networkAuthenticated(),
-                assertion.legacyClient()
+                assertion.legacyClient(),
+                assertion.username()
         );
     }
 
@@ -276,7 +281,8 @@ public final class BukkitPreLoginService {
                     false,
                     "",
                     false,
-                    false
+                    false,
+                    premiumCheck.resolvedName()
             ));
         }
 
@@ -290,7 +296,26 @@ public final class BukkitPreLoginService {
     }
 
     private void applyProfile(AsyncPlayerPreLoginEvent event, UUID uuid, String name) {
-        event.setPlayerProfile(Bukkit.createProfileExact(uuid, name));
+        PlayerProfile profile = Bukkit.createProfileExact(uuid, name);
+        profile.complete(true, true);
+        event.setPlayerProfile(profile);
+    }
+
+    private void applyProfileIfRequired(AsyncPlayerPreLoginEvent event, ProxyBridgeAssertion assertion) {
+        PlayerProfile currentProfile = event.getPlayerProfile();
+        boolean sameUuid = currentProfile != null && assertion.uuid().equals(currentProfile.getId());
+        boolean sameName = currentProfile != null
+                && currentProfile.getName() != null
+                && assertion.resolvedName().equalsIgnoreCase(currentProfile.getName());
+        if (sameUuid && sameName) {
+            return;
+        }
+
+        PlayerProfile profile = Bukkit.createProfileExact(assertion.uuid(), assertion.resolvedName());
+        if (assertion.accountType() == AccountType.PREMIUM) {
+            profile.complete(true, true);
+        }
+        event.setPlayerProfile(profile);
     }
 
     private boolean hasTrustedIpMatch(String username, String ipAddress) {

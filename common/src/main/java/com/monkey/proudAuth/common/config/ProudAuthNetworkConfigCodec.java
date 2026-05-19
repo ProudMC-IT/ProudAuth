@@ -49,6 +49,7 @@ public final class ProudAuthNetworkConfigCodec {
         root.put("password", dumpPassword(config.passwordPolicy()));
         root.put("bridge", dumpBridge(config.bridge(), config.proxy().bridgeBackendCheck()));
         root.put("routing", dumpRouting(config.proxy().routing()));
+        root.put("paaccess", dumpPaAccess(config.paAccess()));
         root.put("guards", dumpGuards(config.proxy().guards()));
         root.put("reports", dumpReports(config.proxy().reports()));
         return dumpYaml.dump(root);
@@ -173,6 +174,15 @@ public final class ProudAuthNetworkConfigCodec {
                 bool(root, "debugger.command-flow", true)
         );
 
+        ProudAuthNetworkConfig.PaAccess paAccess = new ProudAuthNetworkConfig.PaAccess(
+                new ProudAuthNetworkConfig.History(
+                        string(root, "paaccess.history.timezone", "Europe/Rome"),
+                        string(root, "paaccess.history.time-format", "dd/MM/yyyy HH:mm:ss"),
+                        Math.max(1, Math.min(50, integer(root, "paaccess.history.page-size", 8))),
+                        Math.max(1, integer(root, "paaccess.history.retention-days", 90))
+                )
+        );
+
         ProudAuthNetworkConfig.Proxy proxy = new ProudAuthNetworkConfig.Proxy(
                 string(root, "premium.online-mode-denied-message",
                         "<dark_gray>[</dark_gray><aqua>ProudMC</aqua><dark_gray>] </dark_gray><red>Accesso rifiutato</red><newline><gray>Questo nickname premium richiede un account Minecraft premium autenticato.</gray>"),
@@ -226,6 +236,7 @@ public final class ProudAuthNetworkConfigCodec {
                 passwordPolicy,
                 bridge,
                 debugger,
+                paAccess,
                 proxy
         );
     }
@@ -528,6 +539,18 @@ public final class ProudAuthNetworkConfigCodec {
         postAuth.put("redirect-delay-ms", routing.postAuthRedirectDelayMs());
         postAuth.put("legacy-redirect-delay-ms", routing.legacyPostAuthRedirectDelayMs());
         values.put("post-auth", postAuth);
+        return values;
+    }
+
+    private Map<String, Object> dumpPaAccess(ProudAuthNetworkConfig.PaAccess paAccess) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        ProudAuthNetworkConfig.History history = paAccess.history();
+        Map<String, Object> historyValues = new LinkedHashMap<>();
+        historyValues.put("timezone", history.timezone());
+        historyValues.put("time-format", history.timeFormat());
+        historyValues.put("page-size", history.pageSize());
+        historyValues.put("retention-days", history.retentionDays());
+        values.put("history", historyValues);
         return values;
     }
 

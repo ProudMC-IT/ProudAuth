@@ -12,6 +12,7 @@ public record ProudAuthNetworkConfig(
         ProudAuthSettings.PasswordPolicy passwordPolicy,
         ProudAuthSettings.Bridge bridge,
         ProudAuthSettings.Debugger debugger,
+        PaAccess paAccess,
         Proxy proxy
 ) {
 
@@ -44,6 +45,19 @@ public record ProudAuthNetworkConfig(
 
     public record Monitor(
             String networkName
+    ) {
+    }
+
+    public record PaAccess(
+            History history
+    ) {
+    }
+
+    public record History(
+            String timezone,
+            String timeFormat,
+            int pageSize,
+            int retentionDays
     ) {
     }
 

@@ -54,7 +54,8 @@ public final class BackendNetworkSyncService {
                 resolvedLogin.authEntryEnforced(),
                 resolvedLogin.postAuthServer(),
                 resolvedLogin.networkAuthenticated(),
-                resolvedLogin.legacyClient()
+                resolvedLogin.legacyClient(),
+                resolvedLogin.proxyUsername()
         ));
     }
 
@@ -153,7 +154,7 @@ public final class BackendNetworkSyncService {
             ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
             DataOutputStream output = new DataOutputStream(byteStream);
             output.writeUTF(messageType);
-            output.writeUTF(player.getName());
+            output.writeUTF(syncUsername(player));
             output.writeUTF(pluginConfig.serverId());
             output.writeUTF(payload == null ? "" : payload);
 
@@ -161,6 +162,7 @@ public final class BackendNetworkSyncService {
 
             debugEvent("backend_network_sync_sent",
                     "player", player.getName(),
+                    "proxy_player", syncUsername(player),
                     "server_id", pluginConfig.serverId(),
                     "message_type", messageType,
                     "payload", payload == null ? "" : payload,
@@ -175,6 +177,14 @@ public final class BackendNetworkSyncService {
         return pluginConfig.settings().proxy().mode() == ProudAuthSettings.ProxyMode.VELOCITY;
     }
 
+    private String syncUsername(Player player) {
+        JoinContext context = contexts.get(player.getUniqueId());
+        if (context == null || context.proxyUsername() == null || context.proxyUsername().isBlank()) {
+            return player.getName();
+        }
+        return context.proxyUsername();
+    }
+
     private void debugEvent(String eventName, Object... keyValues) {
         logger.debugEvent(pluginConfig.settings().debugger(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
     }
@@ -185,17 +195,18 @@ public final class BackendNetworkSyncService {
             boolean authEntryEnforced,
             String postAuthServer,
             boolean networkAuthenticated,
-            boolean legacyClient
+            boolean legacyClient,
+            String proxyUsername
     ) {
         private JoinContext withNetworkAuthenticated(boolean authenticated) {
-            return new JoinContext(joinMode, authEntryServer, authEntryEnforced, postAuthServer, authenticated, legacyClient);
+            return new JoinContext(joinMode, authEntryServer, authEntryEnforced, postAuthServer, authenticated, legacyClient, proxyUsername);
         }
 
         private JoinContext afterInvalidation(String currentServerId) {
             if (authEntryEnforced && authEntryServer != null && !authEntryServer.equalsIgnoreCase(currentServerId)) {
-                return new JoinContext(joinMode, authEntryServer, true, postAuthServer, false, legacyClient);
+                return new JoinContext(joinMode, authEntryServer, true, postAuthServer, false, legacyClient, proxyUsername);
             }
-            return new JoinContext(BridgeJoinMode.AUTH_ENTRY, currentServerId, false, postAuthServer, false, legacyClient);
+            return new JoinContext(BridgeJoinMode.AUTH_ENTRY, currentServerId, false, postAuthServer, false, legacyClient, proxyUsername);
         }
     }
 }
