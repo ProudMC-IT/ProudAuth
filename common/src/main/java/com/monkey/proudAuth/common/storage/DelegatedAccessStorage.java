@@ -13,5 +13,7 @@ public interface DelegatedAccessStorage {
 
     CompletableFuture<List<DelegatedAccessGrantRecord>> listDelegatedAccessGrants(UUID ownerUuid);
 
+    CompletableFuture<List<DelegatedAccessGrantRecord>> listDelegatedAccessGrantsForDelegate(UUID delegateUuid);
+
     CompletableFuture<Boolean> revokeDelegatedAccessGrant(UUID ownerUuid, UUID delegateUuid);
 }

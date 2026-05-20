@@ -49,7 +49,8 @@ public record ProudAuthNetworkConfig(
     }
 
     public record PaAccess(
-            History history
+            History history,
+            PremiumTargets premiumTargets
     ) {
     }
 
@@ -58,6 +59,12 @@ public record ProudAuthNetworkConfig(
             String timeFormat,
             int pageSize,
             int retentionDays
+    ) {
+    }
+
+    public record PremiumTargets(
+            boolean enabled,
+            boolean warnOnStartup
     ) {
     }
 

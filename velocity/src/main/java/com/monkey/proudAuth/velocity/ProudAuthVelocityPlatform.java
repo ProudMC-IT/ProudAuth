@@ -178,9 +178,11 @@ public final class ProudAuthVelocityPlatform {
                     () -> storage,
                     () -> premiumVerifier,
                     resolvedPlayerStore,
-                    () -> settings.proxy().routing()
+                    () -> settings.proxy().routing(),
+                    () -> settings.paAccess().premiumTargets()
             );
             proxyServer.getEventManager().register(pluginOwner, delegatedAccessService);
+            warnIfPremiumTargetsEnabled();
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityPreLoginListener(
                     () -> storage,
@@ -213,6 +215,7 @@ public final class ProudAuthVelocityPlatform {
             ));
 
             proxyServer.getEventManager().register(pluginOwner, new VelocityServerTransitionListener(
+                    pluginOwner,
                     proxyServer,
                     resolvedPlayerStore,
                     premiumClaimFailureStore,
@@ -408,6 +411,16 @@ public final class ProudAuthVelocityPlatform {
                 .buildTask(pluginOwner, this::watchConfigChanges)
                 .repeat(Math.max(1, configLoader.fileWatchIntervalSeconds()), TimeUnit.SECONDS)
                 .schedule();
+    }
+
+    private void warnIfPremiumTargetsEnabled() {
+        if (settings == null
+                || !settings.paAccess().premiumTargets().enabled()
+                || !settings.paAccess().premiumTargets().warnOnStartup()) {
+            return;
+        }
+
+        platformLogger.warn("ProudAccess premium-targets is enabled. Delegated access into premium target accounts requires ProudX with player-info-forwarding-mode=\"proudx\" so backend profile-key forwarding can be suppressed only for validated delegated sessions.");
     }
 
     private void watchConfigChanges() {

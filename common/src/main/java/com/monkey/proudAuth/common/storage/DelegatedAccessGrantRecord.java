@@ -12,6 +12,7 @@ public record DelegatedAccessGrantRecord(
         String delegateUsername,
         AccountType delegateAccountType,
         String codeHash,
+        String codePlain,
         Instant createdAt,
         Instant updatedAt,
         boolean active

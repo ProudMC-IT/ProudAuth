@@ -1,6 +1,7 @@
 package com.monkey.proudAuth.velocity.commands;
 
 import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
+import com.monkey.proudAuth.common.storage.DelegatedAccessGrantRecord;
 import com.monkey.proudAuth.common.storage.DelegatedAccessHistoryDirection;
 import com.monkey.proudAuth.common.storage.DelegatedAccessHistoryRecord;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
@@ -11,6 +12,7 @@ import com.velocitypowered.api.proxy.Player;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 
 import java.time.ZoneId;
@@ -62,6 +64,7 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
 
         switch (subcommand) {
             case "allowaccess" -> allowAccess(player, args);
+            case "allowlist", "accesslist" -> allowList(player);
             case "accessjoin" -> accessJoin(player, args);
             case "code" -> code(player, args);
             case "fingerprint" -> fingerprint(player);
@@ -73,6 +76,10 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
     }
 
     private void allowAccess(Player player, String[] args) {
+        if (args.length == 2 && "list".equalsIgnoreCase(args[1])) {
+            allowList(player);
+            return;
+        }
         if (args.length != 3) {
             send(player, "access-usage-allow");
             return;
@@ -132,6 +139,7 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
             case TOO_MANY_ATTEMPTS -> send(player, "access-too-many-attempts");
             case OWNER_MISSING -> send(player, "access-owner-missing");
             case PROFILE_KEY_MISMATCH -> send(player, "access-premium-profile-key-mismatch");
+            case PROUDX_FORWARDING_REQUIRED -> send(player, "access-proudx-forwarding-required");
         }
     }
 
@@ -142,9 +150,37 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
         }
         delegatedAccessService.fingerprint(player)
                 .ifPresentOrElse(
-                        value -> send(player, "access-fingerprint", Placeholder.unparsed("fingerprint", value)),
+                        value -> player.sendMessage(copyable(
+                                "access-fingerprint-label",
+                                value,
+                                "access-fingerprint-hover",
+                                true
+                        )),
                         () -> send(player, "access-profile-unresolved")
                 );
+    }
+
+    private void allowList(Player player) {
+        delegatedAccessService.listAllowedDelegates(player).whenComplete((result, exception) -> {
+            if (exception != null || !result.found()) {
+                send(player, "access-profile-unresolved");
+                return;
+            }
+            VelocityLang lang = langSupplier.get();
+            player.sendMessage(lang.rawMessage("access-allow-list-header"));
+            if (result.grants().isEmpty()) {
+                player.sendMessage(lang.rawMessage("access-allow-list-empty"));
+                return;
+            }
+            for (DelegatedAccessGrantRecord grant : result.grants()) {
+                boolean hasCode = grant.codePlain() != null && !grant.codePlain().isBlank();
+                String code = hasCode ? grant.codePlain() : lang.exportMessages().getOrDefault("access-code-missing", "-");
+                player.sendMessage(lang.rawMessage("access-allow-list-row-prefix",
+                                Placeholder.unparsed("delegate", grant.delegateUsername()),
+                                Placeholder.unparsed("type", grant.delegateAccountType().name()))
+                        .append(copyable("access-code-label", code, "access-code-hover", hasCode)));
+            }
+        });
     }
 
     private void accessLeave(Player player) {
@@ -175,7 +211,7 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
     }
 
     private void help(Player player) {
-        for (int index = 1; index <= 11; index++) {
+        for (int index = 1; index <= 12; index++) {
             send(player, "access-help-" + index);
         }
     }
@@ -375,7 +411,17 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
         String[] args = invocation.arguments();
         if (args.length <= 1) {
             String token = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
-            return filter(List.of("help", "fingerprint", "allowAccess", "accessJoin", "code", "accessLeave", "revokeAccess", "history"), token);
+            return filter(List.of("help", "fingerprint", "allowAccess", "allowList", "accessList", "accessJoin", "code", "accessLeave", "revokeAccess", "history"), token);
+        }
+        if (args.length == 2 && "allowaccess".equalsIgnoreCase(args[0])) {
+            return filter(List.of("list"), args[1]);
+        }
+        if (args.length == 2 && "accessjoin".equalsIgnoreCase(args[0]) && invocation.source() instanceof Player player) {
+            try {
+                return filter(delegatedAccessService.listJoinableOwnerNames(player).join(), args[1]);
+            } catch (RuntimeException ignored) {
+                return List.of();
+            }
         }
         if (args.length >= 2 && "history".equalsIgnoreCase(args[0])) {
             String previous = args[args.length - 2];
@@ -394,6 +440,17 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
         return values.stream()
                 .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(token.toLowerCase(Locale.ROOT)))
                 .toList();
+    }
+
+    private Component copyable(String labelKey, String value, String hoverKey, boolean enabled) {
+        VelocityLang lang = langSupplier.get();
+        Component valueComponent = Component.text(value, NamedTextColor.AQUA);
+        if (enabled) {
+            valueComponent = valueComponent
+                    .clickEvent(ClickEvent.copyToClipboard(value))
+                    .hoverEvent(HoverEvent.showText(lang.rawMessage(hoverKey)));
+        }
+        return lang.rawMessage(labelKey).append(valueComponent);
     }
 
     private record HistoryRequest(String username, int page, DelegatedAccessHistoryDirection direction, String errorKey) {

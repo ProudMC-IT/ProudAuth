@@ -1087,14 +1087,15 @@ public final class MySQLStorage implements StorageProvider {
             String sql = """
                     SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
-                    WHERE username = ? AND ip = ? AND expires_at > CURRENT_TIMESTAMP
+                    WHERE (username = ? OR LOWER(resolved_name) = ?) AND ip = ? AND expires_at > CURRENT_TIMESTAMP
                     ORDER BY issued_at DESC
                     LIMIT 1
                     """;
             try (Connection connection = connection();
-                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, username);
-                statement.setString(2, ip);
+                statement.setString(2, username);
+                statement.setString(3, ip);
                 try (ResultSet resultSet = statement.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
@@ -1154,13 +1155,14 @@ public final class MySQLStorage implements StorageProvider {
         return runAsync(() -> {
             String sql = """
                     INSERT INTO pa_delegated_access_grants
-                    (owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, code_plain, created_at, updated_at, active)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         owner_username = VALUES(owner_username),
                         delegate_username = VALUES(delegate_username),
                         delegate_account_type = VALUES(delegate_account_type),
                         code_hash = VALUES(code_hash),
+                        code_plain = VALUES(code_plain),
                         updated_at = VALUES(updated_at),
                         active = VALUES(active)
                     """;
@@ -1172,9 +1174,10 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(4, grant.delegateUsername());
                 statement.setString(5, grant.delegateAccountType().name());
                 statement.setString(6, grant.codeHash());
-                statement.setTimestamp(7, Timestamp.from(grant.createdAt()));
-                statement.setTimestamp(8, Timestamp.from(grant.updatedAt()));
-                statement.setBoolean(9, grant.active());
+                setNullableString(statement, 7, grant.codePlain());
+                statement.setTimestamp(8, Timestamp.from(grant.createdAt()));
+                statement.setTimestamp(9, Timestamp.from(grant.updatedAt()));
+                statement.setBoolean(10, grant.active());
                 statement.executeUpdate();
             }
         });
@@ -1184,7 +1187,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<DelegatedAccessGrantRecord>> findDelegatedAccessGrant(UUID ownerUuid, UUID delegateUuid) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active
+                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, code_plain, created_at, updated_at, active
                     FROM pa_delegated_access_grants
                     WHERE owner_uuid = ? AND delegate_uuid = ? AND active = 1
                     LIMIT 1
@@ -1207,7 +1210,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<List<DelegatedAccessGrantRecord>> listDelegatedAccessGrants(UUID ownerUuid) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, created_at, updated_at, active
+                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, code_plain, created_at, updated_at, active
                     FROM pa_delegated_access_grants
                     WHERE owner_uuid = ? AND active = 1
                     ORDER BY updated_at DESC
@@ -1215,6 +1218,29 @@ public final class MySQLStorage implements StorageProvider {
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement(sql)) {
                 statement.setString(1, ownerUuid.toString());
+                try (ResultSet resultSet = statement.executeQuery()) {
+                    List<DelegatedAccessGrantRecord> grants = new ArrayList<>();
+                    while (resultSet.next()) {
+                        grants.add(mapDelegatedAccessGrant(resultSet));
+                    }
+                    return grants;
+                }
+            }
+        });
+    }
+
+    @Override
+    public CompletableFuture<List<DelegatedAccessGrantRecord>> listDelegatedAccessGrantsForDelegate(UUID delegateUuid) {
+        return supplyAsync(() -> {
+            String sql = """
+                    SELECT owner_uuid, owner_username, delegate_uuid, delegate_username, delegate_account_type, code_hash, code_plain, created_at, updated_at, active
+                    FROM pa_delegated_access_grants
+                    WHERE delegate_uuid = ? AND active = 1
+                    ORDER BY updated_at DESC
+                    """;
+            try (Connection connection = connection();
+                 PreparedStatement statement = connection.prepareStatement(sql)) {
+                statement.setString(1, delegateUuid.toString());
                 try (ResultSet resultSet = statement.executeQuery()) {
                     List<DelegatedAccessGrantRecord> grants = new ArrayList<>();
                     while (resultSet.next()) {
@@ -1734,6 +1760,7 @@ public final class MySQLStorage implements StorageProvider {
                         delegate_username VARCHAR(16) NOT NULL,
                         delegate_account_type ENUM('PREMIUM','CRACKED') NOT NULL,
                         code_hash VARCHAR(72) NOT NULL,
+                        code_plain VARCHAR(16),
                         created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         active TINYINT(1) NOT NULL DEFAULT 1,
@@ -1742,6 +1769,7 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_delegated_delegate (delegate_uuid, active)
                     )
                     """);
+            statement.executeUpdate("ALTER TABLE pa_delegated_access_grants ADD COLUMN IF NOT EXISTS code_plain VARCHAR(16)");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_delegated_access_history (
                         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1846,6 +1874,7 @@ public final class MySQLStorage implements StorageProvider {
                 resultSet.getString("delegate_username"),
                 AccountType.valueOf(resultSet.getString("delegate_account_type")),
                 resultSet.getString("code_hash"),
+                resultSet.getString("code_plain"),
                 resultSet.getTimestamp("created_at").toInstant(),
                 resultSet.getTimestamp("updated_at").toInstant(),
                 resultSet.getBoolean("active")

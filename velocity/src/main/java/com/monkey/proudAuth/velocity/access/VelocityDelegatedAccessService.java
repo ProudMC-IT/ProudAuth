@@ -17,12 +17,19 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.crypto.IdentifiedKey;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import com.velocitypowered.api.util.GameProfile;
 
-import java.security.SecureRandom;
+import java.lang.reflect.Method;
+import java.io.IOException;
+import java.net.HttpURLConnection;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -31,11 +38,19 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class VelocityDelegatedAccessService {
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int MAX_ATTEMPTS = 3;
+    private static final int BACKEND_REFRESH_CONNECT_ATTEMPTS = 5;
+    private static final int BACKEND_REFRESH_INITIAL_DELAY_MS = 800;
+    private static final int BACKEND_REFRESH_RETRY_DELAY_MS = 500;
+    private static final Pattern TEXTURES_PROPERTY_PATTERN = Pattern.compile(
+            "\\{\\s*\"name\"\\s*:\\s*\"textures\"\\s*,\\s*\"value\"\\s*:\\s*\"([^\"]+)\"\\s*,\\s*\"signature\"\\s*:\\s*\"([^\"]+)\"\\s*}"
+    );
 
     private final Object pluginOwner;
     private final ProxyServer proxyServer;
@@ -43,6 +58,7 @@ public final class VelocityDelegatedAccessService {
     private final Supplier<PremiumVerifier> premiumVerifierSupplier;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier;
     private final Map<UUID, PendingChallenge> pendingChallenges = new ConcurrentHashMap<>();
 
     public VelocityDelegatedAccessService(
@@ -51,7 +67,8 @@ public final class VelocityDelegatedAccessService {
             Supplier<StorageProvider> storageSupplier,
             Supplier<PremiumVerifier> premiumVerifierSupplier,
             VelocityResolvedPlayerStore resolvedPlayerStore,
-            Supplier<ProudAuthNetworkConfig.Routing> routingSupplier
+            Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier
     ) {
         this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
@@ -59,6 +76,7 @@ public final class VelocityDelegatedAccessService {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
+        this.premiumTargetsSupplier = premiumTargetsSupplier;
     }
 
     public CompletableFuture<AllowResult> allowAccess(Player owner, String delegateUsername) {
@@ -97,6 +115,7 @@ public final class VelocityDelegatedAccessService {
                                         identity.username(),
                                         identity.accountType(),
                                         HashUtil.hash(code),
+                                        code,
                                         now,
                                         now,
                                         true
@@ -140,6 +159,28 @@ public final class VelocityDelegatedAccessService {
                             storage.listDelegatedAccessHistory(record.uuid(), direction, safePage, safePageSize);
                     return countFuture.thenCombine(rowsFuture, (count, rows) -> HistoryPageResult.found(record, rows, count, safePage, safePageSize));
                 });
+    }
+
+    public CompletableFuture<AccessListResult> listAllowedDelegates(Player owner) {
+        Optional<VelocityResolvedPlayerStore.ResolvedPlayer> ownerProfile = resolvedPlayerStore.find(owner.getUsername());
+        if (ownerProfile.isEmpty()) {
+            return CompletableFuture.completedFuture(AccessListResult.missing());
+        }
+        return storageSupplier.get().listDelegatedAccessGrants(ownerProfile.get().accountUuid())
+                .thenApply(AccessListResult::found);
+    }
+
+    public CompletableFuture<List<String>> listJoinableOwnerNames(Player delegate) {
+        Optional<VelocityResolvedPlayerStore.ResolvedPlayer> delegateProfile = resolvedPlayerStore.find(delegate.getUsername());
+        if (delegateProfile.isEmpty()) {
+            return CompletableFuture.completedFuture(List.of());
+        }
+        return storageSupplier.get().listDelegatedAccessGrantsForDelegate(delegateProfile.get().accountUuid())
+                .thenApply(grants -> grants.stream()
+                        .map(DelegatedAccessGrantRecord::ownerUsername)
+                        .filter(username -> username != null && !username.isBlank())
+                        .distinct()
+                        .toList());
     }
 
     public CompletableFuture<JoinRequestResult> requestJoin(Player actor, String ownerUsername) {
@@ -213,13 +254,21 @@ public final class VelocityDelegatedAccessService {
             audit(actor, actorProfile, grant, "CODE_SUBMIT", "DENIED", "OWNER_MISSING");
             return CompleteResult.error(CompleteStatus.OWNER_MISSING);
         }
-        if (isPremiumProfileKeyMismatch(actor, owner)) {
+        boolean delegatedProfileKeyMismatch = isDelegatedProfileKeyMismatch(actor, owner);
+        if (delegatedProfileKeyMismatch && owner.accountType() == AccountType.PREMIUM && !premiumTargetsSupplier.get().enabled()) {
             audit(actor, actorProfile, owner, "CODE_SUBMIT", "DENIED", "PROFILE_KEY_MISMATCH");
             return CompleteResult.error(CompleteStatus.PROFILE_KEY_MISMATCH);
         }
+        List<GameProfile.Property> delegatedProperties = delegatedProfileKeyMismatch && owner.accountType() == AccountType.PREMIUM
+                ? fetchSignedProfileProperties(owner.uuid())
+                : List.of();
+        if (delegatedProfileKeyMismatch && !setProudXDelegatedBackendProfile(actor, true, owner.uuid(), owner.username(), delegatedProperties)) {
+            audit(actor, actorProfile, owner, "CODE_SUBMIT", "DENIED", "PROUDX_FORWARDING_REQUIRED");
+            return CompleteResult.error(CompleteStatus.PROUDX_FORWARDING_REQUIRED);
+        }
         resolvedPlayerStore.startImpersonation(actor.getUsername(), owner.uuid(), owner.username(), owner.accountType());
         resolvedPlayerStore.markNetworkAuthenticated(actor.getUsername(), true);
-        audit(actor, actorProfile, owner, "CODE_SUBMIT", "SUCCESS", "");
+        audit(actor, actorProfile, owner, "CODE_SUBMIT", "SUCCESS", delegatedProfileKeyMismatch ? "DELEGATED_PROFILE_KEY_BYPASS" : "");
         refreshBackendIdentity(actor, true);
         return CompleteResult.started(owner.username());
     }
@@ -232,8 +281,10 @@ public final class VelocityDelegatedAccessService {
         boolean stopped = resolvedPlayerStore.stopImpersonation(actor.getUsername());
         pendingChallenges.remove(actor.getUniqueId());
         if (!stopped) {
+            setProudXDelegatedBackendProfile(actor, false, null, "");
             return LeaveResult.notImpersonating();
         }
+        setProudXDelegatedBackendProfile(actor, false, null, "");
         refreshBackendIdentity(actor, false);
         return LeaveResult.left();
     }
@@ -266,9 +317,11 @@ public final class VelocityDelegatedAccessService {
     public void onDisconnect(DisconnectEvent event) {
         VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayerStore.find(event.getPlayer().getUsername()).orElse(null);
         if (profile == null || !profile.isImpersonating()) {
+            setProudXDelegatedBackendProfile(event.getPlayer(), false, null, "");
             return;
         }
         audit(event.getPlayer(), profile, profile.impersonationTargetUuid(), profile.impersonationTargetName(), "LEAVE", "SUCCESS", "DISCONNECT");
+        setProudXDelegatedBackendProfile(event.getPlayer(), false, null, "");
     }
 
     private CompletableFuture<Optional<DelegatedAccessIdentity>> resolveRegisteredDelegate(String username) {
@@ -322,18 +375,113 @@ public final class VelocityDelegatedAccessService {
         player.createConnectionRequest(bounce).fireAndForget();
 
         String delayedFinalServer = finalServer;
+        scheduleBackendRefreshConnect(player.getUsername(), delayedFinalServer, 1, BACKEND_REFRESH_INITIAL_DELAY_MS);
+    }
+
+    private void scheduleBackendRefreshConnect(String username, String finalServer, int attempt, int delayMs) {
+        if (finalServer == null || finalServer.isBlank()) {
+            return;
+        }
         proxyServer.getScheduler()
-                .buildTask(pluginOwner, () -> connect(player, delayedFinalServer))
-                .delay(800, TimeUnit.MILLISECONDS)
+                .buildTask(pluginOwner, () -> attemptBackendRefreshConnect(username, finalServer, attempt))
+                .delay(delayMs, TimeUnit.MILLISECONDS)
                 .schedule();
     }
 
-    private boolean isPremiumProfileKeyMismatch(Player actor, AccountRecord target) {
-        if (target.accountType() != AccountType.PREMIUM) {
-            return false;
+    private void attemptBackendRefreshConnect(String username, String finalServer, int attempt) {
+        Optional<Player> player = proxyServer.getPlayer(username);
+        if (player.isEmpty()) {
+            return;
         }
+
+        String currentServer = player.get().getCurrentServer()
+                .map(server -> server.getServerInfo().getName())
+                .orElse("");
+        if (finalServer.equalsIgnoreCase(currentServer)) {
+            return;
+        }
+
+        if (!currentServer.isBlank()) {
+            connect(player.get(), finalServer);
+        }
+        if (attempt < BACKEND_REFRESH_CONNECT_ATTEMPTS) {
+            scheduleBackendRefreshConnect(username, finalServer, attempt + 1, BACKEND_REFRESH_RETRY_DELAY_MS);
+        }
+    }
+
+    private boolean isDelegatedProfileKeyMismatch(Player actor, AccountRecord target) {
         IdentifiedKey key = actor.getIdentifiedKey();
         return key == null || !target.uuid().equals(key.getSignatureHolder());
+    }
+
+    private boolean setProudXDelegatedBackendProfile(Player player, boolean suppress, UUID profileUuid, String profileName) {
+        return setProudXDelegatedBackendProfile(player, suppress, profileUuid, profileName, List.of());
+    }
+
+    private boolean setProudXDelegatedBackendProfile(
+            Player player,
+            boolean suppress,
+            UUID profileUuid,
+            String profileName,
+            List<GameProfile.Property> properties
+    ) {
+        try {
+            if (suppress && !isProudXBackendProfileKeySuppressionSupported(player)) {
+                return false;
+            }
+            try {
+                Method method = player.getClass().getMethod("setProudxDelegatedBackendProfile", boolean.class, UUID.class, String.class, List.class);
+                method.invoke(player, suppress, profileUuid, profileName, properties);
+            } catch (NoSuchMethodException ignored) {
+                Method method = player.getClass().getMethod("setProudxDelegatedBackendProfile", boolean.class, UUID.class, String.class);
+                method.invoke(player, suppress, profileUuid, profileName);
+            }
+            return true;
+        } catch (NoSuchMethodException exception) {
+            return !suppress;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return !suppress;
+        }
+    }
+
+    private List<GameProfile.Property> fetchSignedProfileProperties(UUID uuid) {
+        String undashedUuid = uuid.toString().replace("-", "");
+        HttpURLConnection connection = null;
+        try {
+            URI uri = URI.create("https://sessionserver.mojang.com/session/minecraft/profile/" + undashedUuid + "?unsigned=false");
+            connection = (HttpURLConnection) uri.toURL().openConnection();
+            connection.setConnectTimeout(2500);
+            connection.setReadTimeout(2500);
+            connection.setRequestProperty("User-Agent", "ProudAuth-Velocity");
+            if (connection.getResponseCode() != 200) {
+                return List.of();
+            }
+            String body = new String(connection.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            Matcher matcher = TEXTURES_PROPERTY_PATTERN.matcher(body);
+            List<GameProfile.Property> properties = new ArrayList<>();
+            while (matcher.find()) {
+                properties.add(new GameProfile.Property("textures", matcher.group(1), matcher.group(2)));
+            }
+            return List.copyOf(properties);
+        } catch (IOException | IllegalArgumentException exception) {
+            return List.of();
+        } finally {
+            if (connection != null) {
+                connection.disconnect();
+            }
+        }
+    }
+
+    private boolean isProudXBackendProfileKeySuppressionSupported(Player player) {
+        try {
+            Method method = player.getClass().getMethod("isProudxBackendProfileKeySuppressionSupported");
+            Object result = method.invoke(player);
+            return result instanceof Boolean supported && supported;
+        } catch (NoSuchMethodException exception) {
+            return false;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return false;
+        }
     }
 
     private Optional<RegisteredServer> findBounceServer(String currentServer, String finalServer, ProudAuthNetworkConfig.Routing routing) {
@@ -479,7 +627,8 @@ public final class VelocityDelegatedAccessService {
         INVALID_CODE,
         TOO_MANY_ATTEMPTS,
         OWNER_MISSING,
-        PROFILE_KEY_MISMATCH
+        PROFILE_KEY_MISMATCH,
+        PROUDX_FORWARDING_REQUIRED
     }
 
     public record AllowResult(boolean success, String delegateUsername, String code, String fingerprint, AllowStatus status) {
@@ -570,6 +719,16 @@ public final class VelocityDelegatedAccessService {
 
         public int totalPages() {
             return Math.max(1, (int) Math.ceil((double) totalRows / (double) pageSize));
+        }
+    }
+
+    public record AccessListResult(boolean found, java.util.List<DelegatedAccessGrantRecord> grants) {
+        private static AccessListResult missing() {
+            return new AccessListResult(false, java.util.List.of());
+        }
+
+        private static AccessListResult found(java.util.List<DelegatedAccessGrantRecord> grants) {
+            return new AccessListResult(true, grants);
         }
     }
 }

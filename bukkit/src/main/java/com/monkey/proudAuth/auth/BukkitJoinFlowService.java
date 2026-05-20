@@ -173,11 +173,27 @@ public final class BukkitJoinFlowService {
                         playerProtection.removeProtection(player);
                     }
                     networkSyncService.notifyMonitorState(player, ProudAuthMonitorState.AUTHENTICATED);
+                    if (shouldCompleteAuthenticatedAuthEntryTransfer(resolvedLogin)) {
+                        networkSyncService.notifyAuthCompleted(player);
+                    }
                     debugEvent(DebugChannel.BRIDGE_FLOW, "join_network_transfer_complete",
                             "player", player.getName(),
                             "uuid", player.getUniqueId(),
-                            "account_type", resolvedLogin.accountType());
+                            "account_type", resolvedLogin.accountType(),
+                            "auth_completed", shouldCompleteAuthenticatedAuthEntryTransfer(resolvedLogin));
                 }));
+    }
+
+    private boolean shouldCompleteAuthenticatedAuthEntryTransfer(ResolvedLogin resolvedLogin) {
+        String currentServerId = pluginConfig.serverId();
+        String authEntryServer = resolvedLogin.authEntryServer();
+        String postAuthServer = resolvedLogin.postAuthServer();
+        return currentServerId != null
+                && authEntryServer != null
+                && postAuthServer != null
+                && !postAuthServer.isBlank()
+                && currentServerId.equalsIgnoreCase(authEntryServer)
+                && !currentServerId.equalsIgnoreCase(postAuthServer);
     }
 
     private void handleBypassJoin(Player player, ResolvedLogin resolvedLogin) {

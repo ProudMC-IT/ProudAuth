@@ -159,7 +159,8 @@ public final class ProxyBridgeService {
             ProxyBridgeAssertion assertion
     ) {
         Instant now = Instant.now();
-        if (!assertion.username().equals(canonicalUsername)) {
+        if (!assertion.username().equals(canonicalUsername)
+                && !canonicalUsername(assertion.resolvedName()).equals(canonicalUsername)) {
             return new VerificationResult(VerificationStatus.INVALID_USERNAME, Optional.empty());
         }
         if (!assertion.ipAddress().equals(ipAddress)) {

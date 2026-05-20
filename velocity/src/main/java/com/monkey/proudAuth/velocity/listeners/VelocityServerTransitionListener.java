@@ -20,10 +20,16 @@ import com.velocitypowered.api.proxy.server.RegisteredServer;
 
 import java.net.InetSocketAddress;
 import java.util.Optional;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 public final class VelocityServerTransitionListener {
 
+    private static final int AUTH_ENTRY_REDIRECT_ATTEMPTS = 5;
+    private static final int AUTH_ENTRY_REDIRECT_RETRY_DELAY_MS = 500;
+    private static final int AUTH_ENTRY_REDIRECT_MIN_DELAY_MS = 250;
+
+    private final Object pluginOwner;
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
@@ -34,6 +40,7 @@ public final class VelocityServerTransitionListener {
     private final ProudAuthConsoleLogger logger;
 
     public VelocityServerTransitionListener(
+            Object pluginOwner,
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             VelocityPremiumClaimFailureStore premiumClaimFailureStore,
@@ -43,6 +50,7 @@ public final class VelocityServerTransitionListener {
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
     ) {
+        this.pluginOwner = pluginOwner;
         this.proxyServer = proxyServer;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.premiumClaimFailureStore = premiumClaimFailureStore;
@@ -176,6 +184,7 @@ public final class VelocityServerTransitionListener {
                     "server", currentServerName,
                     "ip", ipAddress);
         }
+        redirectImpersonatedAuthEntry(event.getPlayer(), currentServerName, resolvedPlayer.orElse(null));
     }
 
     @Subscribe
@@ -262,6 +271,125 @@ public final class VelocityServerTransitionListener {
             return Optional.empty();
         }
         return proxyServer.getServer(serverName);
+    }
+
+    private void redirectImpersonatedAuthEntry(
+            com.velocitypowered.api.proxy.Player player,
+            String currentServerName,
+            VelocityResolvedPlayerStore.ResolvedPlayer profile
+    ) {
+        if (profile == null || !profile.isImpersonating() || !profile.networkAuthenticated()) {
+            return;
+        }
+
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        if (!routing.hasAuthEntryServer()
+                || !routing.authEntryServer().equalsIgnoreCase(currentServerName)
+                || !routing.hasPostAuthServer()
+                || routing.postAuthServer().equalsIgnoreCase(currentServerName)) {
+            return;
+        }
+
+        proxyServer.getServer(routing.postAuthServer()).ifPresent(targetServer -> {
+            int delayMs = Math.max(AUTH_ENTRY_REDIRECT_MIN_DELAY_MS, routing.postAuthRedirectDelayMs());
+            scheduleImpersonatedAuthEntryRedirect(
+                    player,
+                    currentServerName,
+                    routing.postAuthServer(),
+                    profile.effectiveAccountUuid().toString(),
+                    1,
+                    delayMs
+            );
+
+            debugEvent("access_auth_entry_redirect_post_auth_scheduled",
+                    "player", player.getUsername(),
+                    "from", currentServerName,
+                    "target", routing.postAuthServer(),
+                    "delay_ms", delayMs,
+                    "attempts", AUTH_ENTRY_REDIRECT_ATTEMPTS,
+                    "impersonating", true,
+                    "resolved_uuid", profile.effectiveAccountUuid());
+        });
+    }
+
+    private void scheduleImpersonatedAuthEntryRedirect(
+            com.velocitypowered.api.proxy.Player player,
+            String authEntryServerName,
+            String targetServerName,
+            String resolvedUuid,
+            int attempt,
+            int delayMs
+    ) {
+        proxyServer.getScheduler()
+                .buildTask(pluginOwner, () -> attemptImpersonatedAuthEntryRedirect(
+                        player,
+                        authEntryServerName,
+                        targetServerName,
+                        resolvedUuid,
+                        attempt
+                ))
+                .delay(delayMs, TimeUnit.MILLISECONDS)
+                .schedule();
+    }
+
+    private void attemptImpersonatedAuthEntryRedirect(
+            com.velocitypowered.api.proxy.Player player,
+            String authEntryServerName,
+            String targetServerName,
+            String resolvedUuid,
+            int attempt
+    ) {
+        var profile = resolvedPlayerStore.find(player.getUsername()).orElse(null);
+        if (profile == null || !profile.isImpersonating() || !profile.networkAuthenticated()) {
+            debugEvent("access_auth_entry_redirect_post_auth_cancelled",
+                    "player", player.getUsername(),
+                    "target", targetServerName,
+                    "attempt", attempt,
+                    "reason", "profile_not_authenticated");
+            return;
+        }
+
+        String currentServerName = player.getCurrentServer()
+                .map(server -> server.getServerInfo().getName())
+                .orElse("");
+        if (!authEntryServerName.equalsIgnoreCase(currentServerName)) {
+            debugEvent("access_auth_entry_redirect_post_auth_cancelled",
+                    "player", player.getUsername(),
+                    "current", currentServerName,
+                    "target", targetServerName,
+                    "attempt", attempt,
+                    "reason", "not_on_auth_entry");
+            return;
+        }
+
+        Optional<RegisteredServer> targetServer = proxyServer.getServer(targetServerName);
+        if (targetServer.isEmpty()) {
+            debugEvent("access_auth_entry_redirect_post_auth_cancelled",
+                    "player", player.getUsername(),
+                    "target", targetServerName,
+                    "attempt", attempt,
+                    "reason", "target_missing");
+            return;
+        }
+
+        debugEvent("access_auth_entry_redirect_post_auth_attempt",
+                "player", player.getUsername(),
+                "from", currentServerName,
+                "target", targetServerName,
+                "attempt", attempt,
+                "resolved_uuid", resolvedUuid);
+        player.createConnectionRequest(targetServer.get()).fireAndForget();
+
+        if (attempt < AUTH_ENTRY_REDIRECT_ATTEMPTS) {
+            scheduleImpersonatedAuthEntryRedirect(
+                    player,
+                    authEntryServerName,
+                    targetServerName,
+                    resolvedUuid,
+                    attempt + 1,
+                    AUTH_ENTRY_REDIRECT_RETRY_DELAY_MS
+            );
+        }
     }
 
     private String ipAddress(com.velocitypowered.api.proxy.Player player) {

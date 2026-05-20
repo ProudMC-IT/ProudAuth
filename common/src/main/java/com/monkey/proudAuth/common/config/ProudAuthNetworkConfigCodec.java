@@ -180,6 +180,10 @@ public final class ProudAuthNetworkConfigCodec {
                         string(root, "paaccess.history.time-format", "dd/MM/yyyy HH:mm:ss"),
                         Math.max(1, Math.min(50, integer(root, "paaccess.history.page-size", 8))),
                         Math.max(1, integer(root, "paaccess.history.retention-days", 90))
+                ),
+                new ProudAuthNetworkConfig.PremiumTargets(
+                        bool(root, "paaccess.premium-targets.enabled", false),
+                        bool(root, "paaccess.premium-targets.warn-on-startup", true)
                 )
         );
 
@@ -551,6 +555,11 @@ public final class ProudAuthNetworkConfigCodec {
         historyValues.put("page-size", history.pageSize());
         historyValues.put("retention-days", history.retentionDays());
         values.put("history", historyValues);
+        ProudAuthNetworkConfig.PremiumTargets premiumTargets = paAccess.premiumTargets();
+        Map<String, Object> premiumTargetValues = new LinkedHashMap<>();
+        premiumTargetValues.put("enabled", premiumTargets.enabled());
+        premiumTargetValues.put("warn-on-startup", premiumTargets.warnOnStartup());
+        values.put("premium-targets", premiumTargetValues);
         return values;
     }
 

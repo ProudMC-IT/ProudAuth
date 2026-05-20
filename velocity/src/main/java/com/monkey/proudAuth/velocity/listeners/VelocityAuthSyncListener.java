@@ -145,12 +145,17 @@ public final class VelocityAuthSyncListener {
         if (monitorService != null) {
             monitorService.sendPlayerUpdate(player);
         }
+
+        if (state == ProudAuthMonitorState.AUTHENTICATED && isAuthenticatedOnAuthEntry(player, sourceServer)) {
+            redirectPostAuthIfNeeded(player, sourceServer, routingSupplier.get(), "auth_sync_state_redirect_post_auth");
+        }
     }
 
     private void handleAuthCompleted(Player player, String sourceServer) {
         boolean alreadyAuthenticated = resolvedPlayerStore.find(player.getUsername())
                 .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
                 .orElse(false);
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
 
         if (alreadyAuthenticated) {
             monitorAuthStateStore.update(player.getUsername(), ProudAuthMonitorState.AUTHENTICATED);
@@ -158,6 +163,7 @@ public final class VelocityAuthSyncListener {
             debugEvent("auth_sync_completed_duplicate_ignored",
                     "player", player.getUsername(),
                     "server", sourceServer);
+            redirectPostAuthIfNeeded(player, sourceServer, routing, "auth_sync_completed_duplicate_redirect_post_auth");
             return;
         }
 
@@ -169,38 +175,7 @@ public final class VelocityAuthSyncListener {
                 "player", player.getUsername(),
                 "server", sourceServer);
 
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
-        if (!routing.hasPostAuthServer() || routing.postAuthServer().equalsIgnoreCase(sourceServer)) {
-            return;
-        }
-
-        proxyServer.getServer(routing.postAuthServer()).ifPresent(targetServer -> {
-            boolean legacyClient = isLegacyClient(player.getUsername());
-            int delayMs = redirectDelayMillis(player.getUsername(), routing);
-
-            if (delayMs <= 0) {
-                player.createConnectionRequest(targetServer).fireAndForget();
-                debugEvent("auth_sync_redirect_post_auth",
-                        "player", player.getUsername(),
-                        "from", sourceServer,
-                        "target", routing.postAuthServer(),
-                        "delay_ms", 0,
-                        "legacy_client", legacyClient);
-                return;
-            }
-
-            proxyServer.getScheduler()
-                    .buildTask(pluginOwner, () -> executePostAuthRedirect(player.getUsername(), sourceServer, targetServer, delayMs))
-                    .delay(delayMs, TimeUnit.MILLISECONDS)
-                    .schedule();
-
-            debugEvent("auth_sync_redirect_post_auth_scheduled",
-                    "player", player.getUsername(),
-                    "from", sourceServer,
-                    "target", routing.postAuthServer(),
-                    "delay_ms", delayMs,
-                    "legacy_client", legacyClient);
-        });
+        redirectPostAuthIfNeeded(player, sourceServer, routing, "auth_sync_redirect_post_auth");
     }
 
     private void handleAuthInvalidated(Player player, String sourceServer) {
@@ -269,6 +244,55 @@ public final class VelocityAuthSyncListener {
         if (monitorService != null) {
             monitorService.sendPlayerUpdate(player);
         }
+    }
+
+    private boolean isAuthenticatedOnAuthEntry(Player player, String sourceServer) {
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        if (!routing.hasAuthEntryServer() || !routing.authEntryServer().equalsIgnoreCase(sourceServer)) {
+            return false;
+        }
+        return resolvedPlayerStore.find(player.getUsername())
+                .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
+                .orElse(false);
+    }
+
+    private void redirectPostAuthIfNeeded(
+            Player player,
+            String sourceServer,
+            ProudAuthNetworkConfig.Routing routing,
+            String eventName
+    ) {
+        if (!routing.hasPostAuthServer() || routing.postAuthServer().equalsIgnoreCase(sourceServer)) {
+            return;
+        }
+
+        proxyServer.getServer(routing.postAuthServer()).ifPresent(targetServer -> {
+            boolean legacyClient = isLegacyClient(player.getUsername());
+            int delayMs = redirectDelayMillis(player.getUsername(), routing);
+
+            if (delayMs <= 0) {
+                player.createConnectionRequest(targetServer).fireAndForget();
+                debugEvent(eventName,
+                        "player", player.getUsername(),
+                        "from", sourceServer,
+                        "target", routing.postAuthServer(),
+                        "delay_ms", 0,
+                        "legacy_client", legacyClient);
+                return;
+            }
+
+            proxyServer.getScheduler()
+                    .buildTask(pluginOwner, () -> executePostAuthRedirect(player.getUsername(), sourceServer, targetServer, delayMs))
+                    .delay(delayMs, TimeUnit.MILLISECONDS)
+                    .schedule();
+
+            debugEvent(eventName + "_scheduled",
+                    "player", player.getUsername(),
+                    "from", sourceServer,
+                    "target", routing.postAuthServer(),
+                    "delay_ms", delayMs,
+                    "legacy_client", legacyClient);
+        });
     }
 
     private void debugEvent(String eventName, Object... keyValues) {

@@ -298,6 +298,16 @@ routing:
     legacy-redirect-delay-ms: 150
 
 paaccess:
+  premium-targets:
+    # If true, ProudAccess can attempt delegated access into PREMIUM target accounts.
+    # This requires ProudX with player-info-forwarding-mode="proudx", so the proxy can keep
+    # normal premium verification but suppress backend profile-key forwarding only for validated
+    # delegated sessions. Keep false unless you explicitly accept that tradeoff.
+    enabled: false
+
+    # If true, ProudAuth logs a warning on proxy startup when premium target access is enabled.
+    warn-on-startup: true
+
   history:
     # Timezone used by /paaccess history.
     timezone: "Europe/Rome"
