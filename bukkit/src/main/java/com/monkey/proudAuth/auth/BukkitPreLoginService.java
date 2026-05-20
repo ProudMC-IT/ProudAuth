@@ -1,5 +1,6 @@
 package com.monkey.proudAuth.auth;
 
+import com.destroystokyo.paper.profile.PlayerProfile;
 import com.monkey.proudAuth.common.bridge.BridgeJoinMode;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
@@ -13,7 +14,6 @@ import com.monkey.proudAuth.common.security.BruteForceGuard;
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
-import com.destroystokyo.paper.profile.PlayerProfile;
 import org.bukkit.Bukkit;
 import org.bukkit.event.player.AsyncPlayerPreLoginEvent;
 
