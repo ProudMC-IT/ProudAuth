@@ -36,7 +36,7 @@ import java.util.logging.Logger;
 public final class ProudAuth extends JavaPlugin {
 
     private static final int BSTATS_PLUGIN_ID = 30843;
-    private static final int SPIGOT_RESOURCE_ID = 134388;
+    private static final int SPIGOT_RESOURCE_ID = 135458;
     private static final String BUKKIT_LOGGER_NAME = "ProudAuth/Bukkit";
     private static final String ANSI_RESET = "\u001B[0m";
     private static final String ANSI_BOLD = "\u001B[1m";

@@ -175,6 +175,8 @@ public final class ProudAuthNetworkConfigCodec {
         );
 
         ProudAuthNetworkConfig.PaAccess paAccess = new ProudAuthNetworkConfig.PaAccess(
+                bool(root, "paaccess.enabled", true),
+                ProudAuthNetworkConfig.OwnerConflictPolicy.from(string(root, "paaccess.owner-conflict-policy", "OWNER_TAKES_OVER")),
                 new ProudAuthNetworkConfig.History(
                         string(root, "paaccess.history.timezone", "Europe/Rome"),
                         string(root, "paaccess.history.time-format", "dd/MM/yyyy HH:mm:ss"),
@@ -548,6 +550,8 @@ public final class ProudAuthNetworkConfigCodec {
 
     private Map<String, Object> dumpPaAccess(ProudAuthNetworkConfig.PaAccess paAccess) {
         Map<String, Object> values = new LinkedHashMap<>();
+        values.put("enabled", paAccess.enabled());
+        values.put("owner-conflict-policy", paAccess.ownerConflictPolicy().name());
         ProudAuthNetworkConfig.History history = paAccess.history();
         Map<String, Object> historyValues = new LinkedHashMap<>();
         historyValues.put("timezone", history.timezone());

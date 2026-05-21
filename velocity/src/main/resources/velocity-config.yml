@@ -298,6 +298,18 @@ routing:
     legacy-redirect-delay-ms: 150
 
 paaccess:
+  # Enables the ProudAccess delegated account access module.
+  # This module requires the ProudX proxy fork and player-info-forwarding-mode="proudx".
+  enabled: true
+
+  # Controls what happens when the real owner joins while a delegate is using that account.
+  #
+  # - OWNER_TAKES_OVER: recommended default. The real owner is allowed to join and
+  #   the delegate is automatically restored to their original account.
+  # - KICK_DELEGATE: the real owner is allowed to join and the delegate is disconnected.
+  # - DENY_OWNER: the real owner is denied while the delegated session remains active.
+  owner-conflict-policy: OWNER_TAKES_OVER
+
   premium-targets:
     # If true, ProudAccess can attempt delegated access into PREMIUM target accounts.
     # This requires ProudX with player-info-forwarding-mode="proudx", so the proxy can keep

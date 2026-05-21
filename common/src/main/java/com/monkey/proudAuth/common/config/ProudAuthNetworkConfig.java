@@ -49,9 +49,28 @@ public record ProudAuthNetworkConfig(
     }
 
     public record PaAccess(
+            boolean enabled,
+            OwnerConflictPolicy ownerConflictPolicy,
             History history,
             PremiumTargets premiumTargets
     ) {
+    }
+
+    public enum OwnerConflictPolicy {
+        OWNER_TAKES_OVER,
+        KICK_DELEGATE,
+        DENY_OWNER;
+
+        public static OwnerConflictPolicy from(String raw) {
+            if (raw == null || raw.isBlank()) {
+                return OWNER_TAKES_OVER;
+            }
+            try {
+                return OwnerConflictPolicy.valueOf(raw.trim().toUpperCase(java.util.Locale.ROOT));
+            } catch (IllegalArgumentException exception) {
+                return OWNER_TAKES_OVER;
+            }
+        }
     }
 
     public record History(

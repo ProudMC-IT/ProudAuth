@@ -13,6 +13,7 @@ import com.velocitypowered.api.proxy.Player;
 import com.velocitypowered.api.proxy.ProxyServer;
 import com.velocitypowered.api.proxy.crypto.IdentifiedKey;
 import com.velocitypowered.api.proxy.server.RegisteredServer;
+import net.kyori.adventure.text.Component;
 import com.velocitypowered.api.util.GameProfile;
 
 import java.io.IOException;
@@ -278,6 +279,66 @@ public final class VelocityDelegatedAccessService {
         setProudXDelegatedBackendProfile(actor, false, null, "");
         refreshBackendIdentity(actor, false);
         return LeaveResult.left();
+    }
+
+    public OwnerConflictResult handleOwnerLogin(
+            Player owner,
+            VelocityResolvedPlayerStore.ResolvedPlayer ownerProfile,
+            ProudAuthNetworkConfig.OwnerConflictPolicy policy,
+            Component delegateRestoreMessage,
+            Component delegateKickMessage
+    ) {
+        if (ownerProfile == null || ownerProfile.isImpersonating()) {
+            return OwnerConflictResult.none();
+        }
+
+        Optional<VelocityResolvedPlayerStore.ImpersonatingSession> activeSession =
+                resolvedPlayerStore.findImpersonatingTarget(ownerProfile.accountUuid());
+        if (activeSession.isEmpty() || activeSession.get().proxyUsername().equalsIgnoreCase(owner.getUsername())) {
+            return OwnerConflictResult.none();
+        }
+
+        Optional<Player> delegate = proxyServer.getPlayer(activeSession.get().proxyUsername());
+        if (delegate.isEmpty()) {
+            return OwnerConflictResult.none();
+        }
+
+        Player delegatePlayer = delegate.get();
+        VelocityResolvedPlayerStore.ResolvedPlayer delegateProfile = activeSession.get().profile();
+        ProudAuthNetworkConfig.OwnerConflictPolicy effectivePolicy =
+                policy == null ? ProudAuthNetworkConfig.OwnerConflictPolicy.OWNER_TAKES_OVER : policy;
+
+        if (effectivePolicy == ProudAuthNetworkConfig.OwnerConflictPolicy.DENY_OWNER) {
+            audit(delegatePlayer, delegateProfile, ownerProfile.accountUuid(), ownerProfile.accountName(), "OWNER_CONFLICT", "DENIED", "OWNER_BLOCKED");
+            return OwnerConflictResult.ownerDenied(delegatePlayer.getUsername());
+        }
+
+        if (effectivePolicy == ProudAuthNetworkConfig.OwnerConflictPolicy.KICK_DELEGATE) {
+            audit(delegatePlayer, delegateProfile, ownerProfile.accountUuid(), ownerProfile.accountName(), "LEAVE", "SUCCESS", "OWNER_JOINED_KICK");
+            resolvedPlayerStore.stopImpersonation(delegatePlayer.getUsername());
+            pendingChallenges.remove(delegatePlayer.getUniqueId());
+            setProudXDelegatedBackendProfile(delegatePlayer, false, null, "");
+            delegatePlayer.disconnect(delegateKickMessage);
+            return OwnerConflictResult.delegateRemoved(delegatePlayer.getUsername());
+        }
+
+        forceLeaveForOwnerTakeover(delegatePlayer, delegateProfile, delegateRestoreMessage);
+        return OwnerConflictResult.delegateRemoved(delegatePlayer.getUsername());
+    }
+
+    private void forceLeaveForOwnerTakeover(
+            Player delegate,
+            VelocityResolvedPlayerStore.ResolvedPlayer delegateProfile,
+            Component delegateRestoreMessage
+    ) {
+        if (delegateProfile != null && delegateProfile.isImpersonating()) {
+            audit(delegate, delegateProfile, delegateProfile.impersonationTargetUuid(), delegateProfile.impersonationTargetName(), "LEAVE", "SUCCESS", "OWNER_JOINED");
+        }
+        resolvedPlayerStore.stopImpersonation(delegate.getUsername());
+        pendingChallenges.remove(delegate.getUniqueId());
+        setProudXDelegatedBackendProfile(delegate, false, null, "");
+        delegate.sendMessage(delegateRestoreMessage);
+        refreshBackendIdentity(delegate, false);
     }
 
     public CompletableFuture<Boolean> revoke(Player owner, String delegateUsername) {
@@ -689,6 +750,20 @@ public final class VelocityDelegatedAccessService {
 
         private static LeaveResult notImpersonating() {
             return new LeaveResult(false);
+        }
+    }
+
+    public record OwnerConflictResult(boolean conflict, boolean ownerDenied, String delegateUsername) {
+        private static OwnerConflictResult none() {
+            return new OwnerConflictResult(false, false, "");
+        }
+
+        private static OwnerConflictResult ownerDenied(String delegateUsername) {
+            return new OwnerConflictResult(true, true, delegateUsername);
+        }
+
+        private static OwnerConflictResult delegateRemoved(String delegateUsername) {
+            return new OwnerConflictResult(true, false, delegateUsername);
         }
     }
 

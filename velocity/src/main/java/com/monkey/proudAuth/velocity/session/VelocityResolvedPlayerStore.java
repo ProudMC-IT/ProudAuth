@@ -47,6 +47,17 @@ public final class VelocityResolvedPlayerStore {
         return Optional.ofNullable(resolvedPlayers.get(key(username)));
     }
 
+    public Optional<ImpersonatingSession> findImpersonatingTarget(UUID targetUuid) {
+        if (targetUuid == null) {
+            return Optional.empty();
+        }
+        return resolvedPlayers.entrySet().stream()
+                .filter(entry -> entry.getValue().isImpersonating())
+                .filter(entry -> targetUuid.equals(entry.getValue().impersonationTargetUuid()))
+                .map(entry -> new ImpersonatingSession(entry.getKey(), entry.getValue()))
+                .findFirst();
+    }
+
     public void rememberAuthEntryServer(String username, String authEntryServer) {
         resolvedPlayers.computeIfPresent(key(username), (ignored, current) -> current.withAuthEntryServer(authEntryServer));
     }
@@ -257,5 +268,8 @@ public final class VelocityResolvedPlayerStore {
                     targetAccountType
             );
         }
+    }
+
+    public record ImpersonatingSession(String proxyUsername, ResolvedPlayer profile) {
     }
 }

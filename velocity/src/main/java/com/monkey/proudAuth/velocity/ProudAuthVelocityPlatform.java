@@ -71,6 +71,7 @@ public final class ProudAuthVelocityPlatform {
     private Instant lastAutoExportAt;
     private ScheduledTask maintenanceTask;
     private ScheduledTask configWatchTask;
+    private volatile boolean proudAccessAvailable;
 
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore = new VelocityWhitelistEnforcementStore();
     private final VelocityResolvedPlayerStore resolvedPlayerStore = new VelocityResolvedPlayerStore();
@@ -133,7 +134,7 @@ public final class ProudAuthVelocityPlatform {
             lastAutoExportAt = Instant.EPOCH;
 
             platformLogger.banner(
-                    "ProudAuth v1.0.2",
+                    "ProudAuth v" + ProudAuthBuildConstants.VERSION,
                     "Platform: Velocity proxy",
                     "Language: " + lang.activeLanguageDescription(),
                     "Bridge: " + (settings.bridge().enabled() ? "enabled (" + settings.bridge().mode() + ")" : "disabled"),
@@ -146,6 +147,8 @@ public final class ProudAuthVelocityPlatform {
                     "bridge_mode", settings.bridge().mode(),
                     "premium_enabled", settings.premium().enabled(),
                     "premium_api_timeout_ms", settings.premium().apiTimeoutMs());
+
+            proudAccessAvailable = validateProudAccessAvailability("startup");
 
             disconnectInstrumentation.updateMessages(
                     settings.proxy().onlineModeDeniedMessage(),
@@ -211,6 +214,8 @@ public final class ProudAuthVelocityPlatform {
                     pendingPremiumAuthStore,
                     premiumClaimFailureStore,
                     resolvedPlayerStore,
+                    delegatedAccessService,
+                    () -> settings.paAccess(),
                     platformLogger
             ));
 
@@ -261,7 +266,8 @@ public final class ProudAuthVelocityPlatform {
             proxyServer.getCommandManager().register(accessCommandMeta, new ProudAccessVelocityCommand(
                     delegatedAccessService,
                     () -> lang,
-                    () -> settings.paAccess().history()
+                    () -> settings.paAccess().history(),
+                    () -> proudAccessAvailable
             ));
 
             CommandMeta monitorCommandMeta = proxyServer.getCommandManager()
@@ -327,6 +333,8 @@ public final class ProudAuthVelocityPlatform {
         identityClaimService.reload(settings.toBackendSettings(settings.database()));
         bridgeService.reload(settings.toBackendSettings(settings.database()));
         lastAutoExportAt = Instant.EPOCH;
+        proudAccessAvailable = validateProudAccessAvailability(updatedBy);
+        warnIfPremiumTargetsEnabled();
 
         if (disconnectInstrumentation != null) {
             disconnectInstrumentation.updateMessages(
@@ -415,12 +423,58 @@ public final class ProudAuthVelocityPlatform {
 
     private void warnIfPremiumTargetsEnabled() {
         if (settings == null
+                || !proudAccessAvailable
                 || !settings.paAccess().premiumTargets().enabled()
                 || !settings.paAccess().premiumTargets().warnOnStartup()) {
             return;
         }
 
         platformLogger.warn("ProudAccess premium-targets is enabled. Delegated access into premium target accounts requires ProudX with player-info-forwarding-mode=\"proudx\" so backend profile-key forwarding can be suppressed only for validated delegated sessions.");
+    }
+
+    private boolean validateProudAccessAvailability(String phase) {
+        if (settings == null || !settings.paAccess().enabled()) {
+            platformLogger.info("ProudAccess disabled by config. phase=" + phase);
+            return false;
+        }
+
+        ProudXRuntime runtime = detectProudXRuntime();
+        if (!runtime.detected()) {
+            platformLogger.error("ProudAccess disabled: ProudX runtime was not detected. "
+                    + "Install/run the ProudX proxy jar and set player-info-forwarding-mode=\"proudx\". "
+                    + "phase=" + phase + " reason=" + runtime.reason(), null);
+            return false;
+        }
+
+        if (!"PROUDX".equalsIgnoreCase(runtime.forwardingMode())) {
+            platformLogger.error("ProudAccess disabled: ProudX is running, but player-info-forwarding-mode is \""
+                    + runtime.forwardingMode()
+                    + "\" instead of \"proudx\". phase="
+                    + phase, null);
+            return false;
+        }
+
+        platformLogger.success("ProudAccess enabled. ProudX runtime detected with player-info-forwarding-mode=\"proudx\".");
+        return true;
+    }
+
+    private ProudXRuntime detectProudXRuntime() {
+        try {
+            Object detected = proxyServer.getClass().getMethod("isProudX").invoke(proxyServer);
+            if (!Boolean.TRUE.equals(detected)) {
+                return new ProudXRuntime(false, "UNKNOWN", "marker_returned_false");
+            }
+
+            Object mode = proxyServer.getClass().getMethod("getProudXPlayerInfoForwardingMode").invoke(proxyServer);
+            return new ProudXRuntime(true, String.valueOf(mode), "ok");
+        } catch (NoSuchMethodException exception) {
+            return new ProudXRuntime(false, "UNKNOWN", "missing_proudx_marker");
+        } catch (ReflectiveOperationException | SecurityException exception) {
+            return new ProudXRuntime(false, "UNKNOWN", exception.getClass().getSimpleName());
+        }
+    }
+
+    private record ProudXRuntime(boolean detected, String forwardingMode, String reason) {
     }
 
     private void watchConfigChanges() {

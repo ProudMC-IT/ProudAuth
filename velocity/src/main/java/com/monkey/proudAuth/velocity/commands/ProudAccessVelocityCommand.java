@@ -28,19 +28,27 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
     private final VelocityDelegatedAccessService delegatedAccessService;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthNetworkConfig.History> historySettingsSupplier;
+    private final Supplier<Boolean> moduleEnabledSupplier;
 
     public ProudAccessVelocityCommand(
             VelocityDelegatedAccessService delegatedAccessService,
             Supplier<VelocityLang> langSupplier,
-            Supplier<ProudAuthNetworkConfig.History> historySettingsSupplier
+            Supplier<ProudAuthNetworkConfig.History> historySettingsSupplier,
+            Supplier<Boolean> moduleEnabledSupplier
     ) {
         this.delegatedAccessService = delegatedAccessService;
         this.langSupplier = langSupplier;
         this.historySettingsSupplier = historySettingsSupplier;
+        this.moduleEnabledSupplier = moduleEnabledSupplier;
     }
 
     @Override
     public void execute(Invocation invocation) {
+        if (!moduleEnabledSupplier.get()) {
+            langSupplier.get().send(invocation.source(), "access-module-disabled");
+            return;
+        }
+
         String[] args = invocation.arguments();
         if (args.length > 0 && "history".equalsIgnoreCase(args[0])) {
             history(invocation);
@@ -92,7 +100,7 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
             switch (result.status()) {
                 case ALLOWED -> send(player, "access-allow-created",
                         Placeholder.unparsed("player", result.delegateUsername()),
-                        Placeholder.unparsed("code", result.code()),
+                        Placeholder.component("code", copyableValue(result.code(), "access-code-hover", true)),
                         Placeholder.unparsed("fingerprint", result.fingerprint()));
                 case OWNER_NOT_AUTHENTICATED -> send(player, "access-owner-auth-required");
                 case OWNER_MISSING -> send(player, "access-owner-not-registered");
@@ -408,6 +416,10 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
 
     @Override
     public List<String> suggest(Invocation invocation) {
+        if (!moduleEnabledSupplier.get()) {
+            return List.of();
+        }
+
         String[] args = invocation.arguments();
         if (args.length <= 1) {
             String token = args.length == 0 ? "" : args[0].toLowerCase(Locale.ROOT);
@@ -444,13 +456,18 @@ public final class ProudAccessVelocityCommand implements SimpleCommand {
 
     private Component copyable(String labelKey, String value, String hoverKey, boolean enabled) {
         VelocityLang lang = langSupplier.get();
+        return lang.rawMessage(labelKey).append(copyableValue(value, hoverKey, enabled));
+    }
+
+    private Component copyableValue(String value, String hoverKey, boolean enabled) {
+        VelocityLang lang = langSupplier.get();
         Component valueComponent = Component.text(value, NamedTextColor.AQUA);
         if (enabled) {
             valueComponent = valueComponent
                     .clickEvent(ClickEvent.copyToClipboard(value))
                     .hoverEvent(HoverEvent.showText(lang.rawMessage(hoverKey)));
         }
-        return lang.rawMessage(labelKey).append(valueComponent);
+        return valueComponent;
     }
 
     private record HistoryRequest(String username, int page, DelegatedAccessHistoryDirection direction, String errorKey) {

@@ -1,12 +1,14 @@
 package com.monkey.proudAuth.velocity.listeners;
 
 import com.monkey.proudAuth.common.bridge.ProxyBridgeService;
+import com.monkey.proudAuth.common.config.ProudAuthNetworkConfig;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
 import com.monkey.proudAuth.common.identity.IdentityClaimService;
 import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.premium.PremiumVerifier;
+import com.monkey.proudAuth.velocity.access.VelocityDelegatedAccessService;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.instrumentation.VelocityOnlineModeDisconnectAdvice;
 import com.monkey.proudAuth.velocity.security.VelocityNetworkGuardService;
@@ -40,6 +42,8 @@ public final class VelocityGameProfileListener {
     private final VelocityPendingPremiumAuthStore pendingPremiumAuthStore;
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
+    private final VelocityDelegatedAccessService delegatedAccessService;
+    private final Supplier<ProudAuthNetworkConfig.PaAccess> paAccessSupplier;
     private final ProudAuthConsoleLogger logger;
 
     public VelocityGameProfileListener(
@@ -53,6 +57,8 @@ public final class VelocityGameProfileListener {
             VelocityPendingPremiumAuthStore pendingPremiumAuthStore,
             VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             VelocityResolvedPlayerStore resolvedPlayerStore,
+            VelocityDelegatedAccessService delegatedAccessService,
+            Supplier<ProudAuthNetworkConfig.PaAccess> paAccessSupplier,
             ProudAuthConsoleLogger logger
     ) {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
@@ -65,6 +71,8 @@ public final class VelocityGameProfileListener {
         this.pendingPremiumAuthStore = pendingPremiumAuthStore;
         this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.resolvedPlayerStore = resolvedPlayerStore;
+        this.delegatedAccessService = delegatedAccessService;
+        this.paAccessSupplier = paAccessSupplier;
         this.logger = logger;
     }
 
@@ -257,6 +265,29 @@ public final class VelocityGameProfileListener {
 
         if (premiumRequiredByWhitelist) {
             whitelistEnforcementStore.forget(username, ipAddress);
+        }
+
+        ProudAuthNetworkConfig.PaAccess paAccess = paAccessSupplier.get();
+        if (paAccess.enabled()) {
+            VelocityDelegatedAccessService.OwnerConflictResult ownerConflict = delegatedAccessService.handleOwnerLogin(
+                    event.getPlayer(),
+                    resolvedPlayer,
+                    paAccess.ownerConflictPolicy(),
+                    langSupplier.get().rawMessage("access-owner-conflict-delegate-restored"),
+                    langSupplier.get().rawMessage("access-owner-conflict-delegate-kicked")
+            );
+            if (ownerConflict.ownerDenied()) {
+                debugEvent(DebugChannel.BRIDGE_FLOW, "access_owner_conflict_owner_denied",
+                        "owner", username,
+                        "delegate", ownerConflict.delegateUsername());
+                event.setResult(ResultedEvent.ComponentResult.denied(
+                        langSupplier.get().message("access-owner-conflict-owner-denied")));
+            } else if (ownerConflict.conflict()) {
+                debugEvent(DebugChannel.BRIDGE_FLOW, "access_owner_conflict_delegate_removed",
+                        "owner", username,
+                        "delegate", ownerConflict.delegateUsername(),
+                        "policy", paAccess.ownerConflictPolicy());
+            }
         }
     }
 
