@@ -78,7 +78,7 @@ public final class ProudAuth extends JavaPlugin {
                     false
             );
             pluginConfig = new PluginConfig(this);
-            StorageProvider bootstrapStorage = new MySQLStorage(pluginConfig.storageBootstrapSettings());
+            StorageProvider bootstrapStorage = new MySQLStorage(pluginConfig.storageBootstrapSettings(), logger);
             bootstrapStorage.init();
             configSyncService = new BukkitNetworkConfigSyncService(
                     this,

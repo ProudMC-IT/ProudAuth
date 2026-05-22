@@ -111,7 +111,7 @@ public final class ProudAuthVelocityPlatform {
             settings = configLoader.settings();
             lang = new VelocityLang(pluginOwner, dataDirectory, platformLogger);
             lang.reload(settings.language());
-            storage = new MySQLStorage(settings.toBackendSettings(settings.database()));
+            storage = new MySQLStorage(settings.toBackendSettings(settings.database()), platformLogger);
             storage.init();
             publishActiveNetworkConfig("velocity-startup");
             premiumVerifier = new MojangPremiumVerifier(settings.toBackendSettings(settings.database()));

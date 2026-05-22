@@ -3,6 +3,7 @@ package com.monkey.proudAuth.common.storage.impl;
 import com.monkey.proudAuth.common.bridge.BridgeJoinMode;
 import com.monkey.proudAuth.common.bridge.ProxyBridgeAssertion;
 import com.monkey.proudAuth.common.config.ProudAuthSettings;
+import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.model.Session;
 import com.monkey.proudAuth.common.storage.*;
@@ -22,10 +23,16 @@ public final class MySQLStorage implements StorageProvider {
 
     private volatile ProudAuthSettings settings;
     private final ExecutorService ioExecutor;
+    private final ProudAuthConsoleLogger logger;
     private volatile HikariDataSource dataSource;
 
     public MySQLStorage(ProudAuthSettings settings) {
+        this(settings, null);
+    }
+
+    public MySQLStorage(ProudAuthSettings settings, ProudAuthConsoleLogger logger) {
         this.settings = settings;
+        this.logger = logger;
         this.ioExecutor = Executors.newFixedThreadPool(
                 Math.max(2, settings.database().poolSize()),
                 new StorageThreadFactory()
@@ -1608,8 +1615,15 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     private void migrateSchema() {
+        long startedAt = System.nanoTime();
+        SchemaMigrationStats stats = new SchemaMigrationStats();
+        ProudAuthSettings.Database database = settings.database();
+        logInfo("MySQL schema migration started. database=" + database.name()
+                + " host=" + database.host()
+                + " port=" + database.port());
         try (Connection connection = connection();
              Statement statement = connection.createStatement()) {
+            SchemaInspector schema = new SchemaInspector(connection, stats);
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_accounts (
                         uuid VARCHAR(36) NOT NULL PRIMARY KEY,
@@ -1624,7 +1638,7 @@ public final class MySQLStorage implements StorageProvider {
                         last_ip VARCHAR(45)
                     )
                     """);
-            statement.executeUpdate("ALTER TABLE pa_accounts ADD COLUMN IF NOT EXISTS totp_flow_always TINYINT(1) NOT NULL DEFAULT 0");
+            ensureColumn(schema, stats, "pa_accounts", "totp_flow_always", "TINYINT(1) NOT NULL DEFAULT 0");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_sessions (
                         token VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -1638,7 +1652,7 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_session_expires (expires_at)
                     )
                     """);
-            statement.executeUpdate("ALTER TABLE pa_sessions ADD COLUMN IF NOT EXISTS account_type ENUM('PREMIUM','CRACKED') NOT NULL DEFAULT 'CRACKED'");
+            ensureColumn(schema, stats, "pa_sessions", "account_type", "ENUM('PREMIUM','CRACKED') NOT NULL DEFAULT 'CRACKED'");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_ip_bans (
                         ip VARCHAR(45) NOT NULL PRIMARY KEY,
@@ -1681,14 +1695,14 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_proxy_assertion_expires (expires_at)
                     )
                     """);
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS join_mode VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER'");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS runtime_uuid VARCHAR(36) NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS target_server VARCHAR(64) NOT NULL DEFAULT ''");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS auth_entry_server VARCHAR(64) NOT NULL DEFAULT ''");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS auth_entry_enforced TINYINT(1) NOT NULL DEFAULT 0");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS post_auth_server VARCHAR(64) NOT NULL DEFAULT ''");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS network_authenticated TINYINT(1) NOT NULL DEFAULT 0");
-            statement.executeUpdate("ALTER TABLE pa_proxy_assertions ADD COLUMN IF NOT EXISTS legacy_client TINYINT(1) NOT NULL DEFAULT 0");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "join_mode", "VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER'");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "runtime_uuid", "VARCHAR(36) NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "target_server", "VARCHAR(64) NOT NULL DEFAULT ''");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "auth_entry_server", "VARCHAR(64) NOT NULL DEFAULT ''");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "auth_entry_enforced", "TINYINT(1) NOT NULL DEFAULT 0");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "post_auth_server", "VARCHAR(64) NOT NULL DEFAULT ''");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "network_authenticated", "TINYINT(1) NOT NULL DEFAULT 0");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "legacy_client", "TINYINT(1) NOT NULL DEFAULT 0");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_backend_join_probes (
                         probe_id VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -1703,7 +1717,7 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_backend_probe_pending (target_server, acknowledged_at, expires_at)
                     )
                     """);
-            statement.executeUpdate("ALTER TABLE pa_backend_join_probes ADD COLUMN IF NOT EXISTS target_server VARCHAR(64) NOT NULL DEFAULT ''");
+            ensureColumn(schema, stats, "pa_backend_join_probes", "target_server", "VARCHAR(64) NOT NULL DEFAULT ''");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_ip_history (
                         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1769,7 +1783,7 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_delegated_delegate (delegate_uuid, active)
                     )
                     """);
-            statement.executeUpdate("ALTER TABLE pa_delegated_access_grants ADD COLUMN IF NOT EXISTS code_plain VARCHAR(16)");
+            ensureColumn(schema, stats, "pa_delegated_access_grants", "code_plain", "VARCHAR(16)");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_delegated_access_history (
                         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1787,31 +1801,200 @@ public final class MySQLStorage implements StorageProvider {
                         INDEX idx_access_history_created (created_at)
                     )
                     """);
-            ensureIndex(connection, "pa_accounts", "idx_accounts_username", "CREATE INDEX idx_accounts_username ON pa_accounts (username)");
-            ensureIndex(connection, "pa_accounts", "idx_accounts_last_login", "CREATE INDEX idx_accounts_last_login ON pa_accounts (last_login_at)");
-            ensureIndex(connection, "pa_ip_bans", "idx_ip_bans_active", "CREATE INDEX idx_ip_bans_active ON pa_ip_bans (expires_at, banned_at, ip)");
+            ensureIndex(schema, stats, "pa_accounts", "idx_accounts_username", "CREATE INDEX idx_accounts_username ON pa_accounts (username)");
+            ensureIndex(schema, stats, "pa_accounts", "idx_accounts_last_login", "CREATE INDEX idx_accounts_last_login ON pa_accounts (last_login_at)");
+            ensureIndex(schema, stats, "pa_ip_bans", "idx_ip_bans_active", "CREATE INDEX idx_ip_bans_active ON pa_ip_bans (expires_at, banned_at, ip)");
             statement.executeUpdate("DELETE FROM pa_sessions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_bans WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_proxy_assertions WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_backend_join_probes WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_pending_identity_claims WHERE expires_at < CURRENT_TIMESTAMP");
             statement.executeUpdate("DELETE FROM pa_ip_history WHERE observed_at < DATE_SUB(CURRENT_TIMESTAMP, INTERVAL 30 DAY)");
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            logInfo("MySQL schema migration completed. createdColumns=" + stats.columnsCreated
+                    + " existingColumns=" + stats.columnsExisting
+                    + " createdIndexes=" + stats.indexesCreated
+                    + " existingIndexes=" + stats.indexesExisting
+                    + " metadataLoads=" + stats.metadataLoads
+                    + " elapsedMs=" + elapsedMs);
         } catch (SQLException exception) {
+            long elapsedMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
+            logError("MySQL schema migration failed after " + elapsedMs + "ms.", exception);
             throw new IllegalStateException("Impossibile inizializzare lo schema MySQL.", exception);
         }
     }
 
-    private void ensureIndex(Connection connection, String tableName, String indexName, String createIndexSql) throws SQLException {
-        DatabaseMetaData metaData = connection.getMetaData();
-        try (ResultSet resultSet = metaData.getIndexInfo(connection.getCatalog(), null, tableName, false, false)) {
-            while (resultSet.next()) {
-                if (indexName.equalsIgnoreCase(resultSet.getString("INDEX_NAME"))) {
-                    return;
+    private void ensureColumn(SchemaInspector schema, SchemaMigrationStats stats, String tableName, String columnName, String definitionSql) throws SQLException {
+        if (schema.hasColumn(tableName, columnName)) {
+            stats.columnsExisting++;
+            logInfo("MySQL schema column already present. table=" + tableName + " column=" + columnName);
+            return;
+        }
+        String sql = "ALTER TABLE " + tableName + " ADD COLUMN " + columnName + " " + definitionSql;
+        logInfo("MySQL schema adding column. table=" + tableName + " column=" + columnName + " definition=" + definitionSql);
+        try (Statement statement = schema.connection().createStatement()) {
+            statement.executeUpdate(sql);
+        }
+        schema.markColumn(tableName, columnName);
+        stats.columnsCreated++;
+        logInfo("MySQL schema column created. table=" + tableName + " column=" + columnName);
+    }
+
+    private void ensureIndex(SchemaInspector schema, SchemaMigrationStats stats, String tableName, String indexName, String createIndexSql) throws SQLException {
+        if (schema.hasIndex(tableName, indexName)) {
+            stats.indexesExisting++;
+            logInfo("MySQL schema index already present. table=" + tableName + " index=" + indexName);
+            return;
+        }
+        logInfo("MySQL schema creating index. table=" + tableName + " index=" + indexName);
+        try (Statement statement = schema.connection().createStatement()) {
+            statement.executeUpdate(createIndexSql);
+        }
+        schema.markIndex(tableName, indexName);
+        stats.indexesCreated++;
+        logInfo("MySQL schema index created. table=" + tableName + " index=" + indexName);
+    }
+
+    private void logInfo(String message) {
+        if (logger != null) {
+            logger.info(message);
+        }
+    }
+
+    private void logError(String message, Throwable throwable) {
+        if (logger != null) {
+            logger.error(message, throwable);
+        }
+    }
+
+    private static final class SchemaMigrationStats {
+        private int columnsCreated;
+        private int columnsExisting;
+        private int indexesCreated;
+        private int indexesExisting;
+        private int metadataLoads;
+    }
+
+    private static final class SchemaInspector {
+        private final Connection connection;
+        private final DatabaseMetaData metaData;
+        private final String catalog;
+        private final SchemaMigrationStats stats;
+        private final java.util.Map<String, java.util.Set<String>> columns = new java.util.HashMap<>();
+        private final java.util.Map<String, java.util.Set<String>> indexes = new java.util.HashMap<>();
+
+        private SchemaInspector(Connection connection, SchemaMigrationStats stats) throws SQLException {
+            this.connection = connection;
+            this.metaData = connection.getMetaData();
+            this.catalog = connection.getCatalog();
+            this.stats = stats;
+        }
+
+        private Connection connection() {
+            return connection;
+        }
+
+        private boolean hasColumn(String tableName, String columnName) throws SQLException {
+            return columns(tableName).contains(normalize(columnName));
+        }
+
+        private void markColumn(String tableName, String columnName) throws SQLException {
+            columns(tableName).add(normalize(columnName));
+        }
+
+        private boolean hasIndex(String tableName, String indexName) throws SQLException {
+            return indexes(tableName).contains(normalize(indexName));
+        }
+
+        private void markIndex(String tableName, String indexName) throws SQLException {
+            indexes(tableName).add(normalize(indexName));
+        }
+
+        private java.util.Set<String> columns(String tableName) throws SQLException {
+            String key = normalize(tableName);
+            java.util.Set<String> cached = columns.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            java.util.Set<String> loaded = new java.util.HashSet<>();
+            loadColumns(tableName, loaded);
+            columns.put(key, loaded);
+            return loaded;
+        }
+
+        private java.util.Set<String> indexes(String tableName) throws SQLException {
+            String key = normalize(tableName);
+            java.util.Set<String> cached = indexes.get(key);
+            if (cached != null) {
+                return cached;
+            }
+            java.util.Set<String> loaded = new java.util.HashSet<>();
+            loadIndexes(tableName, loaded);
+            indexes.put(key, loaded);
+            return loaded;
+        }
+
+        private void loadColumns(String tableName, java.util.Set<String> target) throws SQLException {
+            stats.metadataLoads++;
+            try (ResultSet resultSet = metaData.getColumns(catalog, null, tableName, null)) {
+                while (resultSet.next()) {
+                    target.add(normalize(resultSet.getString("COLUMN_NAME")));
+                }
+            }
+            if (!target.isEmpty()) {
+                return;
+            }
+            try (ResultSet resultSet = metaData.getColumns(catalog, null, tableName.toUpperCase(java.util.Locale.ROOT), null)) {
+                while (resultSet.next()) {
+                    target.add(normalize(resultSet.getString("COLUMN_NAME")));
+                }
+            }
+            if (!target.isEmpty()) {
+                return;
+            }
+            try (ResultSet resultSet = metaData.getColumns(catalog, null, tableName.toLowerCase(java.util.Locale.ROOT), null)) {
+                while (resultSet.next()) {
+                    target.add(normalize(resultSet.getString("COLUMN_NAME")));
                 }
             }
         }
-        try (Statement statement = connection.createStatement()) {
-            statement.executeUpdate(createIndexSql);
+
+        private void loadIndexes(String tableName, java.util.Set<String> target) throws SQLException {
+            stats.metadataLoads++;
+            try (ResultSet resultSet = metaData.getIndexInfo(catalog, null, tableName, false, false)) {
+                while (resultSet.next()) {
+                    String indexName = resultSet.getString("INDEX_NAME");
+                    if (indexName != null) {
+                        target.add(normalize(indexName));
+                    }
+                }
+            }
+            if (!target.isEmpty()) {
+                return;
+            }
+            try (ResultSet resultSet = metaData.getIndexInfo(catalog, null, tableName.toUpperCase(java.util.Locale.ROOT), false, false)) {
+                while (resultSet.next()) {
+                    String indexName = resultSet.getString("INDEX_NAME");
+                    if (indexName != null) {
+                        target.add(normalize(indexName));
+                    }
+                }
+            }
+            if (!target.isEmpty()) {
+                return;
+            }
+            try (ResultSet resultSet = metaData.getIndexInfo(catalog, null, tableName.toLowerCase(java.util.Locale.ROOT), false, false)) {
+                while (resultSet.next()) {
+                    String indexName = resultSet.getString("INDEX_NAME");
+                    if (indexName != null) {
+                        target.add(normalize(indexName));
+                    }
+                }
+            }
+        }
+
+        private String normalize(String value) {
+            return value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
         }
     }
 

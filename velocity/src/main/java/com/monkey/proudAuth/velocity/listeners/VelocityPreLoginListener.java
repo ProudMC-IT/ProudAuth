@@ -23,6 +23,8 @@ import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.network.ProtocolVersion;
 
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 import java.util.function.Supplier;
 
@@ -318,16 +320,8 @@ public final class VelocityPreLoginListener {
             return;
         }
 
-        String authEntryTarget = routingSupplier.get().hasAuthEntryServer() ? routingSupplier.get().authEntryServer() : "";
-        VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, authEntryTarget);
-        debugEvent("prelogin_backend_probe",
-                "player", event.getUsername(),
-                "ip", ipAddress,
-                "target_server", authEntryTarget,
-                "status", probeStatus);
-        if (probeStatus == VelocityBackendJoinProbeService.ProbeStatus.TIMEOUT
-                || probeStatus == VelocityBackendJoinProbeService.ProbeStatus.ERROR) {
-            event.setResult(PreLoginEvent.PreLoginComponentResult.denied(lang.message("kick-backend-unavailable")));
+        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        if (!probeConfiguredBackends(event, ipAddress, routing, lang)) {
             return;
         }
 
@@ -346,6 +340,79 @@ public final class VelocityPreLoginListener {
 
     private void debugEvent(String eventName, Object... keyValues) {
         logger.debugEvent(debuggerSupplier.get(), DebugChannel.IP_BAN_FLOW, eventName, keyValues);
+    }
+
+    private boolean probeConfiguredBackends(
+            PreLoginEvent event,
+            String ipAddress,
+            ProudAuthNetworkConfig.Routing routing,
+            VelocityLang lang
+    ) {
+        List<String> targets = backendProbeTargets(routing);
+        if (targets.isEmpty()) {
+            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, "");
+            debugEvent("prelogin_backend_probe",
+                    "player", event.getUsername(),
+                    "ip", ipAddress,
+                    "target_server", "",
+                    "role", "none",
+                    "status", probeStatus);
+            return true;
+        }
+
+        for (String target : targets) {
+            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, target);
+            debugEvent("prelogin_backend_probe",
+                    "player", event.getUsername(),
+                    "ip", ipAddress,
+                    "target_server", target,
+                    "role", probeRole(target, routing),
+                    "status", probeStatus);
+            if (probeStatus == VelocityBackendJoinProbeService.ProbeStatus.TIMEOUT
+                    || probeStatus == VelocityBackendJoinProbeService.ProbeStatus.ERROR) {
+                event.setResult(PreLoginEvent.PreLoginComponentResult.denied(lang.message("kick-backend-unavailable")));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<String> backendProbeTargets(ProudAuthNetworkConfig.Routing routing) {
+        List<String> uniqueTargets = new ArrayList<>();
+        if (routing.hasAuthEntryServer()) {
+            addProbeTarget(uniqueTargets, routing.authEntryServer());
+        }
+        if (routing.hasPostAuthServer()) {
+            addProbeTarget(uniqueTargets, routing.postAuthServer());
+        }
+        return uniqueTargets;
+    }
+
+    private void addProbeTarget(List<String> targets, String target) {
+        if (target == null || target.isBlank()) {
+            return;
+        }
+        for (String existing : targets) {
+            if (existing.equalsIgnoreCase(target)) {
+                return;
+            }
+        }
+        targets.add(target);
+    }
+
+    private String probeRole(String target, ProudAuthNetworkConfig.Routing routing) {
+        boolean authEntry = routing.hasAuthEntryServer() && routing.authEntryServer().equalsIgnoreCase(target);
+        boolean postAuth = routing.hasPostAuthServer() && routing.postAuthServer().equalsIgnoreCase(target);
+        if (authEntry && postAuth) {
+            return "AUTH_ENTRY_POST_AUTH";
+        }
+        if (authEntry) {
+            return "AUTH_ENTRY";
+        }
+        if (postAuth) {
+            return "POST_AUTH";
+        }
+        return "UNKNOWN";
     }
 
     private String resolveIp(PreLoginEvent event) {
