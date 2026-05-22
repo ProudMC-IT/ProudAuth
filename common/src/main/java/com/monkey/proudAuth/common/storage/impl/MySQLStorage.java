@@ -21,6 +21,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MySQLStorage implements StorageProvider {
 
+    private static final int TRANSIENT_SQL_MAX_ATTEMPTS = 4;
+    private static final long TRANSIENT_SQL_BASE_BACKOFF_MS = 25L;
+
     private volatile ProudAuthSettings settings;
     private final ExecutorService ioExecutor;
     private final ProudAuthConsoleLogger logger;
@@ -824,26 +827,34 @@ public final class MySQLStorage implements StorageProvider {
 
     @Override
     public CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, String serverId, int maxBatchSize) {
-        return supplyAsync(() -> {
+        return supplyAsync(() -> executeWithTransientSqlRetry("backend_probe_ack", () -> {
             int boundedBatchSize = Math.max(1, maxBatchSize);
             String sql = """
-                    UPDATE pa_backend_join_probes
-                    SET acknowledged_at = CURRENT_TIMESTAMP,
-                        responder_id = ?
-                    WHERE acknowledged_at IS NULL
-                      AND expires_at > CURRENT_TIMESTAMP
-                      AND target_server = ?
-                    ORDER BY issued_at ASC
-                    LIMIT ?
+                    UPDATE pa_backend_join_probes AS target
+                    JOIN (
+                        SELECT probe_id
+                        FROM (
+                            SELECT probe_id
+                            FROM pa_backend_join_probes
+                            WHERE acknowledged_at IS NULL
+                              AND expires_at > CURRENT_TIMESTAMP
+                              AND target_server = ?
+                            ORDER BY issued_at ASC
+                            LIMIT ?
+                        ) AS selected_probe_ids
+                    ) AS pending ON pending.probe_id = target.probe_id
+                    SET target.acknowledged_at = CURRENT_TIMESTAMP,
+                        target.responder_id = ?
+                    WHERE target.acknowledged_at IS NULL
                     """;
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, responderId);
-                statement.setString(2, serverId);
-                statement.setInt(3, boundedBatchSize);
+                statement.setString(1, serverId);
+                statement.setInt(2, boundedBatchSize);
+                statement.setString(3, responderId);
                 return statement.executeUpdate();
             }
-        });
+        }));
     }
 
     @Override
@@ -1718,6 +1729,7 @@ public final class MySQLStorage implements StorageProvider {
                     )
                     """);
             ensureColumn(schema, stats, "pa_backend_join_probes", "target_server", "VARCHAR(64) NOT NULL DEFAULT ''");
+            ensureIndex(schema, stats, "pa_backend_join_probes", "idx_backend_probe_ack_scan", "CREATE INDEX idx_backend_probe_ack_scan ON pa_backend_join_probes (target_server, acknowledged_at, issued_at, expires_at)");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_ip_history (
                         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -1855,9 +1867,71 @@ public final class MySQLStorage implements StorageProvider {
         logInfo("MySQL schema index created. table=" + tableName + " index=" + indexName);
     }
 
+    private <T> T executeWithTransientSqlRetry(String operation, SqlSupplier<T> supplier) throws SQLException {
+        SQLException lastException = null;
+        for (int attempt = 1; attempt <= TRANSIENT_SQL_MAX_ATTEMPTS; attempt++) {
+            try {
+                return supplier.get();
+            } catch (SQLException exception) {
+                lastException = exception;
+                if (!isTransientSqlFailure(exception) || attempt >= TRANSIENT_SQL_MAX_ATTEMPTS) {
+                    throw exception;
+                }
+                long backoffMs = TRANSIENT_SQL_BASE_BACKOFF_MS * attempt;
+                logWarn("MySQL transient SQL failure during " + operation
+                        + ". retry=" + attempt
+                        + "/" + (TRANSIENT_SQL_MAX_ATTEMPTS - 1)
+                        + " backoffMs=" + backoffMs
+                        + " sqlState=" + exception.getSQLState()
+                        + " errorCode=" + exception.getErrorCode()
+                        + " message=" + exception.getMessage());
+                sleepBeforeSqlRetry(operation, backoffMs, exception);
+            }
+        }
+        throw lastException == null
+                ? new SQLException("Transient SQL retry failed without captured exception. operation=" + operation)
+                : lastException;
+    }
+
+    private boolean isTransientSqlFailure(SQLException exception) {
+        for (SQLException current = exception; current != null; current = current.getNextException()) {
+            String sqlState = current.getSQLState();
+            int errorCode = current.getErrorCode();
+            String message = current.getMessage();
+            if ("40001".equals(sqlState)
+                    || errorCode == 1213
+                    || errorCode == 1205
+                    || current.getClass().getName().contains("TransactionRollback")
+                    || (message != null && message.toLowerCase(Locale.ROOT).contains("deadlock"))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void sleepBeforeSqlRetry(String operation, long backoffMs, SQLException originalException) throws SQLException {
+        try {
+            Thread.sleep(backoffMs);
+        } catch (InterruptedException interruptedException) {
+            Thread.currentThread().interrupt();
+            SQLException interrupted = new SQLException("Interrupted while retrying transient SQL operation. operation=" + operation,
+                    originalException.getSQLState(),
+                    originalException.getErrorCode());
+            interrupted.initCause(interruptedException);
+            interrupted.setNextException(originalException);
+            throw interrupted;
+        }
+    }
+
     private void logInfo(String message) {
         if (logger != null) {
             logger.info(message);
+        }
+    }
+
+    private void logWarn(String message) {
+        if (logger != null) {
+            logger.warn(message);
         }
     }
 

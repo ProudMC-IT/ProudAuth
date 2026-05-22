@@ -9,7 +9,7 @@ import java.util.function.Supplier;
 
 public final class BackendJoinProbeResponder {
 
-    private static final int DEFAULT_BATCH_SIZE = 250;
+    private static final int DEFAULT_BATCH_SIZE = 32;
     private static final int CLEANUP_FREQUENCY = 120;
 
     private final Supplier<BackendJoinProbeStorage> storageSupplier;
