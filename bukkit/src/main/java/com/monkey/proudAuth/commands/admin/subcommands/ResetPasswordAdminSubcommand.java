@@ -38,6 +38,7 @@ public final class ResetPasswordAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().resetPassword(args[0], args[1]),
                 (updated, exception) -> {
                     if (exception != null) {

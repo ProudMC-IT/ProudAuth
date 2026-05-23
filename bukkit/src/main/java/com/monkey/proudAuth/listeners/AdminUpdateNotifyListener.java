@@ -2,8 +2,8 @@ package com.monkey.proudAuth.listeners;
 
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.update.UpdateCheckResult;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -15,17 +15,20 @@ import java.util.function.Supplier;
 public final class AdminUpdateNotifyListener implements Listener {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final Supplier<Boolean> notifyEnabledSupplier;
     private final Supplier<UpdateCheckResult> updateResultSupplier;
 
     public AdminUpdateNotifyListener(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             Supplier<Boolean> notifyEnabledSupplier,
             Supplier<UpdateCheckResult> updateResultSupplier
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.notifyEnabledSupplier = notifyEnabledSupplier;
         this.updateResultSupplier = updateResultSupplier;
@@ -45,7 +48,7 @@ public final class AdminUpdateNotifyListener implements Listener {
             return;
         }
 
-        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        schedulerCoordinator.runPlayerLater(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

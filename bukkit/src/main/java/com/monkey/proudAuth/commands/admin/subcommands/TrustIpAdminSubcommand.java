@@ -45,6 +45,7 @@ public final class TrustIpAdminSubcommand implements AdminSubcommand {
             String username = args[1].trim();
             AdminCommandSupport.handleFuture(
                     context.plugin(),
+                    context.schedulerCoordinator(),
                     context.storage().deleteTrustedIp(username),
                     (removed, exception) -> {
                         if (exception != null) {
@@ -77,6 +78,7 @@ public final class TrustIpAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().setTrustedIp(username, ipAddress),
                 (ignored, exception) -> {
                     if (exception != null) {

@@ -47,15 +47,18 @@ public final class ForceLogoutAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().logout(target.getUniqueId()),
                 (ignored, exception) -> {
                     if (exception != null) {
                         context.langConfig().send(sender, "error-generic");
                         return;
                     }
-                    context.playerProtection().applyProtection(target);
-                    context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.WAITING_LOGIN);
-                    context.networkSyncService().notifyAuthInvalidated(target);
+                    context.schedulerCoordinator().runPlayer(target, () -> {
+                        context.playerProtection().applyProtection(target);
+                        context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.WAITING_LOGIN);
+                        context.networkSyncService().notifyAuthInvalidated(target);
+                    });
                     context.langConfig().send(sender, "admin-force-logout", Placeholder.unparsed("player", target.getName()));
                 }
         );

@@ -31,6 +31,7 @@ public final class StatsAdminSubcommand implements AdminSubcommand {
         }
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().fetchStats(),
                 (stats, exception) -> {
                     if (exception != null) {

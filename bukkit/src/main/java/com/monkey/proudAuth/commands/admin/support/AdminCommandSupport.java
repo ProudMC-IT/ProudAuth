@@ -2,6 +2,7 @@ package com.monkey.proudAuth.commands.admin.support;
 
 import com.monkey.proudAuth.common.storage.StorageProvider;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.Bukkit;
@@ -177,8 +178,8 @@ public final class AdminCommandSupport {
         }
     }
 
-    public static <T> void handleFuture(JavaPlugin plugin, CompletableFuture<T> future, BiConsumer<T, Throwable> consumer) {
-        future.whenComplete((result, throwable) -> Bukkit.getScheduler().runTask(plugin, () -> consumer.accept(result, throwable)));
+    public static <T> void handleFuture(JavaPlugin plugin, SchedulerCoordinator schedulerCoordinator, CompletableFuture<T> future, BiConsumer<T, Throwable> consumer) {
+        future.whenComplete((result, throwable) -> schedulerCoordinator.runSync(() -> consumer.accept(result, throwable)));
     }
 
     private static List<String> awaitSuggestions(CompletableFuture<List<String>> future) {

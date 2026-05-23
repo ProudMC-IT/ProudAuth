@@ -14,6 +14,7 @@ import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -31,6 +32,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
 
     public ProudAuthAdminCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             PluginConfig pluginConfig,
             LangConfig langConfig,
             AuthService authService,
@@ -46,6 +48,7 @@ public final class ProudAuthAdminCommand implements CommandExecutor, TabComplete
         this.langConfig = langConfig;
         AdminCommandContext context = new AdminCommandContext(
                 plugin,
+                schedulerCoordinator,
                 pluginConfig,
                 langConfig,
                 authService,

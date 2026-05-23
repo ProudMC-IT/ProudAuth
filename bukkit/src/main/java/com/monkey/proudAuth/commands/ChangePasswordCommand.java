@@ -2,8 +2,8 @@ package com.monkey.proudAuth.commands;
 
 import com.monkey.proudAuth.common.auth.AuthService;
 import com.monkey.proudAuth.config.LangConfig;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -16,11 +16,13 @@ import java.util.List;
 public final class ChangePasswordCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final AuthService authService;
 
-    public ChangePasswordCommand(JavaPlugin plugin, LangConfig langConfig, AuthService authService) {
+    public ChangePasswordCommand(JavaPlugin plugin, SchedulerCoordinator schedulerCoordinator, LangConfig langConfig, AuthService authService) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.authService = authService;
     }
@@ -44,7 +46,7 @@ public final class ChangePasswordCommand implements CommandExecutor, TabComplete
             return true;
         }
 
-        authService.changePassword(player.getUniqueId(), player.getName(), args[0], args[1], args[2]).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.changePassword(player.getUniqueId(), player.getName(), args[0], args[1], args[2]).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

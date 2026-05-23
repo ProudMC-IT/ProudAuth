@@ -5,6 +5,7 @@ import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.Component;
 import net.kyori.adventure.text.event.ClickEvent;
 import net.kyori.adventure.text.event.HoverEvent;
@@ -12,7 +13,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.minimessage.tag.resolver.Formatter;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -30,6 +30,7 @@ import java.util.Locale;
 public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
@@ -37,12 +38,14 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
 
     public TwoFactorCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             AuthService authService,
             PlayerProtection playerProtection,
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
@@ -104,7 +107,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.initTotpSetup(player.getUniqueId(), player.getName()).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.initTotpSetup(player.getUniqueId(), player.getName()).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -146,7 +149,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.confirmTotpSetup(player.getUniqueId(), args[1]).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.confirmTotpSetup(player.getUniqueId(), args[1]).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -182,7 +185,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.disableTotp(player.getUniqueId(), args[1]).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.disableTotp(player.getUniqueId(), args[1]).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -214,7 +217,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.updateTotpFlow(player.getUniqueId(), player.getName(), alwaysRequired).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.updateTotpFlow(player.getUniqueId(), player.getName(), alwaysRequired).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -241,7 +244,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.fetchTotpFlow(player.getUniqueId(), player.getName()).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.fetchTotpFlow(player.getUniqueId(), player.getName()).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }
@@ -272,7 +275,7 @@ public final class TwoFactorCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.submitTotp(player.getUniqueId(), player.getName(), code).whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.submitTotp(player.getUniqueId(), player.getName(), code).whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

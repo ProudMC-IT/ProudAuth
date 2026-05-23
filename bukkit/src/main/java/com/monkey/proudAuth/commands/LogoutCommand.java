@@ -5,7 +5,7 @@ import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
-import org.bukkit.Bukkit;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,6 +18,7 @@ import java.util.List;
 public final class LogoutCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
@@ -25,12 +26,14 @@ public final class LogoutCommand implements CommandExecutor, TabCompleter {
 
     public LogoutCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             AuthService authService,
             PlayerProtection playerProtection,
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
@@ -56,7 +59,7 @@ public final class LogoutCommand implements CommandExecutor, TabCompleter {
             return true;
         }
 
-        authService.logout(player.getUniqueId()).whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+        authService.logout(player.getUniqueId()).whenComplete((ignored, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

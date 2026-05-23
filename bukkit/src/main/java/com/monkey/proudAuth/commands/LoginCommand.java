@@ -7,8 +7,8 @@ import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -24,6 +24,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
     private static final Object PREMIUM_RECONNECT_REQUIRED = new Object();
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final AuthService authService;
     private final PlayerProtection playerProtection;
@@ -32,6 +33,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
 
     public LoginCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             AuthService authService,
             PlayerProtection playerProtection,
@@ -39,6 +41,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.authService = authService;
         this.playerProtection = playerProtection;
@@ -94,7 +97,7 @@ public final class LoginCommand implements CommandExecutor, TabCompleter {
                     return authService.login(player.getUniqueId(), player.getName(), ipAddress, args[0])
                             .thenApply(result -> (Object) result);
                 })
-                .whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

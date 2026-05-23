@@ -40,6 +40,7 @@ public final class HistoryAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().listRecentHistoryByUsername(username, limit),
                 (historyEntries, exception) -> {
                     if (exception != null) {

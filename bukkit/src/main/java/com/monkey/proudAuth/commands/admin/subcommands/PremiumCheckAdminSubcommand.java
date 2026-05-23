@@ -43,6 +43,7 @@ public final class PremiumCheckAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.premiumVerifier().verify(args[0]),
                 (result, exception) -> {
                     if (exception != null) {

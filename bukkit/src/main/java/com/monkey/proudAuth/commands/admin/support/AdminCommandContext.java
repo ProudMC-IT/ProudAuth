@@ -10,10 +10,12 @@ import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public record AdminCommandContext(
         JavaPlugin plugin,
+        SchedulerCoordinator schedulerCoordinator,
         PluginConfig pluginConfig,
         LangConfig langConfig,
         AuthService authService,

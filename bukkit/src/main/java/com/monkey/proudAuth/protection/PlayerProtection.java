@@ -4,12 +4,13 @@ import com.monkey.proudAuth.common.logging.DebugChannel;
 import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
+import com.monkey.proudAuth.wrapper.ScheduledTaskHandle;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Locale;
 import java.util.Map;
@@ -21,17 +22,19 @@ import java.util.stream.Collectors;
 public final class PlayerProtection {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final Set<UUID> protectedPlayers;
     private final Set<UUID> claimChoicePlayers;
-    private final Map<UUID, BukkitTask> timeoutTasks;
+    private final Map<UUID, ScheduledTaskHandle> timeoutTasks;
     private final Map<UUID, MovementStateSnapshot> movementStateSnapshots;
     private final Map<UUID, VisualEffectSnapshot> visualEffectSnapshots;
     private volatile PluginConfig pluginConfig;
     private volatile LangConfig langConfig;
     private final ProudAuthConsoleLogger logger;
 
-    public PlayerProtection(JavaPlugin plugin, PluginConfig pluginConfig, LangConfig langConfig, ProudAuthConsoleLogger logger) {
+    public PlayerProtection(JavaPlugin plugin, SchedulerCoordinator schedulerCoordinator, PluginConfig pluginConfig, LangConfig langConfig, ProudAuthConsoleLogger logger) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
         this.logger = logger;
@@ -82,7 +85,7 @@ public final class PlayerProtection {
     public void removeProtection(Player player) {
         boolean wasProtected = protectedPlayers.remove(player.getUniqueId());
         claimChoicePlayers.remove(player.getUniqueId());
-        BukkitTask timeoutTask = timeoutTasks.remove(player.getUniqueId());
+        ScheduledTaskHandle timeoutTask = timeoutTasks.remove(player.getUniqueId());
         MovementStateSnapshot movementStateSnapshot = movementStateSnapshots.remove(player.getUniqueId());
         VisualEffectSnapshot visualEffectSnapshot = visualEffectSnapshots.remove(player.getUniqueId());
         if (timeoutTask != null) {
@@ -230,13 +233,13 @@ public final class PlayerProtection {
     }
 
     private void scheduleAuthTimeout(Player player) {
-        BukkitTask previousTask = timeoutTasks.remove(player.getUniqueId());
+        ScheduledTaskHandle previousTask = timeoutTasks.remove(player.getUniqueId());
         if (previousTask != null) {
             previousTask.cancel();
         }
 
         long timeoutTicks = Math.max(20L, pluginConfig.settings().protection().authTimeoutSeconds() * 20L);
-        BukkitTask task = Bukkit.getScheduler().runTaskLater(plugin, () -> {
+        ScheduledTaskHandle task = schedulerCoordinator.runPlayerLater(player, () -> {
             if (!player.isOnline() || !isProtected(player.getUniqueId())) {
                 return;
             }

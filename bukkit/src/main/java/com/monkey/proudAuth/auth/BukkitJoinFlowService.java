@@ -13,8 +13,8 @@ import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -23,6 +23,7 @@ import java.util.concurrent.CompletableFuture;
 public final class BukkitJoinFlowService {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final PluginConfig pluginConfig;
     private final LangConfig langConfig;
     private final AuthService authService;
@@ -34,6 +35,7 @@ public final class BukkitJoinFlowService {
 
     public BukkitJoinFlowService(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             PluginConfig pluginConfig,
             LangConfig langConfig,
             AuthService authService,
@@ -44,6 +46,7 @@ public final class BukkitJoinFlowService {
             ProudAuthConsoleLogger logger
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
         this.authService = authService;
@@ -83,7 +86,7 @@ public final class BukkitJoinFlowService {
 
         if (identityClaimService.isLocalClaimModeEnabled()) {
             identityClaimService.snapshot(player.getName(), resolvedLogin.ipAddress())
-                    .whenComplete((claimSnapshot, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                    .whenComplete((claimSnapshot, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                         if (!player.isOnline()) {
                             return;
                         }
@@ -128,7 +131,7 @@ public final class BukkitJoinFlowService {
 
     private void beginAutomaticCrackedClaim(Player player, ResolvedLogin resolvedLogin) {
         identityClaimService.beginPendingClaim(player.getName(), AccountType.CRACKED, resolvedLogin.ipAddress())
-                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((ignored, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
@@ -157,7 +160,7 @@ public final class BukkitJoinFlowService {
                         AuthState.AUTHENTICATED,
                         resolvedLogin.ipAddress()
                 )
-                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((ignored, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
@@ -202,7 +205,7 @@ public final class BukkitJoinFlowService {
                 "player", player.getName(),
                 "uuid", player.getUniqueId());
         authService.autoAuthenticate(player.getUniqueId(), player.getName(), resolvedLogin.accountType(), AuthState.AUTHENTICATED, ipAddress(player))
-                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((ignored, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
@@ -235,7 +238,7 @@ public final class BukkitJoinFlowService {
                         AuthState.PREMIUM_AUTO,
                         resolvedLogin.ipAddress()
                 )
-                .whenComplete((ignored, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((ignored, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }
@@ -263,7 +266,7 @@ public final class BukkitJoinFlowService {
                         return;
                     }
 
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> {
+                    schedulerCoordinator.runPlayerLater(player, () -> {
                         if (!player.isOnline()) {
                             return;
                         }
@@ -322,7 +325,7 @@ public final class BukkitJoinFlowService {
                                 return outcome;
                             });
                 })
-                .whenComplete((outcome, exception) -> Bukkit.getScheduler().runTask(plugin, () -> completeProtectedJoin(player, outcome, exception)));
+                .whenComplete((outcome, exception) -> schedulerCoordinator.runPlayer(player, () -> completeProtectedJoin(player, outcome, exception)));
     }
 
     private CompletableFuture<JoinOutcome> resolveManualAuthOutcome(String username) {

@@ -70,6 +70,7 @@ public final class DebugAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 CompletableFuture.allOf(accountFuture, localClaimFuture, pendingClaimFuture, sessionsFuture, trustedIpFuture),
                 (ignored, exception) -> {
                     if (exception != null) {

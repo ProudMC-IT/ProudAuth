@@ -46,6 +46,7 @@ public final class BanIpAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.bruteForceGuard().banIp(args[0], seconds, "Ban manuale admin"),
                 (ignored, exception) -> {
                     if (exception != null) {

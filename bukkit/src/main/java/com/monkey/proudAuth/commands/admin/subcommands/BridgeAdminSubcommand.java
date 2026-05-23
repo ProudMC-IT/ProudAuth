@@ -40,6 +40,7 @@ public final class BridgeAdminSubcommand implements AdminSubcommand {
         String username = args[1];
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().findLatestProxyAssertionByUsername(username),
                 (optionalAssertion, exception) -> {
                     if (exception != null) {

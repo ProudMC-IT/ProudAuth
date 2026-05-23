@@ -57,6 +57,7 @@ public final class WipePlayerAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 accountFuture.thenCompose(optionalAccount -> wipeStoredState(username, optionalAccount, onlinePlayer)),
                 (result, exception) -> {
                     if (exception != null) {
@@ -65,10 +66,12 @@ public final class WipePlayerAdminSubcommand implements AdminSubcommand {
                     }
 
                     if (result.onlinePlayer() != null) {
-                        context.playerProtection().applyProtection(result.onlinePlayer());
-                        context.networkSyncService().notifyMonitorState(result.onlinePlayer(), ProudAuthMonitorState.WAITING_LOGIN);
-                        context.networkSyncService().notifyAuthInvalidated(result.onlinePlayer());
-                        result.onlinePlayer().kick(WIPE_KICK_MESSAGE);
+                        context.schedulerCoordinator().runPlayer(result.onlinePlayer(), () -> {
+                            context.playerProtection().applyProtection(result.onlinePlayer());
+                            context.networkSyncService().notifyMonitorState(result.onlinePlayer(), ProudAuthMonitorState.WAITING_LOGIN);
+                            context.networkSyncService().notifyAuthInvalidated(result.onlinePlayer());
+                            result.onlinePlayer().kick(WIPE_KICK_MESSAGE);
+                        });
                     }
 
                     AdminCommandSupport.sendMini(sender,

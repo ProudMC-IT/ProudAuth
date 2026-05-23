@@ -66,6 +66,7 @@ public final class AuthInfoAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 CompletableFuture.allOf(accountFuture, localClaimFuture, effectiveClaimFuture, pendingClaimFuture,
                         trustedIpFuture, whitelistFuture, sessionsFuture),
                 (ignored, exception) -> {

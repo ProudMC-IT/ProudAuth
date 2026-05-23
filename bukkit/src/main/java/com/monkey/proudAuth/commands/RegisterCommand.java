@@ -6,8 +6,8 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import net.kyori.adventure.text.minimessage.tag.resolver.Placeholder;
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -20,6 +20,7 @@ import java.util.List;
 public final class RegisterCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final AuthService authService;
     private final IdentityClaimService identityClaimService;
@@ -29,12 +30,14 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
 
     public RegisterCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             AuthService authService,
             IdentityClaimService identityClaimService,
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.authService = authService;
         this.identityClaimService = identityClaimService;
@@ -88,7 +91,7 @@ public final class RegisterCommand implements CommandExecutor, TabCompleter {
                     return authService.register(player.getUniqueId(), player.getName(), accountType, ipAddress, args[0], args[1])
                             .thenApply(result -> (Object) result);
                 })
-                .whenComplete((result, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((result, exception) -> schedulerCoordinator.runPlayer(player, () -> {
             if (!player.isOnline()) {
                 return;
             }

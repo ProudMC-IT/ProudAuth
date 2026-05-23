@@ -69,6 +69,7 @@ public final class ClaimAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 CompletableFuture.allOf(localClaimFuture, effectiveClaimFuture, pendingClaimFuture, accountFuture),
                 (ignored, exception) -> {
                     if (exception != null) {
@@ -118,6 +119,7 @@ public final class ClaimAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().saveIdentityClaim(username, claimType, null, Instant.now())
                         .thenCompose(ignored -> context.identityClaimService().clearPendingClaim(username))
                         .thenCompose(ignored -> context.authService().findAccountByUsername(username))
@@ -157,6 +159,7 @@ public final class ClaimAdminSubcommand implements AdminSubcommand {
         String username = args[1];
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().findAccountByUsername(username).thenCompose(optionalAccount ->
                         context.storage().deleteIdentityClaim(username)
                                 .thenCompose(ignored -> context.identityClaimService().clearPendingClaim(username))
@@ -189,6 +192,7 @@ public final class ClaimAdminSubcommand implements AdminSubcommand {
         String username = args[2];
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.identityClaimService().clearPendingClaim(username),
                 (ignored, exception) -> {
                     if (exception != null) {

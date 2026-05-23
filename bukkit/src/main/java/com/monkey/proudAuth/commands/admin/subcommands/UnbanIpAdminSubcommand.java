@@ -42,6 +42,7 @@ public final class UnbanIpAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.bruteForceGuard().unbanIp(args[0]),
                 (ignored, exception) -> {
                     if (exception != null) {

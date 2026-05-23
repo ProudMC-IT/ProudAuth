@@ -6,7 +6,7 @@ import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.config.PluginConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
-import org.bukkit.Bukkit;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -19,6 +19,7 @@ import java.util.List;
 public final class PremiumClaimCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final PluginConfig pluginConfig;
     private final LangConfig langConfig;
     private final IdentityClaimService identityClaimService;
@@ -27,6 +28,7 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
 
     public PremiumClaimCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             PluginConfig pluginConfig,
             LangConfig langConfig,
             IdentityClaimService identityClaimService,
@@ -34,6 +36,7 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.pluginConfig = pluginConfig;
         this.langConfig = langConfig;
         this.identityClaimService = identityClaimService;
@@ -80,7 +83,7 @@ public final class PremiumClaimCommand implements CommandExecutor, TabCompleter 
                             });
                 })
                 .exceptionally(exception -> "ERROR")
-                .thenAccept(state -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .thenAccept(state -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }

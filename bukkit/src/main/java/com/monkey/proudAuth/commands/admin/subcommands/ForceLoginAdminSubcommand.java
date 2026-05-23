@@ -54,15 +54,18 @@ public final class ForceLoginAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().autoAuthenticate(target.getUniqueId(), target.getName(), accountType, AuthState.AUTHENTICATED, ip),
                 (ignored, exception) -> {
                     if (exception != null) {
                         context.langConfig().send(sender, "error-generic");
                         return;
                     }
-                    context.playerProtection().removeProtection(target);
-                    context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.AUTHENTICATED);
-                    context.networkSyncService().notifyAuthCompleted(target);
+                    context.schedulerCoordinator().runPlayer(target, () -> {
+                        context.playerProtection().removeProtection(target);
+                        context.networkSyncService().notifyMonitorState(target, ProudAuthMonitorState.AUTHENTICATED);
+                        context.networkSyncService().notifyAuthCompleted(target);
+                    });
                     context.langConfig().send(sender, "admin-force-login",
                             net.kyori.adventure.text.minimessage.tag.resolver.Placeholder.unparsed("player", target.getName()));
                 }

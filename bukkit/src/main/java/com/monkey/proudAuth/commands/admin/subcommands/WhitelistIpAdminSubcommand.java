@@ -63,6 +63,7 @@ public final class WhitelistIpAdminSubcommand implements AdminSubcommand {
         }
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().addPremiumIpWhitelist(username, ip),
                 (ignored, exception) -> {
                     if (exception != null) {
@@ -86,6 +87,7 @@ public final class WhitelistIpAdminSubcommand implements AdminSubcommand {
         String ip = args[2].trim();
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().removePremiumIpWhitelist(username, ip),
                 (removed, exception) -> {
                     if (exception != null) {
@@ -114,6 +116,7 @@ public final class WhitelistIpAdminSubcommand implements AdminSubcommand {
         String username = args[1];
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().listPremiumIpWhitelist(username),
                 (ips, exception) -> {
                     if (exception != null) {
@@ -140,6 +143,7 @@ public final class WhitelistIpAdminSubcommand implements AdminSubcommand {
         String username = args[1];
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().clearPremiumIpWhitelist(username),
                 (removedCount, exception) -> {
                     if (exception != null) {

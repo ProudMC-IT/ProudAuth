@@ -8,7 +8,7 @@ import com.monkey.proudAuth.common.logging.ProudAuthConsoleLogger;
 import com.monkey.proudAuth.common.monitor.ProudAuthMonitorState;
 import com.monkey.proudAuth.common.network.ProudAuthNetworkChannel;
 import com.monkey.proudAuth.config.PluginConfig;
-import org.bukkit.Bukkit;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -25,16 +25,19 @@ public final class BackendNetworkSyncService {
     private static final long AUTH_COMPLETED_RETRY_INTERVAL_TICKS = 5L;
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final PluginConfig pluginConfig;
     private final ProudAuthConsoleLogger logger;
     private final Map<UUID, JoinContext> contexts = new ConcurrentHashMap<>();
 
     public BackendNetworkSyncService(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             PluginConfig pluginConfig,
             ProudAuthConsoleLogger logger
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.pluginConfig = pluginConfig;
         this.logger = logger;
     }
@@ -129,7 +132,7 @@ public final class BackendNetworkSyncService {
         for (int attempt = 0; attempt < safeAttempts; attempt++) {
             long delay = safeIntervalTicks * attempt;
             int currentAttempt = attempt + 1;
-            Bukkit.getScheduler().runTaskLater(plugin, () -> send(player, messageType, currentAttempt, safeAttempts), delay);
+            schedulerCoordinator.runPlayerLater(player, () -> send(player, messageType, currentAttempt, safeAttempts), delay);
         }
     }
 

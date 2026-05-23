@@ -5,7 +5,7 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.config.LangConfig;
 import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
-import org.bukkit.Bukkit;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.CommandSender;
@@ -18,6 +18,7 @@ import java.util.List;
 public final class SpCommand implements CommandExecutor, TabCompleter {
 
     private final JavaPlugin plugin;
+    private final SchedulerCoordinator schedulerCoordinator;
     private final LangConfig langConfig;
     private final IdentityClaimService identityClaimService;
     private final PlayerProtection playerProtection;
@@ -25,12 +26,14 @@ public final class SpCommand implements CommandExecutor, TabCompleter {
 
     public SpCommand(
             JavaPlugin plugin,
+            SchedulerCoordinator schedulerCoordinator,
             LangConfig langConfig,
             IdentityClaimService identityClaimService,
             PlayerProtection playerProtection,
             BackendNetworkSyncService networkSyncService
     ) {
         this.plugin = plugin;
+        this.schedulerCoordinator = schedulerCoordinator;
         this.langConfig = langConfig;
         this.identityClaimService = identityClaimService;
         this.playerProtection = playerProtection;
@@ -65,7 +68,7 @@ public final class SpCommand implements CommandExecutor, TabCompleter {
                     return identityClaimService.beginPendingClaim(player.getName(), AccountType.CRACKED, ipAddress)
                             .thenApply(ignored -> snapshot);
                 })
-                .whenComplete((snapshot, exception) -> Bukkit.getScheduler().runTask(plugin, () -> {
+                .whenComplete((snapshot, exception) -> schedulerCoordinator.runPlayer(player, () -> {
                     if (!player.isOnline()) {
                         return;
                     }

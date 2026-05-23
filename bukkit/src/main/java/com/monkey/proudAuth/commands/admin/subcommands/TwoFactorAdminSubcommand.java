@@ -52,6 +52,7 @@ public final class TwoFactorAdminSubcommand implements AdminSubcommand {
     private boolean handleStatus(CommandSender sender, String username) {
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().findAccountByUsername(username),
                 (optionalAccount, exception) -> {
                     if (exception != null) {
@@ -78,6 +79,7 @@ public final class TwoFactorAdminSubcommand implements AdminSubcommand {
     private boolean handleReset(CommandSender sender, String username) {
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().findAccountByUsername(username)
                         .thenCompose(optionalAccount -> optionalAccount.isEmpty()
                                 ? CompletableFuture.completedFuture(Optional.<AccountRecord>empty())

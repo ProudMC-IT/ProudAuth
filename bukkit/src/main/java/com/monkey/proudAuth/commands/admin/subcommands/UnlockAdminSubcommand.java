@@ -45,6 +45,7 @@ public final class UnlockAdminSubcommand implements AdminSubcommand {
 
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 accountFuture.thenCompose(optionalAccount -> {
                     String ipAddress = onlinePlayer != null
                             ? AdminCommandSupport.ipOf(onlinePlayer)

@@ -22,12 +22,13 @@ import com.monkey.proudAuth.network.BackendNetworkSyncService;
 import com.monkey.proudAuth.protection.PlayerProtection;
 import com.monkey.proudAuth.update.SpigotUpdateChecker;
 import com.monkey.proudAuth.update.UpdateCheckResult;
+import com.monkey.proudAuth.wrapper.ScheduledTaskHandle;
+import com.monkey.proudAuth.wrapper.SchedulerCoordinator;
 import org.bstats.bukkit.Metrics;
 import org.bstats.charts.SimplePie;
 import org.bukkit.Bukkit;
 import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
-import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Objects;
 import java.util.logging.Level;
@@ -47,12 +48,13 @@ public final class ProudAuth extends JavaPlugin {
     private PluginConfig pluginConfig;
     private LangConfig langConfig;
     private ProudAuthRuntime runtime;
+    private SchedulerCoordinator schedulerCoordinator;
     private BukkitNetworkConfigSyncService configSyncService;
     private IdentityClaimService identityClaimService;
     private PlayerProtection playerProtection;
     private PlayerPreLoginListener playerPreLoginListener;
-    private BukkitTask cleanupTask;
-    private BukkitTask backendJoinProbeTask;
+    private ScheduledTaskHandle cleanupTask;
+    private ScheduledTaskHandle backendJoinProbeTask;
     private ProudAuthConsoleLogger logger;
     private BackendNetworkSyncService networkSyncService;
     private SpigotUpdateChecker spigotUpdateChecker;
@@ -77,11 +79,13 @@ public final class ProudAuth extends JavaPlugin {
                     },
                     false
             );
+            schedulerCoordinator = new SchedulerCoordinator(this);
             pluginConfig = new PluginConfig(this);
             StorageProvider bootstrapStorage = new MySQLStorage(pluginConfig.storageBootstrapSettings(), logger);
             bootstrapStorage.init();
             configSyncService = new BukkitNetworkConfigSyncService(
                     this,
+                    schedulerCoordinator,
                     pluginConfig,
                     () -> runtime != null ? runtime.storage() : bootstrapStorage,
                     logger
@@ -90,10 +94,10 @@ public final class ProudAuth extends JavaPlugin {
             langConfig = new LangConfig(this, pluginConfig, logger);
             runtime = bootstrap.boot(PlatformType.BUKKIT, pluginConfig.settings(), bootstrapStorage);
             identityClaimService = new IdentityClaimService(runtime.storage(), pluginConfig.settings());
-            playerProtection = new PlayerProtection(this, pluginConfig, langConfig, logger);
-            networkSyncService = new BackendNetworkSyncService(this, pluginConfig, logger);
+            playerProtection = new PlayerProtection(this, schedulerCoordinator, pluginConfig, langConfig, logger);
+            networkSyncService = new BackendNetworkSyncService(this, schedulerCoordinator, pluginConfig, logger);
             networkSyncService.registerChannels();
-            spigotUpdateChecker = new SpigotUpdateChecker(task -> Bukkit.getScheduler().runTaskAsynchronously(this, task));
+            spigotUpdateChecker = new SpigotUpdateChecker(task -> schedulerCoordinator.runAsync(task));
             latestUpdateCheckResult = UpdateCheckResult.notChecked(getPluginMeta().getVersion(), spigotResourceId());
 
             logger.banner(
@@ -185,8 +189,7 @@ public final class ProudAuth extends JavaPlugin {
         }
 
         long intervalTicks = 20L * 60L * 30L;
-        cleanupTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
-                this,
+        cleanupTask = schedulerCoordinator.runAsyncRepeating(
                 () -> {
                     runtime.sessionManager().cleanupExpired().exceptionally(exception -> 0).join();
                     runtime.storage().deleteExpiredProxyAssertions().exceptionally(exception -> 0).join();
@@ -216,8 +219,7 @@ public final class ProudAuth extends JavaPlugin {
                 pluginConfig.serverId()
         );
 
-        backendJoinProbeTask = Bukkit.getScheduler().runTaskTimerAsynchronously(
-                this,
+        backendJoinProbeTask = schedulerCoordinator.runAsyncRepeating(
                 responder::poll,
                 1L,
                 2L
@@ -240,6 +242,7 @@ public final class ProudAuth extends JavaPlugin {
 
         BukkitJoinFlowService joinFlowService = new BukkitJoinFlowService(
                 this,
+                schedulerCoordinator,
                 pluginConfig,
                 langConfig,
                 runtime.authService(),
@@ -267,13 +270,14 @@ public final class ProudAuth extends JavaPlugin {
         if (pluginConfig.settings().debugger().isEnabled(DebugChannel.TELEPORT_AUDIT)) {
             getServer().getPluginManager().registerEvents(new PlayerTeleportDebugListener(pluginConfig, playerProtection, logger), this);
         }
-        getServer().getPluginManager().registerEvents(new PlayerChatListener(this, playerProtection, runtime.authService(), langConfig), this);
+        getServer().getPluginManager().registerEvents(new PlayerChatListener(this, schedulerCoordinator, playerProtection, runtime.authService(), langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerCommandPreprocessListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerInteractListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerActionBlockListener(playerProtection, langConfig), this);
         getServer().getPluginManager().registerEvents(new PlayerDeathListener(playerProtection), this);
         getServer().getPluginManager().registerEvents(new AdminUpdateNotifyListener(
                 this,
+                schedulerCoordinator,
                 langConfig,
                 this::notifyAdminOnJoinEnabled,
                 this::latestUpdateCheckResult
@@ -281,14 +285,15 @@ public final class ProudAuth extends JavaPlugin {
     }
 
     private void registerCommands() {
-        LoginCommand loginCommand = new LoginCommand(this, langConfig, runtime.authService(), playerProtection, identityClaimService, networkSyncService);
-        RegisterCommand registerCommand = new RegisterCommand(this, langConfig, runtime.authService(), identityClaimService, networkSyncService);
-        ChangePasswordCommand changePasswordCommand = new ChangePasswordCommand(this, langConfig, runtime.authService());
-        LogoutCommand logoutCommand = new LogoutCommand(this, langConfig, runtime.authService(), playerProtection, networkSyncService);
-        TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, langConfig, runtime.authService(), playerProtection, networkSyncService);
-        SpCommand spCommand = new SpCommand(this, langConfig, identityClaimService, playerProtection, networkSyncService);
+        LoginCommand loginCommand = new LoginCommand(this, schedulerCoordinator, langConfig, runtime.authService(), playerProtection, identityClaimService, networkSyncService);
+        RegisterCommand registerCommand = new RegisterCommand(this, schedulerCoordinator, langConfig, runtime.authService(), identityClaimService, networkSyncService);
+        ChangePasswordCommand changePasswordCommand = new ChangePasswordCommand(this, schedulerCoordinator, langConfig, runtime.authService());
+        LogoutCommand logoutCommand = new LogoutCommand(this, schedulerCoordinator, langConfig, runtime.authService(), playerProtection, networkSyncService);
+        TwoFactorCommand twoFactorCommand = new TwoFactorCommand(this, schedulerCoordinator, langConfig, runtime.authService(), playerProtection, networkSyncService);
+        SpCommand spCommand = new SpCommand(this, schedulerCoordinator, langConfig, identityClaimService, playerProtection, networkSyncService);
         PremiumClaimCommand premiumClaimCommand = new PremiumClaimCommand(
                 this,
+                schedulerCoordinator,
                 pluginConfig,
                 langConfig,
                 identityClaimService,
@@ -313,6 +318,7 @@ public final class ProudAuth extends JavaPlugin {
 
         ProudAuthAdminCommand adminCommand = new ProudAuthAdminCommand(
                 this,
+                schedulerCoordinator,
                 pluginConfig,
                 langConfig,
                 runtime.authService(),

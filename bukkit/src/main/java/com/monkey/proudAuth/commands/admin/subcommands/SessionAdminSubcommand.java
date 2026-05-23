@@ -54,6 +54,7 @@ public final class SessionAdminSubcommand implements AdminSubcommand {
     private boolean handleList(CommandSender sender, String username) {
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().findAccountByUsername(username)
                         .thenCompose(optionalAccount -> optionalAccount.isEmpty()
                                 ? CompletableFuture.completedFuture(List.<Session>of())
@@ -85,6 +86,7 @@ public final class SessionAdminSubcommand implements AdminSubcommand {
     private boolean handleClear(CommandSender sender, String username) {
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.authService().findAccountByUsername(username)
                         .thenCompose(optionalAccount -> optionalAccount.isEmpty()
                                 ? CompletableFuture.completedFuture(Optional.<AccountRecord>empty())
@@ -114,6 +116,7 @@ public final class SessionAdminSubcommand implements AdminSubcommand {
         }
         AdminCommandSupport.handleFuture(
                 context.plugin(),
+                context.schedulerCoordinator(),
                 context.storage().deleteSessionsByIp(ipAddress),
                 (removedCount, exception) -> {
                     if (exception != null) {
