@@ -10,7 +10,6 @@ import com.monkey.proudAuth.common.model.AccountType;
 import com.monkey.proudAuth.velocity.config.VelocityLang;
 import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
-import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.event.player.ServerConnectedEvent;
@@ -68,7 +67,7 @@ public final class VelocityServerTransitionListener {
     }
 
     @SuppressWarnings("deprecation")
-    @Subscribe(order = PostOrder.FIRST)
+    @Subscribe(priority = 0)
     public void onServerPreConnect(ServerPreConnectEvent event) {
         String ipAddress = ipAddress(event.getPlayer());
         String previousServer = event.getPreviousServer() == null

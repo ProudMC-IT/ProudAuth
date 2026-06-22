@@ -17,7 +17,6 @@ import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
 import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
 import com.velocitypowered.api.event.EventTask;
-import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.PreLoginEvent;
 import com.velocitypowered.api.network.ProtocolVersion;
@@ -78,7 +77,7 @@ public final class VelocityPreLoginListener {
     }
 
     @SuppressWarnings("deprecation")
-    @Subscribe(order = PostOrder.FIRST)
+    @Subscribe(priority = 0)
     public EventTask onPreLogin(PreLoginEvent event) {
         return EventTask.async(() -> handlePreLogin(event));
     }

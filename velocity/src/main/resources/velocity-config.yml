@@ -10,46 +10,37 @@
 # - proxy-local.region-id
 # - proxy-local.node-id
 #
-# These are read only by this proxy instance and are NOT published to the shared DB.
+# These values are used only by this proxy process.
+# They are not shared with the database or copied to other proxies.
 #
-# How routing now works:
-# - legacy mode:
+# Routing model:
+# - Legacy single-region:
 #   leave proxy-local.region-id empty
-#   leave regions.enabled=false
-#   ProudAuth uses the single global routing block below
+#   keep regions.enabled=false
+#   configure only the global routing block below
 #
-# - region-aware mode:
-#   set proxy-local.region-id on each proxy, for example "eu" or "na"
+# - Multi-region:
+#   set proxy-local.region-id on every proxy, for example "eu" or "na"
 #   set regions.enabled=true
-#   fill regions.entries.<region>.*
-#   ProudAuth will use the routing block that matches the local proxy region
+#   add one entry per region that this proxy must be able to use
 #
-# Example legacy setup:
-#   one proxy, one auth backend, one post-auth backend
-#   proxy-local.region-id: ""
-#   regions.enabled: false
-#   routing.auth-entry.server: "auth"
-#   routing.post-auth.server: "lobby"
+# Important rule:
+# - the proxy reads only the region whose id matches proxy-local.region-id
+# - if proxy-eu must also reach na servers manually, keep entries.na in proxy-eu too
+# - if proxy-eu will never touch na, you can omit entries.na from proxy-eu
 #
-# Example region-aware setup:
-#   proxy EU:
-#     proxy-local.region-id: "eu"
-#   proxy NA:
-#     proxy-local.region-id: "na"
-#
-#   backend ids can be duplicated logically across regions only if the actual
-#   Velocity server names stay unique. Recommended names:
-#   - auth-eu
-#   - lobby-eu
-#   - auth-na
-#   - lobby-na
-#
-#   Then configure:
+# Concrete example:
+# - proxy-eu:
+#   proxy-local.region-id: "eu"
 #   regions.enabled: true
-#   regions.entries.eu.auth-entry.server: "auth-eu"
-#   regions.entries.eu.post-auth.server: "lobby-eu"
-#   regions.entries.na.auth-entry.server: "auth-na"
-#   regions.entries.na.post-auth.server: "lobby-na"
+#   entries.eu -> EU auth/lobby
+#   entries.na -> optional, only if EU proxy must also route to NA
+#
+# - proxy-na:
+#   proxy-local.region-id: "na"
+#   regions.enabled: true
+#   entries.na -> NA auth/lobby
+#   entries.eu -> optional, only if NA proxy must also route to EU
 
 # Language file loaded by the proxy and propagated to all backends.
 # Examples: "it", "en", "it.yml", "en.yml"
@@ -75,21 +66,23 @@ config-sync:
   file-watch-interval-seconds: 2
 
 proxy-local:
-  # Optional local region id for this proxy instance.
-  # Leave empty to use legacy single-region behavior.
+  # Optional region id for this proxy instance.
+  # This must match one key under regions.entries.
   #
   # Examples:
-  # - ""   -> legacy single routing
+  # - ""   -> legacy single routing, ignores regions.entries
   # - "eu" -> this proxy uses regions.entries.eu
   # - "na" -> this proxy uses regions.entries.na
   region-id: ""
 
-  # Optional local node id used for diagnostics/source tagging.
-  # Leave empty to auto-fallback to "velocity-proxy".
+  # Optional stable node id used for logs, bridge records, and diagnostics.
+  # Pick any unique name you want, but keep it stable over time.
+  # If empty, ProudAuth falls back to "velocity-proxy".
   #
   # Examples:
   # - "proxy-eu-1"
   # - "proxy-na-1"
+  # - "eu-main"
   node-id: ""
 
 # Internal debug channels.
@@ -369,34 +362,40 @@ routing:
     legacy-redirect-delay-ms: 150
 
 regions:
-  # If false, ProudAuth uses the legacy global routing block above.
+  # If false, ProudAuth ignores the per-region entries below and uses the global routing block above.
+  # Turn this on when you want one proxy config file to serve multiple regional layouts.
   enabled: false
 
-  # Optional per-region routing overrides.
-  # Each entry mirrors the same structure used by the global routing block.
+  # Per-region routing overrides.
+  # Each key here must match a proxy-local.region-id value.
   #
-  # Concrete example:
-  # - EU proxy with proxy-local.region-id="eu" uses entries.eu
-  # - NA proxy with proxy-local.region-id="na" uses entries.na
+  # Keep only the regions that this proxy actually needs to know about.
+  # Add a region block if the proxy must route directly to that region's auth/lobby servers.
   #
-  # Suggested naming:
+  # Naming tip:
   # - auth-eu, lobby-eu
   # - auth-na, lobby-na
   entries:
     eu:
       auth-entry:
+        # EU auth backend. Enable it if EU players should enter auth-eu first.
         enabled: false
         server: "auth-eu"
+        # Protected means manual /server or /send into this auth backend is blocked
+        # unless ProudAuth itself requested that transfer.
         protected: false
       authenticated-join:
+        # Controls where already-verified premium joins go in this region.
         mode: ALWAYS_PASS_AUTH
       post-auth:
+        # Final destination after authentication for this region.
         enabled: false
         server: "lobby-eu"
         redirect-delay-ms: 0
         legacy-redirect-delay-ms: 150
     na:
       auth-entry:
+        # NA auth backend. Remove this whole block if proxy-eu must never touch NA.
         enabled: false
         server: "auth-na"
         protected: false

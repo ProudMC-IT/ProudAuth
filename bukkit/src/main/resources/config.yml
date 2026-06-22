@@ -32,6 +32,7 @@
 # Important:
 # - server-id must match the exact Velocity registered server name
 # - region-id must match the proxy-local.region-id used by the proxy that routes to this backend
+# - if you run two regions, each backend should declare the region it belongs to
 
 database:
   host: "localhost"
@@ -53,6 +54,7 @@ network:
 
   # Optional local region id for this backend instance.
   # Leave empty to use legacy single-region behavior.
+  # Set it to the same value used by the proxy-local.region-id that routes here.
   #
   # Examples:
   # - ""

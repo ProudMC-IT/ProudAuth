@@ -16,7 +16,6 @@ import com.monkey.proudAuth.velocity.session.VelocityPendingPremiumAuthStore;
 import com.monkey.proudAuth.velocity.session.VelocityPremiumClaimFailureStore;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
 import com.monkey.proudAuth.velocity.session.VelocityWhitelistEnforcementStore;
-import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.ResultedEvent;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
@@ -77,7 +76,7 @@ public final class VelocityGameProfileListener {
     }
 
     @SuppressWarnings("deprecation")
-    @Subscribe(order = PostOrder.FIRST)
+    @Subscribe(priority = 0)
     public void onGameProfileRequest(GameProfileRequestEvent event) {
         GameProfile currentProfile = event.getGameProfile();
         String ipAddress = resolveIp(event.getConnection());
@@ -231,7 +230,7 @@ public final class VelocityGameProfileListener {
     }
 
     @SuppressWarnings("deprecation")
-    @Subscribe(order = PostOrder.FIRST)
+    @Subscribe(priority = 0)
     public void onLogin(LoginEvent event) {
         String username = event.getPlayer().getUsername();
         String ipAddress = resolveIp(event.getPlayer());

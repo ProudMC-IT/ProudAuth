@@ -6,7 +6,6 @@ import com.monkey.proudAuth.common.premium.PremiumVerifier;
 import com.monkey.proudAuth.common.storage.*;
 import com.monkey.proudAuth.common.util.HashUtil;
 import com.monkey.proudAuth.velocity.session.VelocityResolvedPlayerStore;
-import com.velocitypowered.api.event.PostOrder;
 import com.velocitypowered.api.event.Subscribe;
 import com.velocitypowered.api.event.connection.DisconnectEvent;
 import com.velocitypowered.api.proxy.Player;
@@ -368,7 +367,7 @@ public final class VelocityDelegatedAccessService {
                 });
     }
 
-    @Subscribe(order = PostOrder.FIRST)
+    @Subscribe(priority = 0)
     public void onDisconnect(DisconnectEvent event) {
         VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayerStore.find(event.getPlayer().getUsername()).orElse(null);
         if (profile == null || !profile.isImpersonating()) {
