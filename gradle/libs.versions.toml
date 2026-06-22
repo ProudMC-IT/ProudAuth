@@ -1,19 +1,19 @@
 [versions]
-shadow = "9.4.1"
+shadow = "9.4.2"
 bstatsBukkit = "3.2.1"
 jetbrainsAnnotations = "26.1.0"
-paperApi = "1.21.1-R0.1-SNAPSHOT"
+paperApi = "1.21.11-R0.1-SNAPSHOT"
 velocityApi = "3.5.0-SNAPSHOT"
-hikari = "7.0.2"
+hikari = "7.1.0"
 jbcrypt = "0.4"
 totp = "1.7.1"
 mysql = "9.7.0"
 snakeyaml = "2.6"
-byteBuddy = "1.18.8"
-commonsCodec = "1.13"
-zxing = "3.4.0"
-jcommander = "1.72"
-protobuf = "4.31.1"
+byteBuddy = "1.18.10"
+commonsCodec = "1.22.0"
+zxing = "3.5.4"
+jcommander = "1.82"
+protobuf = "4.35.1"
 
 [libraries]
 bstatsBukkit = { module = "org.bstats:bstats-bukkit", version.ref = "bstatsBukkit" }
