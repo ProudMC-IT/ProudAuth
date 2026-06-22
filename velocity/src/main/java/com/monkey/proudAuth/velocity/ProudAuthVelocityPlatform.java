@@ -181,7 +181,8 @@ public final class ProudAuthVelocityPlatform {
                     () -> storage,
                     () -> premiumVerifier,
                     resolvedPlayerStore,
-                    () -> settings.proxy().routing(),
+                    this::resolvedRouting,
+                    this::proxyRegionId,
                     () -> settings.paAccess().premiumTargets()
             );
             proxyServer.getEventManager().register(pluginOwner, delegatedAccessService);
@@ -194,7 +195,8 @@ public final class ProudAuthVelocityPlatform {
                     () -> lang,
                     () -> settings.toBackendSettings(settings.database()),
                     () -> settings.debugger(),
-                    () -> settings.proxy().routing(),
+                    this::resolvedRouting,
+                    this::proxyRegionId,
                     backendJoinProbeService,
                     networkGuardService,
                     whitelistEnforcementStore,
@@ -225,7 +227,9 @@ public final class ProudAuthVelocityPlatform {
                     resolvedPlayerStore,
                     premiumClaimFailureStore,
                     () -> bridgeService,
-                    () -> settings.proxy().routing(),
+                    this::resolvedRouting,
+                    this::proxyRegionId,
+                    this::proxyNodeId,
                     () -> lang,
                     () -> settings.debugger(),
                     platformLogger
@@ -235,7 +239,7 @@ public final class ProudAuthVelocityPlatform {
                     pluginOwner,
                     proxyServer,
                     resolvedPlayerStore,
-                    () -> settings.proxy().routing(),
+                    this::resolvedRouting,
                     () -> lang,
                     () -> settings.debugger(),
                     platformLogger,
@@ -371,7 +375,7 @@ public final class ProudAuthVelocityPlatform {
     private void publishActiveNetworkConfig(String updatedBy) {
         String document = networkConfigCodec.dump(settings, lang.exportMessages());
         String configHash = sha256(document);
-        var snapshot = storage.saveActiveNetworkConfig(document, configHash, updatedBy, "velocity-proxy").join();
+        var snapshot = storage.saveActiveNetworkConfig(document, configHash, updatedBy, proxyNodeId()).join();
 
         debugEvent(DebugChannel.COMMAND_FLOW, "network_config_published",
                 "version", snapshot.version(),
@@ -386,6 +390,21 @@ public final class ProudAuthVelocityPlatform {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("SHA-256 non disponibile", exception);
         }
+    }
+
+    private ProudAuthNetworkConfig.Routing resolvedRouting() {
+        return settings.proxy().routingForRegion(proxyRegionId());
+    }
+
+    private String proxyRegionId() {
+        return configLoader == null ? "" : configLoader.proxyRegionId();
+    }
+
+    private String proxyNodeId() {
+        if (configLoader == null || configLoader.proxyNodeId().isBlank()) {
+            return "velocity-proxy";
+        }
+        return configLoader.proxyNodeId();
     }
 
     private void withRuntimeContext(Runnable runnable) {

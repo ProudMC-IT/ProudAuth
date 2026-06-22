@@ -1,5 +1,8 @@
 package com.monkey.proudAuth.common.config;
 
+import java.util.Locale;
+import java.util.Map;
+
 public record ProudAuthNetworkConfig(
         String language,
         LanguageBundle languageBundle,
@@ -92,9 +95,19 @@ public record ProudAuthNetworkConfig(
             String claimFailedDeniedMessage,
             BridgeBackendCheck bridgeBackendCheck,
             Routing routing,
+            Regions regions,
             Guards guards,
             Reports reports
     ) {
+        public Routing routingForRegion(String regionId) {
+            if (regions != null && regions.enabled()) {
+                Routing regionalRouting = regions.routing(regionId).orElse(null);
+                if (regionalRouting != null) {
+                    return regionalRouting;
+                }
+            }
+            return routing;
+        }
     }
 
     public record BridgeBackendCheck(
@@ -125,6 +138,22 @@ public record ProudAuthNetworkConfig(
         public boolean shouldDirectAuthenticatedJoinsToPostAuth() {
             return authenticatedJoinRoutingMode == AuthenticatedJoinRoutingMode.DIRECT_TO_POST_AUTH
                     && hasPostAuthServer();
+        }
+    }
+
+    public record Regions(
+            boolean enabled,
+            Map<String, Routing> entries
+    ) {
+        public Regions {
+            entries = entries == null ? Map.of() : Map.copyOf(entries);
+        }
+
+        public java.util.Optional<Routing> routing(String regionId) {
+            if (!enabled || regionId == null || regionId.isBlank()) {
+                return java.util.Optional.empty();
+            }
+            return java.util.Optional.ofNullable(entries.get(regionId.trim().toLowerCase(Locale.ROOT)));
         }
     }
 

@@ -215,7 +215,8 @@ public final class ProudAuth extends JavaPlugin {
                 () -> runtime.storage(),
                 () -> pluginConfig.settings().debugger(),
                 logger,
-                pluginConfig.serverId(),
+                pluginConfig.regionId().isBlank() ? pluginConfig.serverId() : pluginConfig.regionId() + ":" + pluginConfig.serverId(),
+                pluginConfig.regionId(),
                 pluginConfig.serverId()
         );
 

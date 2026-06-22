@@ -33,6 +33,8 @@ public final class ProxyBridgeService {
             UUID uuid,
             AccountType accountType,
             String ipAddress,
+            String regionId,
+            String proxyNodeId,
             BridgeJoinMode joinMode,
             String targetServer,
             String authEntryServer,
@@ -48,6 +50,8 @@ public final class ProxyBridgeService {
                 uuid,
                 accountType,
                 ipAddress,
+                regionId,
+                proxyNodeId,
                 joinMode,
                 targetServer,
                 authEntryServer,
@@ -65,6 +69,8 @@ public final class ProxyBridgeService {
             UUID runtimeUuid,
             AccountType accountType,
             String ipAddress,
+            String regionId,
+            String proxyNodeId,
             BridgeJoinMode joinMode,
             String targetServer,
             String authEntryServer,
@@ -86,6 +92,8 @@ public final class ProxyBridgeService {
                 runtimeUuid == null ? uuid : runtimeUuid,
                 accountType,
                 ipAddress,
+                normalizeRegionId(regionId),
+                normalizeNodeId(proxyNodeId),
                 joinMode,
                 normalizeServerName(targetServer),
                 normalizeServerName(authEntryServer),
@@ -106,6 +114,7 @@ public final class ProxyBridgeService {
             String username,
             UUID currentUuid,
             String ipAddress,
+            String currentRegionId,
             String currentServerId
     ) {
         if (!settings.bridge().enabled()) {
@@ -119,7 +128,7 @@ public final class ProxyBridgeService {
         }
 
         String canonicalUsername = canonicalUsername(username);
-        return storage.findLatestProxyAssertion(canonicalUsername, ipAddress)
+        return storage.findLatestProxyAssertion(canonicalUsername, ipAddress, normalizeRegionId(currentRegionId))
                 .thenCompose(optionalAssertion -> {
                     if (optionalAssertion.isEmpty()) {
                         return CompletableFuture.completedFuture(new VerificationResult(VerificationStatus.MISSING, Optional.empty()));
@@ -133,6 +142,7 @@ public final class ProxyBridgeService {
                                     canonicalUsername,
                                     currentUuid,
                                     ipAddress,
+                                    normalizeRegionId(currentRegionId),
                                     normalizeServerName(currentServerId),
                                     assertion
                             ));
@@ -155,6 +165,7 @@ public final class ProxyBridgeService {
             String canonicalUsername,
             UUID currentUuid,
             String ipAddress,
+            String currentRegionId,
             String currentServerId,
             ProxyBridgeAssertion assertion
     ) {
@@ -165,6 +176,9 @@ public final class ProxyBridgeService {
         }
         if (!assertion.ipAddress().equals(ipAddress)) {
             return new VerificationResult(VerificationStatus.INVALID_IP, Optional.empty());
+        }
+        if (!assertion.regionId().equalsIgnoreCase(currentRegionId)) {
+            return new VerificationResult(VerificationStatus.INVALID_REGION, Optional.empty());
         }
         if (!assertion.targetServer().isBlank()
                 && currentServerId != null
@@ -213,6 +227,8 @@ public final class ProxyBridgeService {
                 assertion.runtimeUuid().toString(),
                 assertion.accountType().name(),
                 assertion.ipAddress(),
+                assertion.regionId(),
+                assertion.proxyNodeId(),
                 assertion.joinMode().name(),
                 assertion.targetServer(),
                 assertion.authEntryServer(),
@@ -234,6 +250,22 @@ public final class ProxyBridgeService {
         return trimmed.isEmpty() ? "" : trimmed;
     }
 
+    private static String normalizeRegionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(Locale.ROOT);
+    }
+
+    private static String normalizeNodeId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
+    }
+
     public enum VerificationStatus {
         DISABLED,
         UNSUPPORTED_TRANSPORT,
@@ -242,6 +274,7 @@ public final class ProxyBridgeService {
         EXPIRED,
         INVALID_USERNAME,
         INVALID_IP,
+        INVALID_REGION,
         INVALID_TARGET_SERVER,
         INVALID_UUID,
         INVALID_SIGNATURE,

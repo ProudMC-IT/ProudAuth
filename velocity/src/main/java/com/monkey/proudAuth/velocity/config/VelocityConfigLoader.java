@@ -24,6 +24,8 @@ public final class VelocityConfigLoader {
     private volatile ProudAuthNetworkConfig settings;
     private volatile long lastModifiedMillis;
     private volatile int fileWatchIntervalSeconds;
+    private volatile String proxyRegionId;
+    private volatile String proxyNodeId;
 
     public VelocityConfigLoader(Object plugin, Path dataDirectory) {
         this.plugin = plugin;
@@ -44,6 +46,8 @@ public final class VelocityConfigLoader {
             throw new IllegalStateException("Impossibile leggere " + configPath, exception);
         }
         this.fileWatchIntervalSeconds = Math.max(1, integer(root, "config-sync.file-watch-interval-seconds", 2));
+        this.proxyRegionId = string(root, "proxy-local.region-id", "");
+        this.proxyNodeId = string(root, "proxy-local.node-id", "");
     }
 
     public ProudAuthNetworkConfig settings() {
@@ -64,6 +68,14 @@ public final class VelocityConfigLoader {
 
     public Path configPath() {
         return configPath;
+    }
+
+    public String proxyRegionId() {
+        return proxyRegionId == null ? "" : proxyRegionId.trim();
+    }
+
+    public String proxyNodeId() {
+        return proxyNodeId == null ? "" : proxyNodeId.trim();
     }
 
     private void ensureDefaults() {
@@ -120,5 +132,10 @@ public final class VelocityConfigLoader {
     private int integer(Map<String, Object> root, String path, int fallback) {
         Object value = get(root, path);
         return value instanceof Number number ? number.intValue() : fallback;
+    }
+
+    private String string(Map<String, Object> root, String path, String fallback) {
+        Object value = get(root, path);
+        return value == null ? fallback : String.valueOf(value);
     }
 }

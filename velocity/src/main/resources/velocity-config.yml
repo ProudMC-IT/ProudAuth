@@ -5,6 +5,51 @@
 # automatically pulls and applies the same config in near real time.
 #
 # Backend-local config.yml files now only keep database/bootstrap information.
+#
+# Local-only proxy settings:
+# - proxy-local.region-id
+# - proxy-local.node-id
+#
+# These are read only by this proxy instance and are NOT published to the shared DB.
+#
+# How routing now works:
+# - legacy mode:
+#   leave proxy-local.region-id empty
+#   leave regions.enabled=false
+#   ProudAuth uses the single global routing block below
+#
+# - region-aware mode:
+#   set proxy-local.region-id on each proxy, for example "eu" or "na"
+#   set regions.enabled=true
+#   fill regions.entries.<region>.*
+#   ProudAuth will use the routing block that matches the local proxy region
+#
+# Example legacy setup:
+#   one proxy, one auth backend, one post-auth backend
+#   proxy-local.region-id: ""
+#   regions.enabled: false
+#   routing.auth-entry.server: "auth"
+#   routing.post-auth.server: "lobby"
+#
+# Example region-aware setup:
+#   proxy EU:
+#     proxy-local.region-id: "eu"
+#   proxy NA:
+#     proxy-local.region-id: "na"
+#
+#   backend ids can be duplicated logically across regions only if the actual
+#   Velocity server names stay unique. Recommended names:
+#   - auth-eu
+#   - lobby-eu
+#   - auth-na
+#   - lobby-na
+#
+#   Then configure:
+#   regions.enabled: true
+#   regions.entries.eu.auth-entry.server: "auth-eu"
+#   regions.entries.eu.post-auth.server: "lobby-eu"
+#   regions.entries.na.auth-entry.server: "auth-na"
+#   regions.entries.na.post-auth.server: "lobby-na"
 
 # Language file loaded by the proxy and propagated to all backends.
 # Examples: "it", "en", "it.yml", "en.yml"
@@ -28,6 +73,24 @@ config-sync:
   # How often the proxy checks whether this file changed on disk.
   # If it changed, ProudAuth reloads the proxy config and republishes it to the DB.
   file-watch-interval-seconds: 2
+
+proxy-local:
+  # Optional local region id for this proxy instance.
+  # Leave empty to use legacy single-region behavior.
+  #
+  # Examples:
+  # - ""   -> legacy single routing
+  # - "eu" -> this proxy uses regions.entries.eu
+  # - "na" -> this proxy uses regions.entries.na
+  region-id: ""
+
+  # Optional local node id used for diagnostics/source tagging.
+  # Leave empty to auto-fallback to "velocity-proxy".
+  #
+  # Examples:
+  # - "proxy-eu-1"
+  # - "proxy-na-1"
+  node-id: ""
 
 # Internal debug channels.
 # Keep enabled=false in production unless you are actively investigating behavior.
@@ -253,6 +316,14 @@ bridge:
     poll-interval-ms: 100
 
 routing:
+  # Global legacy routing block.
+  # Used when:
+  # - regions.enabled = false
+  # - or proxy-local.region-id is empty
+  #
+  # Concrete example:
+  # auth-entry.server: "auth"
+  # post-auth.server: "lobby"
   auth-entry:
     # If true, every player first enters this backend before accessing the network.
     # This includes:
@@ -296,6 +367,46 @@ routing:
     # Extra-safe redirect delay for legacy clients (< 1.19.1).
     # Older clients are more sensitive to immediate backend switches right after auth.
     legacy-redirect-delay-ms: 150
+
+regions:
+  # If false, ProudAuth uses the legacy global routing block above.
+  enabled: false
+
+  # Optional per-region routing overrides.
+  # Each entry mirrors the same structure used by the global routing block.
+  #
+  # Concrete example:
+  # - EU proxy with proxy-local.region-id="eu" uses entries.eu
+  # - NA proxy with proxy-local.region-id="na" uses entries.na
+  #
+  # Suggested naming:
+  # - auth-eu, lobby-eu
+  # - auth-na, lobby-na
+  entries:
+    eu:
+      auth-entry:
+        enabled: false
+        server: "auth-eu"
+        protected: false
+      authenticated-join:
+        mode: ALWAYS_PASS_AUTH
+      post-auth:
+        enabled: false
+        server: "lobby-eu"
+        redirect-delay-ms: 0
+        legacy-redirect-delay-ms: 150
+    na:
+      auth-entry:
+        enabled: false
+        server: "auth-na"
+        protected: false
+      authenticated-join:
+        mode: ALWAYS_PASS_AUTH
+      post-auth:
+        enabled: false
+        server: "lobby-na"
+        redirect-delay-ms: 0
+        legacy-redirect-delay-ms: 150
 
 paaccess:
   # Enables the ProudAccess delegated account access module.

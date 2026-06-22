@@ -772,6 +772,7 @@ public final class MySQLStorage implements StorageProvider {
             String probeId,
             String username,
             String ipAddress,
+            String targetRegion,
             String targetServer,
             Instant issuedAt,
             Instant expiresAt
@@ -779,11 +780,12 @@ public final class MySQLStorage implements StorageProvider {
         return runAsync(() -> {
             String sql = """
                     INSERT INTO pa_backend_join_probes
-                    (probe_id, username, ip, target_server, issued_at, expires_at, acknowledged_at, responder_id)
-                    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)
+                    (probe_id, username, ip, target_region, target_server, issued_at, expires_at, acknowledged_at, responder_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         ip = VALUES(ip),
+                        target_region = VALUES(target_region),
                         target_server = VALUES(target_server),
                         issued_at = VALUES(issued_at),
                         expires_at = VALUES(expires_at),
@@ -795,9 +797,10 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(1, probeId);
                 statement.setString(2, username);
                 statement.setString(3, ipAddress);
-                statement.setString(4, targetServer);
-                statement.setTimestamp(5, Timestamp.from(issuedAt));
-                statement.setTimestamp(6, Timestamp.from(expiresAt));
+                statement.setString(4, normalizeRegionId(targetRegion));
+                statement.setString(5, targetServer);
+                statement.setTimestamp(6, Timestamp.from(issuedAt));
+                statement.setTimestamp(7, Timestamp.from(expiresAt));
                 statement.executeUpdate();
             }
         });
@@ -826,7 +829,7 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
-    public CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, String serverId, int maxBatchSize) {
+    public CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, String regionId, String serverId, int maxBatchSize) {
         return supplyAsync(() -> executeWithTransientSqlRetry("backend_probe_ack", () -> {
             int boundedBatchSize = Math.max(1, maxBatchSize);
             String sql = """
@@ -838,6 +841,7 @@ public final class MySQLStorage implements StorageProvider {
                             FROM pa_backend_join_probes
                             WHERE acknowledged_at IS NULL
                               AND expires_at > CURRENT_TIMESTAMP
+                              AND target_region = ?
                               AND target_server = ?
                             ORDER BY issued_at ASC
                             LIMIT ?
@@ -849,9 +853,10 @@ public final class MySQLStorage implements StorageProvider {
                     """;
             try (Connection connection = connection();
                  PreparedStatement statement = connection.prepareStatement(sql)) {
-                statement.setString(1, serverId);
-                statement.setInt(2, boundedBatchSize);
-                statement.setString(3, responderId);
+                statement.setString(1, normalizeRegionId(regionId));
+                statement.setString(2, serverId);
+                statement.setInt(3, boundedBatchSize);
+                statement.setString(4, responderId);
                 return statement.executeUpdate();
             }
         }));
@@ -1045,12 +1050,12 @@ public final class MySQLStorage implements StorageProvider {
         return runAsync(() -> {
             String deleteSql = """
                     DELETE FROM pa_proxy_assertions
-                    WHERE username = ? AND ip = ?
+                    WHERE username = ? AND ip = ? AND region_id = ?
                     """;
             String insertSql = """
                     INSERT INTO pa_proxy_assertions
-                    (nonce, username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, signature)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (nonce, username, resolved_name, uuid, runtime_uuid, account_type, ip, region_id, proxy_node_id, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, signature)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE
                         username = VALUES(username),
                         resolved_name = VALUES(resolved_name),
@@ -1058,6 +1063,8 @@ public final class MySQLStorage implements StorageProvider {
                         runtime_uuid = VALUES(runtime_uuid),
                         account_type = VALUES(account_type),
                         ip = VALUES(ip),
+                        region_id = VALUES(region_id),
+                        proxy_node_id = VALUES(proxy_node_id),
                         join_mode = VALUES(join_mode),
                         target_server = VALUES(target_server),
                         auth_entry_server = VALUES(auth_entry_server),
@@ -1073,6 +1080,7 @@ public final class MySQLStorage implements StorageProvider {
                 try (PreparedStatement deleteStatement = connection.prepareStatement(deleteSql)) {
                     deleteStatement.setString(1, assertion.username());
                     deleteStatement.setString(2, assertion.ipAddress());
+                    deleteStatement.setString(3, normalizeRegionId(assertion.regionId()));
                     deleteStatement.executeUpdate();
                 }
                 try (PreparedStatement insertStatement = connection.prepareStatement(insertSql)) {
@@ -1083,16 +1091,18 @@ public final class MySQLStorage implements StorageProvider {
                     insertStatement.setString(5, assertion.runtimeUuid().toString());
                     insertStatement.setString(6, assertion.accountType().name());
                     insertStatement.setString(7, assertion.ipAddress());
-                    insertStatement.setString(8, assertion.joinMode().name());
-                    insertStatement.setString(9, assertion.targetServer());
-                    insertStatement.setString(10, assertion.authEntryServer());
-                    insertStatement.setBoolean(11, assertion.authEntryEnforced());
-                    insertStatement.setString(12, assertion.postAuthServer());
-                    insertStatement.setBoolean(13, assertion.networkAuthenticated());
-                    insertStatement.setBoolean(14, assertion.legacyClient());
-                    insertStatement.setTimestamp(15, Timestamp.from(assertion.issuedAt()));
-                    insertStatement.setTimestamp(16, Timestamp.from(assertion.expiresAt()));
-                    insertStatement.setString(17, assertion.signature());
+                    insertStatement.setString(8, normalizeRegionId(assertion.regionId()));
+                    insertStatement.setString(9, assertion.proxyNodeId());
+                    insertStatement.setString(10, assertion.joinMode().name());
+                    insertStatement.setString(11, assertion.targetServer());
+                    insertStatement.setString(12, assertion.authEntryServer());
+                    insertStatement.setBoolean(13, assertion.authEntryEnforced());
+                    insertStatement.setString(14, assertion.postAuthServer());
+                    insertStatement.setBoolean(15, assertion.networkAuthenticated());
+                    insertStatement.setBoolean(16, assertion.legacyClient());
+                    insertStatement.setTimestamp(17, Timestamp.from(assertion.issuedAt()));
+                    insertStatement.setTimestamp(18, Timestamp.from(assertion.expiresAt()));
+                    insertStatement.setString(19, assertion.signature());
                     insertStatement.executeUpdate();
                 }
             }
@@ -1100,12 +1110,12 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
-    public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip) {
+    public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip, String regionId) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, region_id, proxy_node_id, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
-                    WHERE (username = ? OR LOWER(resolved_name) = ?) AND ip = ? AND expires_at > CURRENT_TIMESTAMP
+                    WHERE (username = ? OR LOWER(resolved_name) = ?) AND ip = ? AND region_id = ? AND expires_at > CURRENT_TIMESTAMP
                     ORDER BY issued_at DESC
                     LIMIT 1
                     """;
@@ -1114,6 +1124,7 @@ public final class MySQLStorage implements StorageProvider {
                 statement.setString(1, username);
                 statement.setString(2, username);
                 statement.setString(3, ip);
+                statement.setString(4, normalizeRegionId(regionId));
                 try (ResultSet resultSet = statement.executeQuery()) {
                     if (!resultSet.next()) {
                         return Optional.empty();
@@ -1128,7 +1139,7 @@ public final class MySQLStorage implements StorageProvider {
     public CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username) {
         return supplyAsync(() -> {
             String sql = """
-                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
+                    SELECT username, resolved_name, uuid, runtime_uuid, account_type, ip, region_id, proxy_node_id, join_mode, target_server, auth_entry_server, auth_entry_enforced, post_auth_server, network_authenticated, legacy_client, issued_at, expires_at, nonce, signature
                     FROM pa_proxy_assertions
                     WHERE username = ?
                     ORDER BY issued_at DESC
@@ -1692,6 +1703,8 @@ public final class MySQLStorage implements StorageProvider {
                         runtime_uuid VARCHAR(36) NOT NULL,
                         account_type ENUM('PREMIUM','CRACKED') NOT NULL,
                         ip VARCHAR(45) NOT NULL,
+                        region_id VARCHAR(32) NOT NULL DEFAULT '',
+                        proxy_node_id VARCHAR(64) NOT NULL DEFAULT '',
                         join_mode VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER',
                         target_server VARCHAR(64) NOT NULL DEFAULT '',
                         auth_entry_server VARCHAR(64) NOT NULL DEFAULT '',
@@ -1702,11 +1715,13 @@ public final class MySQLStorage implements StorageProvider {
                         issued_at DATETIME NOT NULL,
                         expires_at DATETIME NOT NULL,
                         signature VARCHAR(128) NOT NULL,
-                        INDEX idx_proxy_assertion_lookup (username, ip, expires_at),
+                        INDEX idx_proxy_assertion_lookup (username, ip, region_id, expires_at),
                         INDEX idx_proxy_assertion_expires (expires_at)
                     )
                     """);
             ensureColumn(schema, stats, "pa_proxy_assertions", "join_mode", "VARCHAR(32) NOT NULL DEFAULT 'NETWORK_TRANSFER'");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "region_id", "VARCHAR(32) NOT NULL DEFAULT ''");
+            ensureColumn(schema, stats, "pa_proxy_assertions", "proxy_node_id", "VARCHAR(64) NOT NULL DEFAULT ''");
             ensureColumn(schema, stats, "pa_proxy_assertions", "runtime_uuid", "VARCHAR(36) NOT NULL DEFAULT '00000000-0000-0000-0000-000000000000'");
             ensureColumn(schema, stats, "pa_proxy_assertions", "target_server", "VARCHAR(64) NOT NULL DEFAULT ''");
             ensureColumn(schema, stats, "pa_proxy_assertions", "auth_entry_server", "VARCHAR(64) NOT NULL DEFAULT ''");
@@ -1719,17 +1734,19 @@ public final class MySQLStorage implements StorageProvider {
                         probe_id VARCHAR(64) NOT NULL PRIMARY KEY,
                         username VARCHAR(16) NOT NULL,
                         ip VARCHAR(45) NOT NULL,
+                        target_region VARCHAR(32) NOT NULL DEFAULT '',
                         target_server VARCHAR(64) NOT NULL,
                         issued_at DATETIME NOT NULL,
                         expires_at DATETIME NOT NULL,
                         acknowledged_at DATETIME,
                         responder_id VARCHAR(64),
                         INDEX idx_backend_probe_expires (expires_at),
-                        INDEX idx_backend_probe_pending (target_server, acknowledged_at, expires_at)
+                        INDEX idx_backend_probe_pending (target_region, target_server, acknowledged_at, expires_at)
                     )
                     """);
+            ensureColumn(schema, stats, "pa_backend_join_probes", "target_region", "VARCHAR(32) NOT NULL DEFAULT ''");
             ensureColumn(schema, stats, "pa_backend_join_probes", "target_server", "VARCHAR(64) NOT NULL DEFAULT ''");
-            ensureIndex(schema, stats, "pa_backend_join_probes", "idx_backend_probe_ack_scan", "CREATE INDEX idx_backend_probe_ack_scan ON pa_backend_join_probes (target_server, acknowledged_at, issued_at, expires_at)");
+            ensureIndex(schema, stats, "pa_backend_join_probes", "idx_backend_probe_ack_scan", "CREATE INDEX idx_backend_probe_ack_scan ON pa_backend_join_probes (target_region, target_server, acknowledged_at, issued_at, expires_at)");
             statement.executeUpdate("""
                     CREATE TABLE IF NOT EXISTS pa_ip_history (
                         id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
@@ -2109,6 +2126,8 @@ public final class MySQLStorage implements StorageProvider {
                 mapRuntimeUuid(resultSet),
                 AccountType.valueOf(resultSet.getString("account_type")),
                 resultSet.getString("ip"),
+                resultSet.getString("region_id"),
+                resultSet.getString("proxy_node_id"),
                 BridgeJoinMode.from(resultSet.getString("join_mode")),
                 resultSet.getString("target_server"),
                 resultSet.getString("auth_entry_server"),
@@ -2250,6 +2269,14 @@ public final class MySQLStorage implements StorageProvider {
     private static @Nullable Instant nullableTimestamp(ResultSet resultSet, String column) throws SQLException {
         Timestamp timestamp = resultSet.getTimestamp(column);
         return timestamp == null ? null : timestamp.toInstant();
+    }
+
+    private static String normalizeRegionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(Locale.ROOT);
     }
 
     @FunctionalInterface

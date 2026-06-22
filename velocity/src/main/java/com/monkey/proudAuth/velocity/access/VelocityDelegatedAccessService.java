@@ -50,6 +50,7 @@ public final class VelocityDelegatedAccessService {
     private final Supplier<PremiumVerifier> premiumVerifierSupplier;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Supplier<String> regionIdSupplier;
     private final Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier;
     private final Map<UUID, PendingChallenge> pendingChallenges = new ConcurrentHashMap<>();
 
@@ -60,6 +61,7 @@ public final class VelocityDelegatedAccessService {
             Supplier<PremiumVerifier> premiumVerifierSupplier,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            Supplier<String> regionIdSupplier,
             Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier
     ) {
         this.pluginOwner = pluginOwner;
@@ -68,6 +70,7 @@ public final class VelocityDelegatedAccessService {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
+        this.regionIdSupplier = regionIdSupplier;
         this.premiumTargetsSupplier = premiumTargetsSupplier;
     }
 
@@ -488,12 +491,73 @@ public final class VelocityDelegatedAccessService {
                 Method method = player.getClass().getMethod("setProudxDelegatedBackendProfile", boolean.class, UUID.class, String.class);
                 method.invoke(player, suppress, profileUuid, profileName);
             }
+            if (suppress) {
+                applyOptionalProudXDelegatedRoutingScope(player, routingSupplier.get(), regionIdSupplier.get());
+            } else {
+                clearOptionalProudXDelegatedRoutingScope(player);
+            }
             return true;
         } catch (NoSuchMethodException exception) {
             return !suppress;
         } catch (ReflectiveOperationException | RuntimeException exception) {
             return !suppress;
         }
+    }
+
+    private void applyOptionalProudXDelegatedRoutingScope(
+            Player player,
+            ProudAuthNetworkConfig.Routing routing,
+            String regionId
+    ) {
+        try {
+            Method method = player.getClass().getMethod(
+                    "setProudxDelegatedBackendRoutingScope",
+                    String.class,
+                    Collection.class
+            );
+            method.invoke(player, normalizeRegionId(regionId), delegatedRoutingScopeServers(routing));
+        } catch (NoSuchMethodException ignored) {
+            // Older ProudX builds do not expose optional routing scope support.
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Optional hardening only: delegated access must continue to work without this hook.
+        }
+    }
+
+    private void clearOptionalProudXDelegatedRoutingScope(Player player) {
+        try {
+            Method method = player.getClass().getMethod("clearProudxDelegatedBackendRoutingScope");
+            method.invoke(player);
+        } catch (NoSuchMethodException ignored) {
+            try {
+                Method fallbackMethod = player.getClass().getMethod(
+                        "setProudxDelegatedBackendRoutingScope",
+                        String.class,
+                        Collection.class
+                );
+                fallbackMethod.invoke(player, "", List.of());
+            } catch (NoSuchMethodException ignoredAgain) {
+                // Older ProudX builds do not expose optional routing scope support.
+            } catch (ReflectiveOperationException | RuntimeException ignoredAgain) {
+                // Optional hardening only: delegated access must continue to work without this hook.
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            // Optional hardening only: delegated access must continue to work without this hook.
+        }
+    }
+
+    private Collection<String> delegatedRoutingScopeServers(ProudAuthNetworkConfig.Routing routing) {
+        if (routing == null) {
+            return List.of();
+        }
+
+        Set<String> allowedServers = new LinkedHashSet<>();
+        if (routing.hasAuthEntryServer()) {
+            allowedServers.add(routing.authEntryServer());
+        }
+        if (routing.hasPostAuthServer()) {
+            allowedServers.add(routing.postAuthServer());
+        }
+        return List.copyOf(allowedServers);
     }
 
     private List<GameProfile.Property> fetchSignedProfileProperties(UUID uuid) {
@@ -553,6 +617,14 @@ public final class VelocityDelegatedAccessService {
             return;
         }
         proxyServer.getServer(serverName).ifPresent(server -> player.createConnectionRequest(server).fireAndForget());
+    }
+
+    private String normalizeRegionId(String regionId) {
+        if (regionId == null) {
+            return "";
+        }
+        String trimmed = regionId.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(Locale.ROOT);
     }
 
     private void audit(Player actor, AccountRecord owner, DelegatedAccessIdentity delegate, String eventType, String result, String reason) {

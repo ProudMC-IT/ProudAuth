@@ -35,6 +35,8 @@ public final class VelocityServerTransitionListener {
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Supplier<String> regionIdSupplier;
+    private final Supplier<String> proxyNodeIdSupplier;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
@@ -46,6 +48,8 @@ public final class VelocityServerTransitionListener {
             VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            Supplier<String> regionIdSupplier,
+            Supplier<String> proxyNodeIdSupplier,
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger
@@ -56,6 +60,8 @@ public final class VelocityServerTransitionListener {
         this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
         this.routingSupplier = routingSupplier;
+        this.regionIdSupplier = regionIdSupplier;
+        this.proxyNodeIdSupplier = proxyNodeIdSupplier;
         this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
@@ -134,6 +140,8 @@ public final class VelocityServerTransitionListener {
                         profile.accountUuid(),
                         profile.effectiveAccountType(),
                         ipAddress,
+                        normalizeRegionId(regionIdSupplier.get()),
+                        normalizeProxyNodeId(proxyNodeIdSupplier.get()),
                         joinMode,
                         targetServer,
                         authEntryServer,
@@ -401,5 +409,21 @@ public final class VelocityServerTransitionListener {
 
     private void debugEvent(String eventName, Object... keyValues) {
         logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
+    }
+
+    private String normalizeRegionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    private String normalizeProxyNodeId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed;
     }
 }

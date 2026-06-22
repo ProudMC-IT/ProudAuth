@@ -34,7 +34,7 @@ public final class VelocityBackendJoinProbeService {
         this.logger = logger;
     }
 
-    public ProbeStatus probe(String username, String ipAddress, String targetServer) {
+    public ProbeStatus probe(String username, String ipAddress, String targetRegion, String targetServer) {
         ProudAuthNetworkConfig settings = settingsSupplier.get();
         if (!settings.bridge().enabled()
                 || !settings.proxy().bridgeBackendCheck().enabled()
@@ -52,11 +52,12 @@ public final class VelocityBackendJoinProbeService {
 
         try {
             storageSupplier.get()
-                    .createBackendJoinProbe(probeId, canonicalUsername, ipAddress, targetServer, issuedAt, expiresAt)
+                    .createBackendJoinProbe(probeId, canonicalUsername, ipAddress, normalizeRegionId(targetRegion), targetServer, issuedAt, expiresAt)
                     .join();
             debugEvent("backend_probe_created",
                     "player", username,
                     "ip", ipAddress,
+                    "target_region", normalizeRegionId(targetRegion),
                     "target_server", targetServer,
                     "probe_id", probeId,
                     "timeout_ms", timeoutMs,
@@ -68,6 +69,7 @@ public final class VelocityBackendJoinProbeService {
                 if (acknowledged) {
                     debugEvent("backend_probe_acknowledged",
                             "player", username,
+                            "target_region", normalizeRegionId(targetRegion),
                             "target_server", targetServer,
                             "probe_id", probeId);
                     return ProbeStatus.ACKNOWLEDGED;
@@ -77,6 +79,7 @@ public final class VelocityBackendJoinProbeService {
                 if (remainingNanos <= 0L) {
                     debugEvent("backend_probe_timeout",
                             "player", username,
+                            "target_region", normalizeRegionId(targetRegion),
                             "target_server", targetServer,
                             "probe_id", probeId);
                     return ProbeStatus.TIMEOUT;
@@ -90,12 +93,14 @@ public final class VelocityBackendJoinProbeService {
             Thread.currentThread().interrupt();
             debugEvent("backend_probe_interrupted",
                     "player", username,
+                    "target_region", normalizeRegionId(targetRegion),
                     "target_server", targetServer,
                     "probe_id", probeId);
             return ProbeStatus.ERROR;
         } catch (Exception exception) {
             debugEvent("backend_probe_error",
                     "player", username,
+                    "target_region", normalizeRegionId(targetRegion),
                     "target_server", targetServer,
                     "probe_id", probeId,
                     "error", exception.getMessage());
@@ -105,11 +110,13 @@ public final class VelocityBackendJoinProbeService {
                 storageSupplier.get().deleteBackendJoinProbe(probeId).join();
                 debugEvent("backend_probe_cleaned",
                         "player", username,
+                        "target_region", normalizeRegionId(targetRegion),
                         "target_server", targetServer,
                         "probe_id", probeId);
             } catch (Exception exception) {
                 debugEvent("backend_probe_cleanup_error",
                         "player", username,
+                        "target_region", normalizeRegionId(targetRegion),
                         "target_server", targetServer,
                         "probe_id", probeId,
                         "error", exception.getMessage());
@@ -119,6 +126,14 @@ public final class VelocityBackendJoinProbeService {
 
     private void debugEvent(String eventName, Object... keyValues) {
         logger.debugEvent(debuggerSupplier.get(), DebugChannel.BRIDGE_FLOW, eventName, keyValues);
+    }
+
+    private static String normalizeRegionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(Locale.ROOT);
     }
 
     public enum ProbeStatus {

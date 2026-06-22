@@ -40,6 +40,7 @@ public final class PluginConfig {
                         Math.max(1, config.getInt("database.pool-size", 10))
                 ),
                 config.getString("network.server-id", ""),
+                config.getString("network.region-id", ""),
                 Math.max(1, config.getInt("config-sync.poll-interval-seconds", 2)),
                 config.getBoolean("updates.check-enabled", true),
                 config.getBoolean("updates.notify-admin-on-join", true)
@@ -97,6 +98,11 @@ public final class PluginConfig {
         return bootstrap.configSyncPollIntervalSeconds();
     }
 
+    public String regionId() {
+        String configured = bootstrap.regionId();
+        return configured == null ? "" : configured.trim();
+    }
+
     public boolean updateCheckEnabled() {
         return bootstrap.updateCheckEnabled();
     }
@@ -108,6 +114,7 @@ public final class PluginConfig {
     private record Bootstrap(
             ProudAuthSettings.Database database,
             String serverId,
+            String regionId,
             int configSyncPollIntervalSeconds,
             boolean updateCheckEnabled,
             boolean notifyAdminOnJoinEnabled

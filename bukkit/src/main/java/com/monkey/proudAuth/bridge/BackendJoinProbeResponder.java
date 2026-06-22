@@ -16,6 +16,7 @@ public final class BackendJoinProbeResponder {
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
     private final String responderId;
+    private final String regionId;
     private final String serverId;
     private int runCounter;
 
@@ -24,12 +25,14 @@ public final class BackendJoinProbeResponder {
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger,
             String responderId,
+            String regionId,
             String serverId
     ) {
         this.storageSupplier = storageSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
         this.responderId = responderId;
+        this.regionId = regionId;
         this.serverId = serverId;
         this.runCounter = 0;
     }
@@ -37,11 +40,12 @@ public final class BackendJoinProbeResponder {
     public void poll() {
         try {
             int acknowledged = storageSupplier.get()
-                    .acknowledgePendingBackendJoinProbes(responderId, serverId, DEFAULT_BATCH_SIZE)
+                    .acknowledgePendingBackendJoinProbes(responderId, regionId, serverId, DEFAULT_BATCH_SIZE)
                     .join();
             if (acknowledged > 0) {
                 debugEvent("backend_probe_ack",
                         "responder", responderId,
+                        "region_id", regionId,
                         "server_id", serverId,
                         "acknowledged", acknowledged);
             }
@@ -53,6 +57,7 @@ public final class BackendJoinProbeResponder {
                 if (deleted > 0) {
                     debugEvent("backend_probe_cleanup",
                             "responder", responderId,
+                            "region_id", regionId,
                             "server_id", serverId,
                             "deleted", deleted);
                 }

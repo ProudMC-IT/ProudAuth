@@ -122,7 +122,13 @@ public final class BukkitPreLoginService {
     }
 
     private Optional<ResolvedLogin> resolveForVelocity(AsyncPlayerPreLoginEvent event, String ip) {
-        ProxyBridgeService.VerificationResult bridgeResult = bridgeService.consumeAndVerify(event.getName(), event.getUniqueId(), ip, serverId).join();
+        ProxyBridgeService.VerificationResult bridgeResult = bridgeService.consumeAndVerify(
+                event.getName(),
+                event.getUniqueId(),
+                ip,
+                pluginConfig.regionId(),
+                serverId
+        ).join();
         debugEvent(DebugChannel.BRIDGE_FLOW, "bridge_verification",
                 "player", event.getName(),
                 "status", bridgeResult.status(),

@@ -9,6 +9,7 @@ public interface BackendJoinProbeStorage {
             String probeId,
             String username,
             String ipAddress,
+            String targetRegion,
             String targetServer,
             Instant issuedAt,
             Instant expiresAt
@@ -16,7 +17,7 @@ public interface BackendJoinProbeStorage {
 
     CompletableFuture<Boolean> isBackendJoinProbeAcknowledged(String probeId);
 
-    CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, String serverId, int maxBatchSize);
+    CompletableFuture<Integer> acknowledgePendingBackendJoinProbes(String responderId, String regionId, String serverId, int maxBatchSize);
 
     CompletableFuture<Void> deleteBackendJoinProbe(String probeId);
 

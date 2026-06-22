@@ -7,7 +7,31 @@
 # On Bukkit you only keep:
 # - database access to reach the shared ProudAuth state
 # - the logical server-id for this backend
+# - the local region-id for this backend when using optional region-aware routing
 # - local sync/update behavior
+#
+# How to fill this file:
+#
+# Legacy single-proxy setup:
+#   network.server-id: "auth"
+#   network.region-id: ""
+#
+# Region-aware setup examples:
+#   backend auth EU:
+#     network.server-id: "auth-eu"
+#     network.region-id: "eu"
+#
+#   backend lobby EU:
+#     network.server-id: "lobby-eu"
+#     network.region-id: "eu"
+#
+#   backend auth NA:
+#     network.server-id: "auth-na"
+#     network.region-id: "na"
+#
+# Important:
+# - server-id must match the exact Velocity registered server name
+# - region-id must match the proxy-local.region-id used by the proxy that routes to this backend
 
 database:
   host: "localhost"
@@ -20,7 +44,21 @@ database:
 network:
   # Exact backend id used by ProudAuth for this server.
   # In a Velocity network this should match the registered Velocity server name.
+  #
+  # Examples:
+  # - "auth"
+  # - "auth-eu"
+  # - "lobby-na"
   server-id: ""
+
+  # Optional local region id for this backend instance.
+  # Leave empty to use legacy single-region behavior.
+  #
+  # Examples:
+  # - ""
+  # - "eu"
+  # - "na"
+  region-id: ""
 
 config-sync:
   # How often this backend checks the DB for a new shared config version.

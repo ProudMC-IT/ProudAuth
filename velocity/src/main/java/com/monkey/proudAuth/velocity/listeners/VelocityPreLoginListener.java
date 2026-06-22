@@ -37,6 +37,7 @@ public final class VelocityPreLoginListener {
     private final Supplier<ProudAuthSettings> settingsSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final Supplier<String> regionIdSupplier;
     private final VelocityBackendJoinProbeService backendJoinProbeService;
     private final VelocityNetworkGuardService networkGuardService;
     private final VelocityWhitelistEnforcementStore whitelistEnforcementStore;
@@ -52,6 +53,7 @@ public final class VelocityPreLoginListener {
             Supplier<ProudAuthSettings> settingsSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            Supplier<String> regionIdSupplier,
             VelocityBackendJoinProbeService backendJoinProbeService,
             VelocityNetworkGuardService networkGuardService,
             VelocityWhitelistEnforcementStore whitelistEnforcementStore,
@@ -66,6 +68,7 @@ public final class VelocityPreLoginListener {
         this.settingsSupplier = settingsSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.routingSupplier = routingSupplier;
+        this.regionIdSupplier = regionIdSupplier;
         this.backendJoinProbeService = backendJoinProbeService;
         this.networkGuardService = networkGuardService;
         this.whitelistEnforcementStore = whitelistEnforcementStore;
@@ -349,11 +352,13 @@ public final class VelocityPreLoginListener {
             VelocityLang lang
     ) {
         List<String> targets = backendProbeTargets(routing);
+        String regionId = normalizeRegionId(regionIdSupplier.get());
         if (targets.isEmpty()) {
-            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, "");
+            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, regionId, "");
             debugEvent("prelogin_backend_probe",
                     "player", event.getUsername(),
                     "ip", ipAddress,
+                    "target_region", regionId,
                     "target_server", "",
                     "role", "none",
                     "status", probeStatus);
@@ -361,10 +366,11 @@ public final class VelocityPreLoginListener {
         }
 
         for (String target : targets) {
-            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, target);
+            VelocityBackendJoinProbeService.ProbeStatus probeStatus = backendJoinProbeService.probe(event.getUsername(), ipAddress, regionId, target);
             debugEvent("prelogin_backend_probe",
                     "player", event.getUsername(),
                     "ip", ipAddress,
+                    "target_region", regionId,
                     "target_server", target,
                     "role", probeRole(target, routing),
                     "status", probeStatus);
@@ -425,6 +431,14 @@ public final class VelocityPreLoginListener {
 
     private String connectionKey(PreLoginEvent event) {
         return VelocityOnlineModeDisconnectAdvice.connectionKey(event.getConnection().getRemoteAddress());
+    }
+
+    private String normalizeRegionId(String value) {
+        if (value == null) {
+            return "";
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? "" : trimmed.toLowerCase(java.util.Locale.ROOT);
     }
 
     private ProudAuthSettings.LegacyUnsupportedAction legacyUnsupportedAction(PreLoginEvent event) {

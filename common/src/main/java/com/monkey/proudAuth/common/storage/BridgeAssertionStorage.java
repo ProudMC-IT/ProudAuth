@@ -9,7 +9,7 @@ public interface BridgeAssertionStorage {
 
     CompletableFuture<Void> saveProxyAssertion(ProxyBridgeAssertion assertion);
 
-    CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip);
+    CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertion(String username, String ip, String regionId);
 
     CompletableFuture<Optional<ProxyBridgeAssertion>> findLatestProxyAssertionByUsername(String username);
 

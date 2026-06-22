@@ -49,6 +49,7 @@ public final class ProudAuthNetworkConfigCodec {
         root.put("password", dumpPassword(config.passwordPolicy()));
         root.put("bridge", dumpBridge(config.bridge(), config.proxy().bridgeBackendCheck()));
         root.put("routing", dumpRouting(config.proxy().routing()));
+        root.put("regions", dumpRegions(config.proxy().regions()));
         root.put("paaccess", dumpPaAccess(config.paAccess()));
         root.put("guards", dumpGuards(config.proxy().guards()));
         root.put("reports", dumpReports(config.proxy().reports()));
@@ -199,18 +200,8 @@ public final class ProudAuthNetworkConfigCodec {
                         Math.max(250, integer(root, "bridge.backend-check.timeout-ms", 2500)),
                         Math.max(25, integer(root, "bridge.backend-check.poll-interval-ms", 100))
                 ),
-                new ProudAuthNetworkConfig.Routing(
-                        bool(root, "routing.auth-entry.enabled", false),
-                        string(root, "routing.auth-entry.server", ""),
-                        bool(root, "routing.auth-entry.protected", false),
-                        bool(root, "routing.post-auth.enabled", false),
-                        string(root, "routing.post-auth.server", ""),
-                        ProudAuthNetworkConfig.AuthenticatedJoinRoutingMode.from(
-                                string(root, "routing.authenticated-join.mode", "ALWAYS_PASS_AUTH")
-                        ),
-                        Math.max(0, integer(root, "routing.post-auth.redirect-delay-ms", 0)),
-                        Math.max(0, integer(root, "routing.post-auth.legacy-redirect-delay-ms", 150))
-                ),
+                routing(root, "routing"),
+                parseRegions(root),
                 new ProudAuthNetworkConfig.Guards(
                         bool(root, "guards.enabled", true),
                         Math.max(1, integer(root, "guards.antibot.window-seconds", 12)),
@@ -545,6 +536,67 @@ public final class ProudAuthNetworkConfigCodec {
         postAuth.put("redirect-delay-ms", routing.postAuthRedirectDelayMs());
         postAuth.put("legacy-redirect-delay-ms", routing.legacyPostAuthRedirectDelayMs());
         values.put("post-auth", postAuth);
+        return values;
+    }
+
+    private ProudAuthNetworkConfig.Routing routing(Map<String, Object> root, String basePath) {
+        return new ProudAuthNetworkConfig.Routing(
+                bool(root, basePath + ".auth-entry.enabled", false),
+                string(root, basePath + ".auth-entry.server", ""),
+                bool(root, basePath + ".auth-entry.protected", false),
+                bool(root, basePath + ".post-auth.enabled", false),
+                string(root, basePath + ".post-auth.server", ""),
+                ProudAuthNetworkConfig.AuthenticatedJoinRoutingMode.from(
+                        string(root, basePath + ".authenticated-join.mode", "ALWAYS_PASS_AUTH")
+                ),
+                Math.max(0, integer(root, basePath + ".post-auth.redirect-delay-ms", 0)),
+                Math.max(0, integer(root, basePath + ".post-auth.legacy-redirect-delay-ms", 150))
+        );
+    }
+
+    @SuppressWarnings("unchecked")
+    private ProudAuthNetworkConfig.Regions parseRegions(Map<String, Object> root) {
+        Object regionsNode = get(root, "regions");
+        if (!(regionsNode instanceof Map<?, ?> rawRegions)) {
+            return new ProudAuthNetworkConfig.Regions(false, Map.of());
+        }
+
+        boolean enabled = bool(root, "regions.enabled", false);
+        Object entriesNode = rawRegions.get("entries");
+        if (!(entriesNode instanceof Map<?, ?> entriesMap)) {
+            return new ProudAuthNetworkConfig.Regions(enabled, Map.of());
+        }
+
+        Map<String, ProudAuthNetworkConfig.Routing> entries = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : entriesMap.entrySet()) {
+            if (!(entry.getKey() instanceof String regionId) || regionId.isBlank()) {
+                continue;
+            }
+            if (!(entry.getValue() instanceof Map<?, ?> regionMap)) {
+                continue;
+            }
+
+            Map<String, Object> wrapper = new LinkedHashMap<>();
+            wrapper.put("routing", cast(regionMap));
+            entries.put(regionId.toLowerCase(Locale.ROOT), routing(wrapper, "routing"));
+        }
+        return new ProudAuthNetworkConfig.Regions(enabled, entries);
+    }
+
+    private Map<String, Object> dumpRegions(ProudAuthNetworkConfig.Regions regions) {
+        Map<String, Object> values = new LinkedHashMap<>();
+        if (regions == null) {
+            values.put("enabled", false);
+            values.put("entries", Map.of());
+            return values;
+        }
+
+        values.put("enabled", regions.enabled());
+        Map<String, Object> entries = new LinkedHashMap<>();
+        for (Map.Entry<String, ProudAuthNetworkConfig.Routing> entry : regions.entries().entrySet()) {
+            entries.put(entry.getKey(), dumpRouting(entry.getValue()));
+        }
+        values.put("entries", entries);
         return values;
     }
 
