@@ -108,6 +108,53 @@ public record ProudAuthNetworkConfig(
             }
             return routing;
         }
+
+        public Routing routingForServer(String serverName, String fallbackRegionId) {
+            String resolvedRegionId = regionIdForServer(serverName).orElse(fallbackRegionId);
+            return routingForRegion(resolvedRegionId);
+        }
+
+        public java.util.Optional<String> regionIdForServer(String serverName) {
+            if (regions == null || !regions.enabled() || serverName == null || serverName.isBlank()) {
+                return java.util.Optional.empty();
+            }
+
+            String normalizedServerName = normalizeToken(serverName);
+            for (Map.Entry<String, Routing> entry : regions.entries().entrySet()) {
+                if (matchesRoutingServer(entry.getValue(), normalizedServerName)) {
+                    return java.util.Optional.of(entry.getKey());
+                }
+            }
+
+            for (String regionId : regions.entries().keySet()) {
+                if (matchesRegionNaming(normalizedServerName, regionId)) {
+                    return java.util.Optional.of(regionId);
+                }
+            }
+
+            return java.util.Optional.empty();
+        }
+
+        private boolean matchesRoutingServer(Routing routing, String normalizedServerName) {
+            return routing != null
+                    && ((routing.hasAuthEntryServer()
+                    && normalizeToken(routing.authEntryServer()).equals(normalizedServerName))
+                    || (routing.hasPostAuthServer()
+                    && normalizeToken(routing.postAuthServer()).equals(normalizedServerName)));
+        }
+
+        private boolean matchesRegionNaming(String normalizedServerName, String regionId) {
+            String normalizedRegionId = normalizeToken(regionId);
+            return normalizedServerName.equals(normalizedRegionId)
+                    || normalizedServerName.endsWith("-" + normalizedRegionId)
+                    || normalizedServerName.endsWith("_" + normalizedRegionId)
+                    || normalizedServerName.startsWith(normalizedRegionId + "-")
+                    || normalizedServerName.startsWith(normalizedRegionId + "_");
+        }
+
+        private String normalizeToken(String value) {
+            return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+        }
     }
 
     public record BridgeBackendCheck(

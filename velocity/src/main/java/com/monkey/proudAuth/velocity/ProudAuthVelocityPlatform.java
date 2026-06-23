@@ -47,6 +47,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 
 public final class ProudAuthVelocityPlatform {
 
@@ -182,7 +183,9 @@ public final class ProudAuthVelocityPlatform {
                     () -> premiumVerifier,
                     resolvedPlayerStore,
                     this::resolvedRouting,
+                    this::routingForServer,
                     this::proxyRegionId,
+                    this::regionIdForServer,
                     () -> settings.paAccess().premiumTargets()
             );
             proxyServer.getEventManager().register(pluginOwner, delegatedAccessService);
@@ -196,6 +199,7 @@ public final class ProudAuthVelocityPlatform {
                     () -> settings.toBackendSettings(settings.database()),
                     () -> settings.debugger(),
                     this::resolvedRouting,
+                    this::routingForServer,
                     this::proxyRegionId,
                     backendJoinProbeService,
                     networkGuardService,
@@ -228,7 +232,9 @@ public final class ProudAuthVelocityPlatform {
                     premiumClaimFailureStore,
                     () -> bridgeService,
                     this::resolvedRouting,
+                    this::routingForServer,
                     this::proxyRegionId,
+                    this::regionIdForServer,
                     this::proxyNodeId,
                     () -> lang,
                     () -> settings.debugger(),
@@ -240,6 +246,7 @@ public final class ProudAuthVelocityPlatform {
                     proxyServer,
                     resolvedPlayerStore,
                     this::resolvedRouting,
+                    this::routingForServer,
                     () -> lang,
                     () -> settings.debugger(),
                     platformLogger,
@@ -394,6 +401,14 @@ public final class ProudAuthVelocityPlatform {
 
     private ProudAuthNetworkConfig.Routing resolvedRouting() {
         return settings.proxy().routingForRegion(proxyRegionId());
+    }
+
+    private ProudAuthNetworkConfig.Routing routingForServer(String serverName) {
+        return settings.proxy().routingForServer(serverName, proxyRegionId());
+    }
+
+    private String regionIdForServer(String serverName) {
+        return settings.proxy().regionIdForServer(serverName).orElseGet(this::proxyRegionId);
     }
 
     private String proxyRegionId() {

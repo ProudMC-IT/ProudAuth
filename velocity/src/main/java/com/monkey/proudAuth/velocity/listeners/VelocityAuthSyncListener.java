@@ -35,6 +35,7 @@ public final class VelocityAuthSyncListener {
     private final ProxyServer proxyServer;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final ProudAuthConsoleLogger logger;
@@ -46,6 +47,7 @@ public final class VelocityAuthSyncListener {
             ProxyServer proxyServer,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver,
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             ProudAuthConsoleLogger logger,
@@ -56,6 +58,7 @@ public final class VelocityAuthSyncListener {
         this.proxyServer = proxyServer;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
+        this.routingResolver = routingResolver;
         this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.logger = logger;
@@ -96,6 +99,18 @@ public final class VelocityAuthSyncListener {
                 debugEvent("auth_sync_player_offline",
                         "player", username,
                         "server", sourceServer,
+                        "type", type);
+                return;
+            }
+
+            String currentServer = player.get().getCurrentServer()
+                    .map(server -> server.getServerInfo().getName())
+                    .orElse("");
+            if (!currentServer.isBlank() && !currentServer.equalsIgnoreCase(sourceServer)) {
+                debugEvent("auth_sync_stale_server_ignored",
+                        "player", username,
+                        "source_server", sourceServer,
+                        "current_server", currentServer,
                         "type", type);
                 return;
             }
@@ -147,7 +162,7 @@ public final class VelocityAuthSyncListener {
         }
 
         if (state == ProudAuthMonitorState.AUTHENTICATED && isAuthenticatedOnAuthEntry(player, sourceServer)) {
-            redirectPostAuthIfNeeded(player, sourceServer, routingSupplier.get(), "auth_sync_state_redirect_post_auth");
+            redirectPostAuthIfNeeded(player, sourceServer, resolveRoutingForServer(sourceServer), "auth_sync_state_redirect_post_auth");
         }
     }
 
@@ -155,7 +170,7 @@ public final class VelocityAuthSyncListener {
         boolean alreadyAuthenticated = resolvedPlayerStore.find(player.getUsername())
                 .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
                 .orElse(false);
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(sourceServer);
 
         if (alreadyAuthenticated) {
             monitorAuthStateStore.update(player.getUsername(), ProudAuthMonitorState.AUTHENTICATED);
@@ -179,7 +194,7 @@ public final class VelocityAuthSyncListener {
     }
 
     private void handleAuthInvalidated(Player player, String sourceServer) {
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(sourceServer);
         String authEntryServer = routing.hasAuthEntryServer() ? routing.authEntryServer() : sourceServer;
 
         resolvedPlayerStore.markNetworkAuthenticated(player.getUsername(), false);
@@ -211,7 +226,7 @@ public final class VelocityAuthSyncListener {
             return;
         }
 
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(sourceServer);
         if (!routing.hasPostAuthServer() || routing.postAuthServer().equalsIgnoreCase(sourceServer)) {
             langSupplier.get().send(player, messageKey);
             debugEvent("auth_sync_notice_sent_immediate",
@@ -247,13 +262,21 @@ public final class VelocityAuthSyncListener {
     }
 
     private boolean isAuthenticatedOnAuthEntry(Player player, String sourceServer) {
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(sourceServer);
         if (!routing.hasAuthEntryServer() || !routing.authEntryServer().equalsIgnoreCase(sourceServer)) {
             return false;
         }
         return resolvedPlayerStore.find(player.getUsername())
                 .map(VelocityResolvedPlayerStore.ResolvedPlayer::networkAuthenticated)
                 .orElse(false);
+    }
+
+    private ProudAuthNetworkConfig.Routing resolveRoutingForServer(String serverName) {
+        if (routingResolver == null) {
+            return routingSupplier.get();
+        }
+        ProudAuthNetworkConfig.Routing routing = routingResolver.apply(serverName);
+        return routing == null ? routingSupplier.get() : routing;
     }
 
     private void redirectPostAuthIfNeeded(

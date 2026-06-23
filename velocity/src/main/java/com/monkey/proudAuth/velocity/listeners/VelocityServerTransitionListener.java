@@ -34,7 +34,9 @@ public final class VelocityServerTransitionListener {
     private final VelocityPremiumClaimFailureStore premiumClaimFailureStore;
     private final Supplier<ProxyBridgeService> bridgeServiceSupplier;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver;
     private final Supplier<String> regionIdSupplier;
+    private final java.util.function.Function<String, String> regionIdResolver;
     private final Supplier<String> proxyNodeIdSupplier;
     private final Supplier<VelocityLang> langSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
@@ -47,7 +49,9 @@ public final class VelocityServerTransitionListener {
             VelocityPremiumClaimFailureStore premiumClaimFailureStore,
             Supplier<ProxyBridgeService> bridgeServiceSupplier,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver,
             Supplier<String> regionIdSupplier,
+            java.util.function.Function<String, String> regionIdResolver,
             Supplier<String> proxyNodeIdSupplier,
             Supplier<VelocityLang> langSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
@@ -59,7 +63,9 @@ public final class VelocityServerTransitionListener {
         this.premiumClaimFailureStore = premiumClaimFailureStore;
         this.bridgeServiceSupplier = bridgeServiceSupplier;
         this.routingSupplier = routingSupplier;
+        this.routingResolver = routingResolver;
         this.regionIdSupplier = regionIdSupplier;
+        this.regionIdResolver = regionIdResolver;
         this.proxyNodeIdSupplier = proxyNodeIdSupplier;
         this.langSupplier = langSupplier;
         this.debuggerSupplier = debuggerSupplier;
@@ -94,7 +100,7 @@ public final class VelocityServerTransitionListener {
         }
 
         VelocityResolvedPlayerStore.ResolvedPlayer profile = resolvedPlayer.get();
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(selectedTargetServer);
         boolean proxyAuthenticatedInitialJoin = shouldDirectAuthenticatedJoin(initialConnection, profile, routing);
         if (proxyAuthenticatedInitialJoin) {
             resolvedPlayerStore.markNetworkAuthenticated(event.getPlayer().getUsername(), true);
@@ -139,7 +145,7 @@ public final class VelocityServerTransitionListener {
                         profile.accountUuid(),
                         profile.effectiveAccountType(),
                         ipAddress,
-                        normalizeRegionId(regionIdSupplier.get()),
+                        normalizeRegionId(resolveRegionIdForServer(targetServer)),
                         normalizeProxyNodeId(proxyNodeIdSupplier.get()),
                         joinMode,
                         targetServer,
@@ -280,6 +286,22 @@ public final class VelocityServerTransitionListener {
         return proxyServer.getServer(serverName);
     }
 
+    private ProudAuthNetworkConfig.Routing resolveRoutingForServer(String serverName) {
+        if (routingResolver == null) {
+            return routingSupplier.get();
+        }
+        ProudAuthNetworkConfig.Routing routing = routingResolver.apply(serverName);
+        return routing == null ? routingSupplier.get() : routing;
+    }
+
+    private String resolveRegionIdForServer(String serverName) {
+        if (regionIdResolver == null) {
+            return regionIdSupplier.get();
+        }
+        String regionId = regionIdResolver.apply(serverName);
+        return regionId == null || regionId.isBlank() ? regionIdSupplier.get() : regionId;
+    }
+
     private void redirectImpersonatedAuthEntry(
             com.velocitypowered.api.proxy.Player player,
             String currentServerName,
@@ -289,7 +311,7 @@ public final class VelocityServerTransitionListener {
             return;
         }
 
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(currentServerName);
         if (!routing.hasAuthEntryServer()
                 || !routing.authEntryServer().equalsIgnoreCase(currentServerName)
                 || !routing.hasPostAuthServer()

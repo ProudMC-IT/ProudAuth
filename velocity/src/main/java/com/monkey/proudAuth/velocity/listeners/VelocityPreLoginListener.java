@@ -36,6 +36,7 @@ public final class VelocityPreLoginListener {
     private final Supplier<ProudAuthSettings> settingsSupplier;
     private final Supplier<ProudAuthSettings.Debugger> debuggerSupplier;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver;
     private final Supplier<String> regionIdSupplier;
     private final VelocityBackendJoinProbeService backendJoinProbeService;
     private final VelocityNetworkGuardService networkGuardService;
@@ -52,6 +53,7 @@ public final class VelocityPreLoginListener {
             Supplier<ProudAuthSettings> settingsSupplier,
             Supplier<ProudAuthSettings.Debugger> debuggerSupplier,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver,
             Supplier<String> regionIdSupplier,
             VelocityBackendJoinProbeService backendJoinProbeService,
             VelocityNetworkGuardService networkGuardService,
@@ -67,6 +69,7 @@ public final class VelocityPreLoginListener {
         this.settingsSupplier = settingsSupplier;
         this.debuggerSupplier = debuggerSupplier;
         this.routingSupplier = routingSupplier;
+        this.routingResolver = routingResolver;
         this.regionIdSupplier = regionIdSupplier;
         this.backendJoinProbeService = backendJoinProbeService;
         this.networkGuardService = networkGuardService;

@@ -49,7 +49,9 @@ public final class VelocityDelegatedAccessService {
     private final Supplier<PremiumVerifier> premiumVerifierSupplier;
     private final VelocityResolvedPlayerStore resolvedPlayerStore;
     private final Supplier<ProudAuthNetworkConfig.Routing> routingSupplier;
+    private final java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver;
     private final Supplier<String> regionIdSupplier;
+    private final java.util.function.Function<String, String> regionIdResolver;
     private final Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier;
     private final Map<UUID, PendingChallenge> pendingChallenges = new ConcurrentHashMap<>();
 
@@ -60,7 +62,9 @@ public final class VelocityDelegatedAccessService {
             Supplier<PremiumVerifier> premiumVerifierSupplier,
             VelocityResolvedPlayerStore resolvedPlayerStore,
             Supplier<ProudAuthNetworkConfig.Routing> routingSupplier,
+            java.util.function.Function<String, ProudAuthNetworkConfig.Routing> routingResolver,
             Supplier<String> regionIdSupplier,
+            java.util.function.Function<String, String> regionIdResolver,
             Supplier<ProudAuthNetworkConfig.PremiumTargets> premiumTargetsSupplier
     ) {
         this.pluginOwner = pluginOwner;
@@ -69,7 +73,9 @@ public final class VelocityDelegatedAccessService {
         this.premiumVerifierSupplier = premiumVerifierSupplier;
         this.resolvedPlayerStore = resolvedPlayerStore;
         this.routingSupplier = routingSupplier;
+        this.routingResolver = routingResolver;
         this.regionIdSupplier = regionIdSupplier;
+        this.regionIdResolver = regionIdResolver;
         this.premiumTargetsSupplier = premiumTargetsSupplier;
     }
 
@@ -399,10 +405,10 @@ public final class VelocityDelegatedAccessService {
     }
 
     private void refreshBackendIdentity(Player player, boolean enteringImpersonation) {
-        ProudAuthNetworkConfig.Routing routing = routingSupplier.get();
         String currentServer = player.getCurrentServer()
                 .map(server -> server.getServerInfo().getName())
                 .orElse("");
+        ProudAuthNetworkConfig.Routing routing = resolveRoutingForServer(currentServer);
         String finalServer = routing.hasPostAuthServer() ? routing.postAuthServer() : currentServer;
         if (!enteringImpersonation && !currentServer.isBlank()) {
             finalServer = currentServer;
@@ -491,7 +497,13 @@ public final class VelocityDelegatedAccessService {
                 method.invoke(player, suppress, profileUuid, profileName);
             }
             if (suppress) {
-                applyOptionalProudXDelegatedRoutingScope(player, routingSupplier.get(), regionIdSupplier.get());
+                String currentServer = player.getCurrentServer()
+                        .map(server -> server.getServerInfo().getName())
+                        .orElse("");
+                applyOptionalProudXDelegatedRoutingScope(
+                        player,
+                        resolveRoutingForServer(currentServer),
+                        resolveRegionIdForServer(currentServer));
             } else {
                 clearOptionalProudXDelegatedRoutingScope(player);
             }
@@ -557,6 +569,22 @@ public final class VelocityDelegatedAccessService {
             allowedServers.add(routing.postAuthServer());
         }
         return List.copyOf(allowedServers);
+    }
+
+    private ProudAuthNetworkConfig.Routing resolveRoutingForServer(String serverName) {
+        if (routingResolver == null) {
+            return routingSupplier.get();
+        }
+        ProudAuthNetworkConfig.Routing routing = routingResolver.apply(serverName);
+        return routing == null ? routingSupplier.get() : routing;
+    }
+
+    private String resolveRegionIdForServer(String serverName) {
+        if (regionIdResolver == null) {
+            return regionIdSupplier.get();
+        }
+        String regionId = regionIdResolver.apply(serverName);
+        return regionId == null || regionId.isBlank() ? regionIdSupplier.get() : regionId;
     }
 
     private List<GameProfile.Property> fetchSignedProfileProperties(UUID uuid) {
