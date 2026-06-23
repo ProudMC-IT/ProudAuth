@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 public final class MySQLStorage implements StorageProvider {
 
@@ -27,6 +28,7 @@ public final class MySQLStorage implements StorageProvider {
     private volatile ProudAuthSettings settings;
     private final ExecutorService ioExecutor;
     private final ProudAuthConsoleLogger logger;
+    private final ReentrantReadWriteLock lifecycleLock = new ReentrantReadWriteLock();
     private volatile HikariDataSource dataSource;
 
     public MySQLStorage(ProudAuthSettings settings) {
@@ -43,16 +45,42 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
-    public synchronized void init() {
-        rebuildDataSource();
-        migrateSchema();
+    public void init() {
+        lifecycleLock.writeLock().lock();
+        try {
+            HikariDataSource initialDataSource = createDataSource(settings.database());
+            migrateSchema(settings.database(), initialDataSource);
+            this.dataSource = initialDataSource;
+        } finally {
+            lifecycleLock.writeLock().unlock();
+        }
     }
 
     @Override
-    public synchronized void reload(ProudAuthSettings settings) {
-        this.settings = settings;
-        rebuildDataSource();
-        migrateSchema();
+    public void reload(ProudAuthSettings settings) {
+        lifecycleLock.writeLock().lock();
+        try {
+            HikariDataSource previousDataSource = this.dataSource;
+            HikariDataSource replacementDataSource = createDataSource(settings.database());
+
+            boolean migrated = false;
+            try {
+                migrateSchema(settings.database(), replacementDataSource);
+                migrated = true;
+                this.settings = settings;
+                this.dataSource = replacementDataSource;
+            } finally {
+                if (!migrated && replacementDataSource != null && !replacementDataSource.isClosed()) {
+                    replacementDataSource.close();
+                }
+            }
+
+            if (previousDataSource != null && !previousDataSource.isClosed()) {
+                previousDataSource.close();
+            }
+        } finally {
+            lifecycleLock.writeLock().unlock();
+        }
     }
 
     @Override
@@ -1581,22 +1609,19 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     @Override
-    public synchronized void close() {
-        if (dataSource != null && !dataSource.isClosed()) {
-            dataSource.close();
+    public void close() {
+        lifecycleLock.writeLock().lock();
+        try {
+            if (dataSource != null && !dataSource.isClosed()) {
+                dataSource.close();
+            }
+            ioExecutor.shutdownNow();
+        } finally {
+            lifecycleLock.writeLock().unlock();
         }
-        ioExecutor.shutdownNow();
     }
 
-    private synchronized void rebuildDataSource() {
-        HikariDataSource previousDataSource = this.dataSource;
-        this.dataSource = null;
-
-        if (previousDataSource != null && !previousDataSource.isClosed()) {
-            previousDataSource.close();
-        }
-
-        ProudAuthSettings.Database database = settings.database();
+    private HikariDataSource createDataSource(ProudAuthSettings.Database database) {
         int poolSize = Math.max(1, database.poolSize());
 
         HikariConfig hikariConfig = new HikariConfig();
@@ -1612,7 +1637,7 @@ public final class MySQLStorage implements StorageProvider {
         hikariConfig.setMaxLifetime(1_800_000L);
         hikariConfig.setLeakDetectionThreshold(0L);
 
-        this.dataSource = new HikariDataSource(hikariConfig);
+        return new HikariDataSource(hikariConfig);
     }
 
     private DataSource createMysqlDataSource(ProudAuthSettings.Database database) {
@@ -1636,14 +1661,13 @@ public final class MySQLStorage implements StorageProvider {
         }
     }
 
-    private void migrateSchema() {
+    private void migrateSchema(ProudAuthSettings.Database database, DataSource activeDataSource) {
         long startedAt = System.nanoTime();
         SchemaMigrationStats stats = new SchemaMigrationStats();
-        ProudAuthSettings.Database database = settings.database();
         logInfo("MySQL schema migration started. database=" + database.name()
                 + " host=" + database.host()
                 + " port=" + database.port());
-        try (Connection connection = connection();
+        try (Connection connection = connection(activeDataSource);
              Statement statement = connection.createStatement()) {
             SchemaInspector schema = new SchemaInspector(connection, stats);
             statement.executeUpdate("""
@@ -2090,7 +2114,14 @@ public final class MySQLStorage implements StorageProvider {
     }
 
     private Connection connection() throws SQLException {
-        return dataSource.getConnection();
+        return connection(dataSource);
+    }
+
+    private Connection connection(DataSource activeDataSource) throws SQLException {
+        if (activeDataSource == null) {
+            throw new SQLException("ProudAuth data source is not initialized.");
+        }
+        return activeDataSource.getConnection();
     }
 
     private AccountRecord mapAccount(ResultSet resultSet) throws SQLException {
@@ -2232,20 +2263,26 @@ public final class MySQLStorage implements StorageProvider {
 
     private <T> CompletableFuture<T> supplyAsync(SqlSupplier<T> supplier) {
         return CompletableFuture.supplyAsync(() -> {
+            lifecycleLock.readLock().lock();
             try {
                 return supplier.get();
             } catch (SQLException exception) {
                 throw new CompletionException(exception);
+            } finally {
+                lifecycleLock.readLock().unlock();
             }
         }, ioExecutor);
     }
 
     private CompletableFuture<Void> runAsync(SqlRunnable runnable) {
         return CompletableFuture.runAsync(() -> {
+            lifecycleLock.readLock().lock();
             try {
                 runnable.run();
             } catch (SQLException exception) {
                 throw new CompletionException(exception);
+            } finally {
+                lifecycleLock.readLock().unlock();
             }
         }, ioExecutor);
     }
